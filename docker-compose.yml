@@ -4,8 +4,9 @@ services:
     container_name: budget-app
     ports:
       - "5000:5000"
+    environment:
+      # Folder mount avoids many \"unable to open database file\" issues vs binding a single db file (SMB/NFS).
+      - DATABASE_PATH=/app/data/database.db
     volumes:
-      # Host path must be a regular file before first `up`, or Docker may create a directory and SQLite fails.
-      # Example: mkdir -p ./budget-data && touch ./budget-data/database.db
-      - ./database.db:/app/database.db
+      - ./budget-data:/app/data
     restart: unless-stopped

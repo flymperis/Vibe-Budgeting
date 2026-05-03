@@ -10,20 +10,32 @@ from urllib.parse import urlparse
 from openpyxl import Workbook, load_workbook
 from werkzeug.security import check_password_hash, generate_password_hash
 
-DB_PATH = os.environ.get("DATABASE_PATH") or os.environ.get("VB_DATABASE_PATH") or "database.db"
+def _sqlite_db_path():
+    raw = os.environ.get("DATABASE_PATH") or os.environ.get("VB_DATABASE_PATH") or "database.db"
+    return os.path.abspath(raw)
 
 
-def _ensure_database_path():
-    """Avoid Docker bind-mount footgun: missing host file becomes a directory and breaks SQLite."""
-    abs_db = os.path.abspath(DB_PATH)
-    if os.path.exists(abs_db) and os.path.isdir(abs_db):
+DB_PATH = _sqlite_db_path()
+
+
+def _prepare_sqlite_storage():
+    """Ensure parent dir exists; catch Docker bind-mount mistakes (path is a directory)."""
+    parent = os.path.dirname(DB_PATH)
+    if parent and not os.path.isdir(parent):
+        try:
+            os.makedirs(parent, mode=0o755, exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(
+                f"Cannot create database directory {parent!r}: {exc}"
+            ) from exc
+
+    if os.path.exists(DB_PATH) and os.path.isdir(DB_PATH):
         raise RuntimeError(
-            f"DATABASE_PATH {DB_PATH!r} points to a directory, not a SQLite file. "
-            "Docker often creates a directory when the host path did not exist. "
-            "Fix: remove that path on the host, then create an empty file, e.g. "
-            "`mkdir -p budget-data && rm -rf budget-data/database.db && touch budget-data/database.db` "
-            "(adjust paths to match your compose volume)."
-        )
+            f"DATABASE_PATH {DB_PATH!r} is a directory, not a SQLite file. "
+            "Docker often creates a directory when a single-file bind mount source was missing."
+        ) from None
+
+
 EXPORT_FORMAT_VERSION = 1
 LIST_PAGE_SIZE = 75
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "true").lower() in ("1", "true", "yes")
@@ -336,7 +348,14 @@ def txn_day_filter(raw):
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    except sqlite3.OperationalError as exc:
+        raise RuntimeError(
+            f"SQLite cannot open {DB_PATH!r}: {exc}. "
+            "Prefer mounting a folder (not one file), especially if the host path is on SMB/NFS: "
+            "volumes: ['./budget-data:/app/data'] and env DATABASE_PATH=/app/data/database.db"
+        ) from exc
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -2387,7 +2406,7 @@ def delete_transfer(transfer_id):
     return redirect_home()
 
 
-_ensure_database_path()
+_prepare_sqlite_storage()
 init_db()
 
 if __name__ == "__main__":
