@@ -647,6 +647,67 @@ th, td {
     font-weight: 600;
 }
 
+.transfer-field-label {
+    width: 100%;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.transfer-add-form {
+    align-items: flex-start;
+}
+
+.transfer-log-heading {
+    margin: 1.15rem 0 0.45rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.transfer-log-wrap {
+    overflow-x: auto;
+    margin-top: 0.35rem;
+    -webkit-overflow-scrolling: touch;
+}
+
+.transfer-log-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
+
+.transfer-log-table th,
+.transfer-log-table td {
+    text-align: left;
+    padding: 0.55rem 0.65rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+.transfer-log-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.transfer-amt-col {
+    white-space: nowrap;
+    text-align: right;
+}
+
+.transfer-actions {
+    width: 3rem;
+    text-align: right;
+}
+
+.transfer-actions form {
+    margin: 0;
+    display: inline;
+}
+
 .consolidated-columns {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -965,14 +1026,16 @@ th, td {
 
     #panel-home .panel-add-form,
     #panel-expenses .panel-add-form,
-    #panel-income .panel-add-form {
+    #panel-income .panel-add-form,
+    #panel-transfer .panel-add-form {
         flex-direction: column;
         align-items: stretch;
     }
 
     #panel-home .panel-add-form textarea,
     #panel-expenses .panel-add-form textarea,
-    #panel-income .panel-add-form textarea {
+    #panel-income .panel-add-form textarea,
+    #panel-transfer .panel-add-form textarea {
         min-width: 0;
         width: 100%;
         flex: 0 1 auto;
@@ -987,7 +1050,10 @@ th, td {
     #panel-expenses .panel-add-form button,
     #panel-income .panel-add-form input:not([type="hidden"]),
     #panel-income .panel-add-form select,
-    #panel-income .panel-add-form button {
+    #panel-income .panel-add-form button,
+    #panel-transfer .panel-add-form input:not([type="hidden"]),
+    #panel-transfer .panel-add-form select,
+    #panel-transfer .panel-add-form button {
         width: 100%;
         max-width: none;
         box-sizing: border-box;

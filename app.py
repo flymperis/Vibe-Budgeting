@@ -21,7 +21,7 @@ SHEET_EXPENSE_CATEGORIES = "ExpenseCategories"
 SHEET_INCOME_CATEGORIES = "IncomeCategories"
 SHEET_EXPENSES = "Expenses"
 SHEET_INCOME = "Income"
-ALLOWED_PANELS = {"home", "expenses", "income", "summary", "yearly", "settings"}
+ALLOWED_PANELS = {"home", "expenses", "income", "transfer", "summary", "yearly", "settings"}
 SETTINGS_SECTIONS = {"general", "expenses", "income", "export", "migration"}
 
 
@@ -256,8 +256,28 @@ def migrate_schema(conn):
         conn.execute("ALTER TABLE income_entries ADD COLUMN received_at TIMESTAMP")
         conn.execute("UPDATE income_entries SET received_at = created_at WHERE received_at IS NULL")
 
+    migrate_account_transfers(conn)
     migrate_expenses_signed_amounts(conn)
     migrate_txn_dates_to_day(conn)
+
+
+def migrate_account_transfers(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS account_transfers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_account_id INTEGER NOT NULL,
+            to_account_id INTEGER NOT NULL,
+            amount REAL NOT NULL CHECK (amount > 0),
+            transferred_at TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (from_account_id) REFERENCES accounts(id),
+            FOREIGN KEY (to_account_id) REFERENCES accounts(id),
+            CHECK (from_account_id != to_account_id)
+        )
+        """
+    )
 
 
 def migrate_txn_dates_to_day(conn):
@@ -378,6 +398,7 @@ def resolve_active_panel():
             "/categories/add": "settings",
             "/expenses/add": "expenses",
             "/income/add": "income",
+            "/transfers/add": "transfer",
             "/import/excel": "settings",
         }
         if path in mapping:
@@ -389,6 +410,7 @@ def resolve_active_panel():
             ("/accounts/", "settings"),
             ("/expenses/", "expenses"),
             ("/income/", "income"),
+            ("/transfers/", "transfer"),
         ):
             if path.startswith(prefix):
                 return mapped
@@ -1110,7 +1132,9 @@ def index():
             a.name,
             a.opening_balance
                 + COALESCE(income_totals.total_income, 0)
-                + COALESCE(expense_totals.total_expenses, 0) AS current_balance
+                + COALESCE(expense_totals.total_expenses, 0)
+                + COALESCE(transfer_in.t_in, 0)
+                - COALESCE(transfer_out.t_out, 0) AS current_balance
         FROM accounts a
         LEFT JOIN (
             SELECT account_id, SUM(amount) AS total_income
@@ -1124,9 +1148,37 @@ def index():
             WHERE date(spent_at) < date(?)
             GROUP BY account_id
         ) expense_totals ON expense_totals.account_id = a.id
+        LEFT JOIN (
+            SELECT to_account_id AS account_id, SUM(amount) AS t_in
+            FROM account_transfers
+            WHERE date(transferred_at) < date(?)
+            GROUP BY to_account_id
+        ) transfer_in ON transfer_in.account_id = a.id
+        LEFT JOIN (
+            SELECT from_account_id AS account_id, SUM(amount) AS t_out
+            FROM account_transfers
+            WHERE date(transferred_at) < date(?)
+            GROUP BY from_account_id
+        ) transfer_out ON transfer_out.account_id = a.id
         ORDER BY a.name
         """,
-        (balance_cutoff_d, balance_cutoff_d),
+        (balance_cutoff_d, balance_cutoff_d, balance_cutoff_d, balance_cutoff_d),
+    ).fetchall()
+    account_transfers = conn.execute(
+        """
+        SELECT
+            t.id,
+            t.amount,
+            t.transferred_at,
+            t.notes,
+            fa.name AS from_account_name,
+            ta.name AS to_account_name
+        FROM account_transfers t
+        JOIN accounts fa ON fa.id = t.from_account_id
+        JOIN accounts ta ON ta.id = t.to_account_id
+        ORDER BY date(t.transferred_at) DESC, t.id DESC
+        LIMIT 150
+        """
     ).fetchall()
     accounts_total_balance = sum(float(r["current_balance"]) for r in account_balances)
 
@@ -1178,6 +1230,7 @@ def index():
             }
         )
     yearly_total_delta = yearly_total_income - yearly_total_expenses
+    transfer_default_date = datetime.now().date().isoformat()
 
     conn.close()
 
@@ -1199,6 +1252,7 @@ def index():
         expense_breakdown=expense_breakdown,
         income_breakdown=income_breakdown,
         account_balances=account_balances,
+        account_transfers=account_transfers,
         yearly_rows=yearly_rows,
         yearly_total_income=yearly_total_income,
         yearly_total_expenses=yearly_total_expenses,
@@ -1215,6 +1269,7 @@ def index():
         month_heading=month_heading,
         balance_scope_hint=balance_scope_hint,
         cal=calendar,
+        transfer_default_date=transfer_default_date,
     )
 
 
@@ -1429,6 +1484,62 @@ def edit_income(income_id):
         conn.commit()
         conn.close()
 
+    return redirect_home()
+
+
+@app.route("/transfers/add", methods=["POST"])
+def add_transfer():
+    from_raw = request.form.get("from_account_id", "").strip()
+    to_raw = request.form.get("to_account_id", "").strip()
+    amount_raw = request.form.get("amount", "").strip()
+    notes = request.form.get("notes", "").strip()
+    transferred_at = normalize_txn_day_from_form(request.form.get("transferred_at", "").strip())
+
+    if not from_raw or not to_raw:
+        return redirect_home()
+
+    try:
+        from_id = int(from_raw)
+        to_id = int(to_raw)
+    except ValueError:
+        flash("Invalid accounts.", "error")
+        return redirect_home()
+
+    if from_id == to_id:
+        flash("Choose two different accounts.", "error")
+        return redirect_home()
+
+    try:
+        amt = abs(float(amount_raw))
+    except (TypeError, ValueError):
+        amt = 0.0
+
+    if amt <= 0:
+        flash("Enter a positive amount.", "error")
+        return redirect_home()
+
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO account_transfers (from_account_id, to_account_id, amount, transferred_at, notes)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (from_id, to_id, amt, transferred_at, notes),
+    )
+    conn.commit()
+    conn.close()
+    flash("Transfer recorded.", "success")
+    return redirect_home()
+
+
+@app.route("/transfers/<int:transfer_id>/delete", methods=["POST"])
+def delete_transfer(transfer_id):
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM account_transfers WHERE id = ?", (transfer_id,))
+    conn.commit()
+    conn.close()
+    if cursor.rowcount == 0:
+        flash("Transfer not found.", "error")
     return redirect_home()
 
 
