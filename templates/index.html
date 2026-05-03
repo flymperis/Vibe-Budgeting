@@ -8,7 +8,10 @@
 </head>
 <body>
     <main class="container">
-        <h1>Budget App</h1>
+        <div class="header-row">
+            <h1>Budget App</h1>
+            <button class="theme-toggle" id="theme-toggle" type="button">Light Mode</button>
+        </div>
 
         <div class="tabs">
             <input checked id="tab-expenses" name="tabs" type="radio">
@@ -158,5 +161,25 @@
             </section>
         </div>
     </main>
+    <script>
+        (function () {
+            const root = document.documentElement;
+            const button = document.getElementById("theme-toggle");
+            const savedTheme = localStorage.getItem("theme");
+            const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+            const theme = savedTheme || (prefersDark ? "dark" : "light");
+
+            root.setAttribute("data-theme", theme);
+            button.textContent = theme === "dark" ? "Light Mode" : "Dark Mode";
+
+            button.addEventListener("click", function () {
+                const current = root.getAttribute("data-theme") || "dark";
+                const next = current === "dark" ? "light" : "dark";
+                root.setAttribute("data-theme", next);
+                localStorage.setItem("theme", next);
+                button.textContent = next === "dark" ? "Light Mode" : "Dark Mode";
+            });
+        })();
+    </script>
 </body>
 </html>

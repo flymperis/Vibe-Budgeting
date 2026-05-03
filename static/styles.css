@@ -1,8 +1,34 @@
+:root {
+    --bg: #f6f3ff;
+    --text: #201a2e;
+    --surface: #ffffff;
+    --surface-alt: #f1ebff;
+    --border: #d8ccf8;
+    --muted: #705f98;
+    --tab: #ede5ff;
+    --accent: #8b5cf6;
+    --accent-hover: #7c3aed;
+    --tab-text: #5c3ea6;
+}
+
+:root[data-theme="dark"] {
+    --bg: #0f0b1b;
+    --text: #ebe7ff;
+    --surface: #141022;
+    --surface-alt: #1a1230;
+    --border: #2f2450;
+    --muted: #aa9bd7;
+    --tab: #22183b;
+    --accent: #8b5cf6;
+    --accent-hover: #7c3aed;
+    --tab-text: #cbbdff;
+}
+
 body {
     font-family: Arial, sans-serif;
     margin: 0;
-    background: #0f0b1b;
-    color: #ebe7ff;
+    background: var(--bg);
+    color: var(--text);
 }
 
 .container {
@@ -13,6 +39,17 @@ body {
 
 h1 {
     margin-bottom: 1rem;
+}
+
+.header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.theme-toggle {
+    white-space: nowrap;
 }
 
 h2 {
@@ -29,13 +66,13 @@ form {
 input, select, button {
     padding: 0.55rem 0.7rem;
     border-radius: 8px;
-    border: 1px solid #3a2b67;
-    background: #1c1430;
-    color: #f2edff;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text);
 }
 
 button {
-    background: #8b5cf6;
+    background: var(--accent);
     color: #fff;
     border: 0;
     cursor: pointer;
@@ -43,22 +80,22 @@ button {
 }
 
 button:hover {
-    background: #7c3aed;
+    background: var(--accent-hover);
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
-    background: #171127;
+    background: var(--surface);
     border-radius: 10px;
     overflow: hidden;
-    border: 1px solid #2b2148;
+    border: 1px solid var(--border);
 }
 
 th, td {
     text-align: left;
     padding: 0.7rem;
-    border-bottom: 1px solid #2b2148;
+    border-bottom: 1px solid var(--border);
 }
 
 .tabs {
@@ -72,28 +109,28 @@ th, td {
 }
 
 .tabs label {
-    background: #22183b;
+    background: var(--tab);
     padding: 0.7rem;
     text-align: center;
     border-radius: 8px 8px 0 0;
     font-weight: 600;
     cursor: pointer;
-    color: #cbbdff;
+    color: var(--tab-text);
 }
 
 .tabs .tab-content {
     display: none;
     grid-column: 1 / -1;
-    background: #141022;
+    background: var(--surface);
     padding: 1rem;
     border-radius: 0 0 10px 10px;
-    border: 1px solid #2b2148;
+    border: 1px solid var(--border);
 }
 
 #tab-expenses:checked ~ label[for="tab-expenses"],
 #tab-income:checked ~ label[for="tab-income"],
 #tab-summary:checked ~ label[for="tab-summary"] {
-    background: #8b5cf6;
+    background: var(--accent);
     color: #fff;
 }
 
@@ -110,20 +147,20 @@ th, td {
 }
 
 .card {
-    background: #1a1230;
-    border: 1px solid #3a2b67;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 0.8rem;
 }
 
 .card p {
     margin: 0;
-    color: #b8a8ef;
+    color: var(--muted);
 }
 
 .card strong {
     font-size: 1.2rem;
-    color: #ede9fe;
+    color: var(--text);
 }
 
 .inline-form {
@@ -145,5 +182,5 @@ th, td {
 }
 
 .muted {
-    color: #9d90cb;
+    color: var(--muted);
 }
