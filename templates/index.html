@@ -30,7 +30,7 @@
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <input name="next_panel" type="hidden" value="expenses">
                         <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                        <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
+                        <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
                         <select name="category_id" required>
                             {% for category in categories %}
                                 <option value="{{ category.id }}">{{ category.name }}</option>
@@ -68,7 +68,7 @@
                                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                                     <input name="next_panel" type="hidden" value="expenses">
                                                     <textarea name="notes" placeholder="Notes" rows="2">{{ expense.notes }}</textarea>
-                                                    <input min="0" name="amount" required step="0.01" type="number" value="{{ expense.amount }}">
+                                                    <input name="amount" required step="any" type="number" value="{{ expense.amount }}">
                                                     <select name="category_id" required>
                                                         {% for category in categories %}
                                                             <option {% if category.id == expense.category_id %}selected{% endif %} value="{{ category.id }}">{{ category.name }}</option>
@@ -278,6 +278,7 @@
                     <p class="muted small-hint">
                         Download an empty workbook that matches the import layout (same sheet names and columns).
                         Fill rows or paste data from another export, then import below. Matching uses category and account names, not IDs.
+                        Expense amounts may be positive or negative in the sheet; they are stored as negatives. Income amounts are stored positive.
                     </p>
                     <p class="migration-actions">
                         <a class="btn-secondary" href="{{ url_for('export_migration_template') }}">Download migration template (.xlsx)</a>

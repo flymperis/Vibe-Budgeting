@@ -1,5 +1,6 @@
 from flask import Flask, flash, redirect, render_template, request, send_file, url_for
 import os
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -20,6 +21,24 @@ SHEET_EXPENSES = "Expenses"
 SHEET_INCOME = "Income"
 ALLOWED_PANELS = {"expenses", "income", "summary", "export", "migration", "settings"}
 SETTINGS_SECTIONS = {"general", "expenses", "income"}
+
+
+def normalize_expense_amount(raw):
+    """Store expenses as negative; positive input is treated as magnitude spent."""
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        value = 0.0
+    return -abs(value)
+
+
+def normalize_income_amount(raw):
+    """Income amounts are stored positive."""
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        value = 0.0
+    return abs(value)
 
 
 def normalize_month(value):
@@ -146,6 +165,38 @@ def migrate_schema(conn):
         conn.execute("ALTER TABLE income_entries ADD COLUMN received_at TIMESTAMP")
         conn.execute("UPDATE income_entries SET received_at = created_at WHERE received_at IS NULL")
 
+    migrate_expenses_signed_amounts(conn)
+
+
+def migrate_expenses_signed_amounts(conn):
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='expenses'"
+    ).fetchone()
+    if not row or not row["sql"]:
+        return
+    create_sql = row["sql"]
+    if not re.search(r"CHECK\s*\(\s*amount\s*>=\s*0\s*\)", create_sql, re.I):
+        return
+    conn.executescript(
+        """
+        CREATE TABLE expenses_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            notes TEXT NOT NULL DEFAULT '',
+            amount REAL NOT NULL,
+            category_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            spent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (category_id) REFERENCES categories(id),
+            FOREIGN KEY (account_id) REFERENCES accounts(id)
+        );
+        INSERT INTO expenses_new (id, notes, amount, category_id, account_id, spent_at, created_at)
+        SELECT id, notes, -ABS(amount), category_id, account_id, spent_at, created_at FROM expenses;
+        DROP TABLE expenses;
+        ALTER TABLE expenses_new RENAME TO expenses;
+        """
+    )
+
 
 def init_db():
     conn = get_connection()
@@ -170,7 +221,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             notes TEXT NOT NULL DEFAULT '',
-            amount REAL NOT NULL CHECK (amount >= 0),
+            amount REAL NOT NULL,
             category_id INTEGER NOT NULL,
             account_id INTEGER NOT NULL,
             spent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -283,16 +334,24 @@ def _sheet_as_dicts(ws):
     return out
 
 
-def _parse_excel_amount(value, sheet, row_num):
+def _parse_excel_expense_amount(value, sheet, row_num):
     if value is None or (isinstance(value, str) and not value.strip()):
         raise ValueError(f"{sheet} row {row_num}: missing amount")
     try:
         amount = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{sheet} row {row_num}: invalid amount") from exc
-    if amount < 0:
-        raise ValueError(f"{sheet} row {row_num}: amount cannot be negative")
-    return amount
+    return -abs(amount)
+
+
+def _parse_excel_income_amount(value, sheet, row_num):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise ValueError(f"{sheet} row {row_num}: missing amount")
+    try:
+        amount = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{sheet} row {row_num}: invalid amount") from exc
+    return abs(amount)
 
 
 def _parse_excel_timestamp(value, sheet, row_num, column_label):
@@ -505,7 +564,7 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
             notes_val = row.get("notes")
             notes = "" if notes_val is None else str(notes_val)
             try:
-                amount = _parse_excel_amount(row.get("amount"), SHEET_EXPENSES, idx)
+                amount = _parse_excel_expense_amount(row.get("amount"), SHEET_EXPENSES, idx)
             except ValueError as exc:
                 errors.append(str(exc))
                 continue
@@ -538,7 +597,7 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
             notes_val = row.get("notes")
             notes = "" if notes_val is None else str(notes_val)
             try:
-                amount = _parse_excel_amount(row.get("amount"), SHEET_INCOME, idx)
+                amount = _parse_excel_income_amount(row.get("amount"), SHEET_INCOME, idx)
             except ValueError as exc:
                 errors.append(str(exc))
                 continue
@@ -777,7 +836,7 @@ def index():
 
     total_expenses = conn.execute(
         """
-        SELECT COALESCE(SUM(amount), 0) AS total
+        SELECT COALESCE(-SUM(amount), 0) AS total
         FROM expenses
         WHERE spent_at >= ? AND spent_at < ?
         """,
@@ -794,7 +853,7 @@ def index():
 
     expense_breakdown = conn.execute(
         """
-        SELECT c.name AS category_name, SUM(e.amount) AS total_amount
+        SELECT c.name AS category_name, COALESCE(-SUM(e.amount), 0) AS total_amount
         FROM expenses e
         JOIN categories c ON c.id = e.category_id
         WHERE e.spent_at >= ? AND e.spent_at < ?
@@ -823,7 +882,7 @@ def index():
             a.name,
             a.opening_balance
                 + COALESCE(income_totals.total_income, 0)
-                - COALESCE(expense_totals.total_expenses, 0) AS current_balance
+                + COALESCE(expense_totals.total_expenses, 0) AS current_balance
         FROM accounts a
         LEFT JOIN (
             SELECT account_id, SUM(amount) AS total_income
@@ -938,7 +997,7 @@ def add_expense():
         conn = get_connection()
         conn.execute(
             "INSERT INTO expenses (notes, amount, category_id, account_id, spent_at) VALUES (?, ?, ?, ?, ?)",
-            (notes, float(amount), int(category_id), int(account_id), spent_at),
+            (notes, normalize_expense_amount(amount), int(category_id), int(account_id), spent_at),
         )
         conn.commit()
         conn.close()
@@ -968,7 +1027,7 @@ def edit_expense(expense_id):
             SET notes = ?, amount = ?, category_id = ?, account_id = ?, spent_at = ?
             WHERE id = ?
             """,
-            (notes, float(amount), int(category_id), int(account_id), spent_at, expense_id),
+            (notes, normalize_expense_amount(amount), int(category_id), int(account_id), spent_at, expense_id),
         )
         conn.commit()
         conn.close()
@@ -1047,7 +1106,7 @@ def add_income():
         conn = get_connection()
         conn.execute(
             "INSERT INTO income_entries (notes, amount, category_id, account_id, received_at) VALUES (?, ?, ?, ?, ?)",
-            (notes, float(amount), int(category_id), int(account_id), received_at),
+            (notes, normalize_income_amount(amount), int(category_id), int(account_id), received_at),
         )
         conn.commit()
         conn.close()
@@ -1076,7 +1135,7 @@ def edit_income(income_id):
             SET notes = ?, amount = ?, category_id = ?, account_id = ?, received_at = ?
             WHERE id = ?
             """,
-            (notes, float(amount), int(category_id), int(account_id), received_at, income_id),
+            (notes, normalize_income_amount(amount), int(category_id), int(account_id), received_at, income_id),
         )
         conn.commit()
         conn.close()
