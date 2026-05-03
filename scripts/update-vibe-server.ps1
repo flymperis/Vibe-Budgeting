@@ -1,10 +1,14 @@
+# Replaces Vibe-Budgeting under $BaseDir from GitHub zip. Paths in $PreserveRelativePaths survive the folder wipe.
 param(
     [string]$BaseDir = "C:\Users\fotis\Documents\Tailscale-Personal",
     [string]$RepoZipUrl = "https://github.com/flymperis/Vibe-Budgeting/archive/refs/heads/main.zip",
     [string]$CodeloadZipUrl = "https://codeload.github.com/flymperis/Vibe-Budgeting/zip/refs/heads/main",
-    [string]$ServiceName = "vibe-budgeting",
+    # Must match the service key in docker-compose.yml (repo uses `budget-app`)
+    [string]$ServiceName = "budget-app",
     [int]$MaxAttempts = 5,
-    [int]$TimeoutSec = 600
+    [int]$TimeoutSec = 600,
+    # Not in GitHub zip — copied aside before the folder is replaced, then restored
+    [string[]]$PreserveRelativePaths = @("database.db", ".env", "docker-compose.override.yml")
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,6 +42,38 @@ function Save-ZipFromGitHub {
         Invoke-WebRequest -Uri $Uri -OutFile $OutPath -UseBasicParsing -TimeoutSec $Timeout -MaximumRedirection 10 -Headers $Headers
     } finally {
         $progressPreference = "Continue"
+    }
+}
+
+function Copy-PreservedFromApp {
+    param([string]$AppRoot, [string]$StagingDir, [string[]]$RelativePaths)
+    foreach ($rel in $RelativePaths) {
+        if ([string]::IsNullOrWhiteSpace($rel)) { continue }
+        $src = Join-Path $AppRoot $rel
+        if (-not (Test-Path -LiteralPath $src)) { continue }
+        $dest = Join-Path $StagingDir $rel
+        $parent = Split-Path -Parent $dest
+        if (-not [string]::IsNullOrEmpty($parent) -and -not (Test-Path -LiteralPath $parent)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $src -Destination $dest -Force
+        Write-Host "    Preserved: $rel"
+    }
+}
+
+function Restore-PreservedToApp {
+    param([string]$StagingDir, [string]$AppRoot, [string[]]$RelativePaths)
+    foreach ($rel in $RelativePaths) {
+        if ([string]::IsNullOrWhiteSpace($rel)) { continue }
+        $src = Join-Path $StagingDir $rel
+        if (-not (Test-Path -LiteralPath $src)) { continue }
+        $dest = Join-Path $AppRoot $rel
+        $parent = Split-Path -Parent $dest
+        if (-not [string]::IsNullOrEmpty($parent) -and -not (Test-Path -LiteralPath $parent)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $src -Destination $dest -Force
+        Write-Host "    Restored: $rel"
     }
 }
 
@@ -130,6 +166,17 @@ if (Test-Path $extractPath) {
     Remove-Item -Recurse -Force $extractPath
 }
 
+$preserveStaging = Join-Path $BaseDir ".vibe-budgeting-preserve"
+if (Test-Path -LiteralPath $preserveStaging) {
+    Remove-Item -LiteralPath $preserveStaging -Recurse -Force
+}
+New-Item -ItemType Directory -Path $preserveStaging -Force | Out-Null
+
+if (Test-Path $targetPath) {
+    Write-Host "==> Saving local-only files (not in repo zip) before replace..."
+    Copy-PreservedFromApp -AppRoot $targetPath -StagingDir $preserveStaging -RelativePaths $PreserveRelativePaths
+}
+
 Write-Host "==> Extracting zip..."
 Expand-Archive -Path $zipPath -DestinationPath $BaseDir -Force
 
@@ -140,6 +187,13 @@ if (Test-Path $targetPath) {
 
 Write-Host "==> Replacing with latest Vibe-Budgeting..."
 Rename-Item -Path $extractPath -NewName "Vibe-Budgeting"
+
+Write-Host "==> Restoring local-only files into new tree..."
+Restore-PreservedToApp -StagingDir $preserveStaging -AppRoot $targetPath -RelativePaths $PreserveRelativePaths
+
+Remove-Item -LiteralPath $preserveStaging -Recurse -Force -ErrorAction SilentlyContinue
+
+Set-Location $targetPath
 
 Write-Host "==> Rebuilding only $ServiceName..."
 docker compose build --no-cache $ServiceName
