@@ -3,8 +3,10 @@ param(
     [string]$BaseDir = "C:\Users\fotis\Documents\Tailscale-Personal",
     [string]$RepoZipUrl = "https://github.com/flymperis/Vibe-Budgeting/archive/refs/heads/main.zip",
     [string]$CodeloadZipUrl = "https://codeload.github.com/flymperis/Vibe-Budgeting/zip/refs/heads/main",
-    # Must match the service key in docker-compose.yml (repo uses `budget-app`)
-    [string]$ServiceName = "budget-app",
+    # Must match the service name in your compose file (e.g. vibe-budgeting on personal stack; standalone repo sample uses budget-app)
+    [string]$ServiceName = "vibe-budgeting",
+    # Folder that contains docker-compose.yml AND the Vibe-Budgeting subfolder (defaults to $BaseDir)
+    [string]$ComposeProjectDir = "",
     [int]$MaxAttempts = 5,
     [int]$TimeoutSec = 600,
     # Not in GitHub zip — copied aside before the folder is replaced, then restored
@@ -193,9 +195,13 @@ Restore-PreservedToApp -StagingDir $preserveStaging -AppRoot $targetPath -Relati
 
 Remove-Item -LiteralPath $preserveStaging -Recurse -Force -ErrorAction SilentlyContinue
 
-Set-Location $targetPath
+$composeDir = if (-not [string]::IsNullOrWhiteSpace($ComposeProjectDir)) { $ComposeProjectDir } else { $BaseDir }
+if (-not (Test-Path -LiteralPath $composeDir)) {
+    throw "Compose project directory not found: $composeDir"
+}
+Set-Location $composeDir
 
-Write-Host "==> Rebuilding only $ServiceName..."
+Write-Host "==> Rebuilding only $ServiceName (from $composeDir)..."
 docker compose build --no-cache $ServiceName
 
 Write-Host "==> Restarting only $ServiceName..."
