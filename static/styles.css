@@ -812,6 +812,20 @@ th, td {
     border-bottom: 0;
 }
 
+.home-balances-table:has(tfoot) tbody tr:last-child td {
+    border-bottom: 1px solid var(--border);
+}
+
+.home-balances-table tfoot th,
+.home-balances-table tfoot td {
+    text-align: left;
+    padding: 0.55rem 0.7rem;
+    border-top: 2px solid var(--border);
+    border-bottom: none;
+    font-weight: 700;
+    background: var(--surface-alt);
+}
+
 .home-quick-bar {
     display: grid;
     grid-template-columns: 1fr 1fr;

@@ -195,6 +195,14 @@
                                     <tr><td colspan="2">No accounts yet.</td></tr>
                                 {% endfor %}
                             </tbody>
+                            {% if account_balances %}
+                            <tfoot>
+                                <tr class="home-balances-total-row">
+                                    <th scope="row">Total (all accounts)</th>
+                                    <td>{{ "%.2f"|format(accounts_total_balance) }}</td>
+                                </tr>
+                            </tfoot>
+                            {% endif %}
                         </table>
                     </div>
 
