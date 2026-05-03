@@ -122,6 +122,18 @@ input, select, button {
     color: var(--text);
 }
 
+textarea {
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--text);
+    min-height: 72px;
+    min-width: 220px;
+    flex: 1 1 260px;
+    resize: vertical;
+}
+
 button {
     background: var(--accent);
     color: #fff;

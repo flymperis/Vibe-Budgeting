@@ -17,11 +17,16 @@
                 <section class="panel active" id="panel-expenses">
                     <h2>Add Expense</h2>
                     <form action="/expenses/add" method="post">
-                        <input name="item" placeholder="Expense item" required>
+                        <textarea name="notes" placeholder="Notes" rows="2"></textarea>
                         <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
                         <select name="category_id" required>
                             {% for category in categories %}
                                 <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <select name="account_id" required>
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
                             {% endfor %}
                         </select>
                         <button type="submit">Add Expense</button>
@@ -30,14 +35,16 @@
                     <h2>Expenses</h2>
                     <table>
                         <thead>
-                            <tr><th>Item</th><th>Category</th><th>Amount</th><th></th></tr>
+                            <tr><th>Notes</th><th>Category</th><th>Account</th><th>Amount</th><th>Date</th><th></th></tr>
                         </thead>
                         <tbody>
                             {% for expense in expenses %}
                                 <tr>
-                                    <td>{{ expense.item }}</td>
+                                    <td>{{ expense.notes }}</td>
                                     <td>{{ expense.category_name }}</td>
+                                    <td>{{ expense.account_name }}</td>
                                     <td>{{ "%.2f"|format(expense.amount) }}</td>
+                                    <td>{{ expense.spent_at }}</td>
                                     <td class="cell-actions">
                                         <form action="/expenses/{{ expense.id }}/delete" method="post">
                                             <button class="btn-danger" type="submit">Delete</button>
@@ -45,7 +52,7 @@
                                     </td>
                                 </tr>
                             {% else %}
-                                <tr><td colspan="4">No expenses yet.</td></tr>
+                                <tr><td colspan="6">No expenses yet.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -54,8 +61,13 @@
                 <section class="panel" id="panel-income">
                     <h2>Add Income Entry</h2>
                     <form action="/income/add" method="post">
-                        <input name="source" placeholder="Income source" required>
+                        <textarea name="notes" placeholder="Notes" rows="2"></textarea>
                         <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
+                        <select name="category_id" required>
+                            {% for category in income_categories %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
                         <select name="account_id" required>
                             {% for account in accounts %}
                                 <option value="{{ account.id }}">{{ account.name }}</option>
@@ -67,14 +79,16 @@
                     <h2>Income Entries</h2>
                     <table>
                         <thead>
-                            <tr><th>Source</th><th>Account</th><th>Amount</th><th></th></tr>
+                            <tr><th>Notes</th><th>Category</th><th>Account</th><th>Amount</th><th>Date</th><th></th></tr>
                         </thead>
                         <tbody>
                             {% for entry in income_entries %}
                                 <tr>
-                                    <td>{{ entry.source }}</td>
+                                    <td>{{ entry.notes }}</td>
+                                    <td>{{ entry.category_name }}</td>
                                     <td>{{ entry.account_name }}</td>
                                     <td>{{ "%.2f"|format(entry.amount) }}</td>
+                                    <td>{{ entry.received_at }}</td>
                                     <td class="cell-actions">
                                         <form action="/income/{{ entry.id }}/delete" method="post">
                                             <button class="btn-danger" type="submit">Delete</button>
@@ -82,7 +96,7 @@
                                     </td>
                                 </tr>
                             {% else %}
-                                <tr><td colspan="4">No income entries yet.</td></tr>
+                                <tr><td colspan="6">No income entries yet.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -127,13 +141,13 @@
                     <h2>Theme</h2>
                     <button class="theme-toggle" id="theme-toggle" type="button">Light Mode</button>
 
-                    <h2>Add Category</h2>
+                    <h2>Add Expense Category</h2>
                     <form action="/categories/add" method="post">
-                        <input name="name" placeholder="Category name" required>
-                        <button type="submit">Add Category</button>
+                        <input name="name" placeholder="Expense category name" required>
+                        <button type="submit">Add Expense Category</button>
                     </form>
 
-                    <h2>Edit Categories</h2>
+                    <h2>Edit Expense Categories</h2>
                     <div class="list-stack">
                         {% for category in categories %}
                             <form action="/categories/{{ category.id }}/edit" class="inline-form" method="post">
@@ -142,7 +156,26 @@
                                 <button class="btn-danger" formaction="/categories/{{ category.id }}/delete" formmethod="post" type="submit">Delete</button>
                             </form>
                         {% else %}
-                            <p class="muted">No categories yet.</p>
+                            <p class="muted">No expense categories yet.</p>
+                        {% endfor %}
+                    </div>
+
+                    <h2>Add Income Category</h2>
+                    <form action="/income-categories/add" method="post">
+                        <input name="name" placeholder="Income category name" required>
+                        <button type="submit">Add Income Category</button>
+                    </form>
+
+                    <h2>Edit Income Categories</h2>
+                    <div class="list-stack">
+                        {% for category in income_categories %}
+                            <form action="/income-categories/{{ category.id }}/edit" class="inline-form" method="post">
+                                <input name="name" required type="text" value="{{ category.name }}">
+                                <button type="submit">Save</button>
+                                <button class="btn-danger" formaction="/income-categories/{{ category.id }}/delete" formmethod="post" type="submit">Delete</button>
+                            </form>
+                        {% else %}
+                            <p class="muted">No income categories yet.</p>
                         {% endfor %}
                     </div>
 
