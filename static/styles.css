@@ -64,6 +64,16 @@ form {
     margin-bottom: 1rem;
 }
 
+.month-picker {
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.month-label {
+    color: var(--muted);
+    font-weight: 600;
+}
+
 .app-layout {
     display: grid;
     grid-template-columns: 230px 1fr;

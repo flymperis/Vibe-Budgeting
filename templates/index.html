@@ -14,9 +14,11 @@
 
         <div class="app-layout">
             <div class="panel-shell">
-                <section class="panel active" id="panel-expenses">
+                <section class="panel {% if active_panel == 'expenses' %}active{% endif %}" id="panel-expenses">
                     <h2>Add Expense</h2>
                     <form action="/expenses/add" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <input name="next_panel" type="hidden" value="expenses">
                         <textarea name="notes" placeholder="Notes" rows="2"></textarea>
                         <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
                         <select name="category_id" required>
@@ -47,6 +49,8 @@
                                     <td>{{ expense.spent_at }}</td>
                                     <td class="cell-actions">
                                         <form action="/expenses/{{ expense.id }}/delete" method="post">
+                                            <input name="month" type="hidden" value="{{ month_filter }}">
+                                            <input name="next_panel" type="hidden" value="expenses">
                                             <button class="btn-danger" type="submit">Delete</button>
                                         </form>
                                     </td>
@@ -58,9 +62,11 @@
                     </table>
                 </section>
 
-                <section class="panel" id="panel-income">
+                <section class="panel {% if active_panel == 'income' %}active{% endif %}" id="panel-income">
                     <h2>Add Income Entry</h2>
                     <form action="/income/add" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <input name="next_panel" type="hidden" value="income">
                         <textarea name="notes" placeholder="Notes" rows="2"></textarea>
                         <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
                         <select name="category_id" required>
@@ -91,6 +97,8 @@
                                     <td>{{ entry.received_at }}</td>
                                     <td class="cell-actions">
                                         <form action="/income/{{ entry.id }}/delete" method="post">
+                                            <input name="month" type="hidden" value="{{ month_filter }}">
+                                            <input name="next_panel" type="hidden" value="income">
                                             <button class="btn-danger" type="submit">Delete</button>
                                         </form>
                                     </td>
@@ -102,8 +110,14 @@
                     </table>
                 </section>
 
-                <section class="panel" id="panel-summary">
+                <section class="panel {% if active_panel == 'summary' %}active{% endif %}" id="panel-summary">
                     <h2>Consolidated</h2>
+                    <form action="/" class="month-picker" method="get">
+                        <input name="panel" type="hidden" value="summary">
+                        <label class="month-label" for="month-input">Month</label>
+                        <input id="month-input" name="month" type="month" value="{{ month_filter }}">
+                        <button type="submit">Apply</button>
+                    </form>
                     <div class="stats">
                         <div class="card">
                             <p>Total Income</p>
@@ -118,6 +132,40 @@
                             <strong>{{ "%.2f"|format(net_balance) }}</strong>
                         </div>
                     </div>
+
+                    <h2>Income by Category</h2>
+                    <table>
+                        <thead>
+                            <tr><th>Category</th><th>Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for row in income_breakdown %}
+                                <tr>
+                                    <td>{{ row.category_name }}</td>
+                                    <td>{{ "%.2f"|format(row.total_amount) }}</td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="2">No income for this month.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+
+                    <h2>Expenses by Category</h2>
+                    <table>
+                        <thead>
+                            <tr><th>Category</th><th>Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for row in expense_breakdown %}
+                                <tr>
+                                    <td>{{ row.category_name }}</td>
+                                    <td>{{ "%.2f"|format(row.total_amount) }}</td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="2">No expenses for this month.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
 
                     <h2>Balances Per Account</h2>
                     <table>
@@ -137,12 +185,14 @@
                     </table>
                 </section>
 
-                <section class="panel" id="panel-settings">
+                <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">
                     <h2>Theme</h2>
                     <button class="theme-toggle" id="theme-toggle" type="button">Light Mode</button>
 
                     <h2>Add Expense Category</h2>
                     <form action="/categories/add" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <input name="next_panel" type="hidden" value="settings">
                         <input name="name" placeholder="Expense category name" required>
                         <button type="submit">Add Expense Category</button>
                     </form>
@@ -151,6 +201,8 @@
                     <div class="list-stack">
                         {% for category in categories %}
                             <form action="/categories/{{ category.id }}/edit" class="inline-form" method="post">
+                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                <input name="next_panel" type="hidden" value="settings">
                                 <input name="name" required type="text" value="{{ category.name }}">
                                 <button type="submit">Save</button>
                                 <button class="btn-danger" formaction="/categories/{{ category.id }}/delete" formmethod="post" type="submit">Delete</button>
@@ -162,6 +214,8 @@
 
                     <h2>Add Income Category</h2>
                     <form action="/income-categories/add" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <input name="next_panel" type="hidden" value="settings">
                         <input name="name" placeholder="Income category name" required>
                         <button type="submit">Add Income Category</button>
                     </form>
@@ -170,6 +224,8 @@
                     <div class="list-stack">
                         {% for category in income_categories %}
                             <form action="/income-categories/{{ category.id }}/edit" class="inline-form" method="post">
+                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                <input name="next_panel" type="hidden" value="settings">
                                 <input name="name" required type="text" value="{{ category.name }}">
                                 <button type="submit">Save</button>
                                 <button class="btn-danger" formaction="/income-categories/{{ category.id }}/delete" formmethod="post" type="submit">Delete</button>
@@ -181,6 +237,8 @@
 
                     <h2>Add Account</h2>
                     <form action="/accounts/add" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <input name="next_panel" type="hidden" value="settings">
                         <input name="name" placeholder="Account name" required>
                         <input min="0" name="opening_balance" placeholder="Opening balance" required step="0.01" type="number">
                         <button type="submit">Add Account</button>
@@ -190,6 +248,8 @@
                     <div class="list-stack">
                         {% for account in accounts %}
                             <form action="/accounts/{{ account.id }}/edit" class="inline-form" method="post">
+                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                <input name="next_panel" type="hidden" value="settings">
                                 <input name="name" required type="text" value="{{ account.name }}">
                                 <input min="0" name="opening_balance" required step="0.01" type="number" value="{{ account.opening_balance }}">
                                 <button type="submit">Save</button>
@@ -203,10 +263,10 @@
             </div>
 
             <aside class="side-menu">
-                <button class="menu-item active" data-target="panel-expenses" type="button">Expenses</button>
-                <button class="menu-item" data-target="panel-income" type="button">Income</button>
-                <button class="menu-item" data-target="panel-summary" type="button">Consolidated</button>
-                <button class="menu-item" data-target="panel-settings" type="button">Settings</button>
+                <button class="menu-item {% if active_panel == 'expenses' %}active{% endif %}" data-target="panel-expenses" type="button">Expenses</button>
+                <button class="menu-item {% if active_panel == 'income' %}active{% endif %}" data-target="panel-income" type="button">Income</button>
+                <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">Consolidated</button>
+                <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">Settings</button>
             </aside>
         </div>
     </main>
@@ -221,15 +281,16 @@
             const theme = savedTheme || (prefersDark ? "dark" : "light");
 
             root.setAttribute("data-theme", theme);
-            button.textContent = theme === "dark" ? "Light Mode" : "Dark Mode";
-
-            button.addEventListener("click", function () {
-                const current = root.getAttribute("data-theme") || "dark";
-                const next = current === "dark" ? "light" : "dark";
-                root.setAttribute("data-theme", next);
-                localStorage.setItem("theme", next);
-                button.textContent = next === "dark" ? "Light Mode" : "Dark Mode";
-            });
+            if (button) {
+                button.textContent = theme === "dark" ? "Light Mode" : "Dark Mode";
+                button.addEventListener("click", function () {
+                    const current = root.getAttribute("data-theme") || "dark";
+                    const next = current === "dark" ? "light" : "dark";
+                    root.setAttribute("data-theme", next);
+                    localStorage.setItem("theme", next);
+                    button.textContent = next === "dark" ? "Light Mode" : "Dark Mode";
+                });
+            }
 
             menuButtons.forEach(function (menuButton) {
                 menuButton.addEventListener("click", function () {
@@ -240,6 +301,26 @@
                     panels.forEach(function (panel) {
                         panel.classList.toggle("active", panel.id === target);
                     });
+
+                    const params = new URLSearchParams(window.location.search);
+                    const panelMap = {
+                        "panel-expenses": "expenses",
+                        "panel-income": "income",
+                        "panel-summary": "summary",
+                        "panel-settings": "settings"
+                    };
+                    const panelValue = panelMap[target];
+                    if (panelValue) {
+                        params.set("panel", panelValue);
+                    }
+                    const monthInput = document.getElementById("month-input");
+                    const fallbackMonth = "{{ month_filter }}";
+                    const monthValue = monthInput && monthInput.value ? monthInput.value : fallbackMonth;
+                    if (monthValue) {
+                        params.set("month", monthValue);
+                    }
+                    const nextUrl = `${window.location.pathname}?${params.toString()}`;
+                    window.history.replaceState({}, "", nextUrl);
                 });
             });
         })();

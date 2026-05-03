@@ -1,9 +1,26 @@
 from flask import Flask, redirect, render_template, request, url_for
 import sqlite3
 from datetime import datetime
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 DB_PATH = "database.db"
+ALLOWED_PANELS = {"expenses", "income", "summary", "settings"}
+
+
+def normalize_month(value):
+    raw = (value or "").strip()
+    if not raw:
+        return datetime.now().strftime("%Y-%m")
+    try:
+        year_str, month_str = raw.split("-", 1)
+        month_year = int(year_str)
+        month_num = int(month_str)
+        if month_num < 1 or month_num > 12:
+            raise ValueError
+        return f"{month_year:04d}-{month_num:02d}"
+    except ValueError:
+        return datetime.now().strftime("%Y-%m")
 
 
 def get_connection():
@@ -137,9 +154,54 @@ def init_db():
     conn.close()
 
 
+def resolve_active_panel():
+    panel = request.args.get("panel", "").strip()
+    if panel in ALLOWED_PANELS:
+        return panel
+
+    next_panel = request.form.get("next_panel", "").strip()
+    if next_panel in ALLOWED_PANELS:
+        return next_panel
+
+    referer = request.headers.get("Referer", "")
+    if referer:
+        path = urlparse(referer).path.rstrip("/") or "/"
+        mapping = {
+            "/categories/add": "settings",
+            "/expenses/add": "expenses",
+            "/income/add": "income",
+        }
+        if path in mapping:
+            return mapping[path]
+
+        for prefix, mapped in (
+            ("/categories/", "settings"),
+            ("/income-categories/", "settings"),
+            ("/accounts/", "settings"),
+            ("/expenses/", "expenses"),
+            ("/income/", "income"),
+        ):
+            if path.startswith(prefix):
+                return mapped
+
+    return "expenses"
+
+
+def redirect_home(panel=None):
+    target = panel if panel in ALLOWED_PANELS else resolve_active_panel()
+    month = normalize_month(request.form.get("month") or request.args.get("month"))
+    return redirect(url_for("index", panel=target, month=month))
+
+
 @app.route("/")
 def index():
     conn = get_connection()
+
+    active_panel = request.args.get("panel", "").strip()
+    if active_panel not in ALLOWED_PANELS:
+        active_panel = "expenses"
+
+    month_filter = normalize_month(request.args.get("month"))
 
     categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     income_categories = conn.execute("SELECT id, name FROM income_categories ORDER BY name").fetchall()
@@ -178,8 +240,46 @@ def index():
         """
     ).fetchall()
 
-    total_expenses = conn.execute("SELECT COALESCE(SUM(amount), 0) AS total FROM expenses").fetchone()["total"]
-    total_income = conn.execute("SELECT COALESCE(SUM(amount), 0) AS total FROM income_entries").fetchone()["total"]
+    total_expenses = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM expenses
+        WHERE strftime('%Y-%m', spent_at) = ?
+        """,
+        (month_filter,),
+    ).fetchone()["total"]
+    total_income = conn.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM income_entries
+        WHERE strftime('%Y-%m', received_at) = ?
+        """,
+        (month_filter,),
+    ).fetchone()["total"]
+
+    expense_breakdown = conn.execute(
+        """
+        SELECT c.name AS category_name, SUM(e.amount) AS total_amount
+        FROM expenses e
+        JOIN categories c ON c.id = e.category_id
+        WHERE strftime('%Y-%m', e.spent_at) = ?
+        GROUP BY c.name
+        ORDER BY total_amount DESC
+        """,
+        (month_filter,),
+    ).fetchall()
+
+    income_breakdown = conn.execute(
+        """
+        SELECT c.name AS category_name, SUM(i.amount) AS total_amount
+        FROM income_entries i
+        JOIN income_categories c ON c.id = i.category_id
+        WHERE strftime('%Y-%m', i.received_at) = ?
+        GROUP BY c.name
+        ORDER BY total_amount DESC
+        """,
+        (month_filter,),
+    ).fetchall()
 
     account_balances = conn.execute(
         """
@@ -213,9 +313,13 @@ def index():
         expenses=expenses,
         accounts=accounts,
         income_entries=income_entries,
+        active_panel=active_panel,
+        month_filter=month_filter,
         total_expenses=total_expenses,
         total_income=total_income,
         net_balance=total_income - total_expenses,
+        expense_breakdown=expense_breakdown,
+        income_breakdown=income_breakdown,
         account_balances=account_balances,
     )
 
@@ -228,7 +332,7 @@ def add_category():
         conn.execute("INSERT OR IGNORE INTO categories(name) VALUES (?)", (name,))
         conn.commit()
         conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/categories/<int:category_id>/edit", methods=["POST"])
@@ -239,7 +343,7 @@ def edit_category(category_id):
         conn.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
         conn.commit()
         conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/categories/<int:category_id>/delete", methods=["POST"])
@@ -250,7 +354,7 @@ def delete_category(category_id):
     conn.close()
     if cursor.rowcount == 0:
         print(f"[budget-app] refused category delete {category_id} (still referenced or missing)")
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/income-categories/add", methods=["POST"])
@@ -261,7 +365,7 @@ def add_income_category():
         conn.execute("INSERT OR IGNORE INTO income_categories(name) VALUES (?)", (name,))
         conn.commit()
         conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/income-categories/<int:category_id>/edit", methods=["POST"])
@@ -272,7 +376,7 @@ def edit_income_category(category_id):
         conn.execute("UPDATE income_categories SET name = ? WHERE id = ?", (name, category_id))
         conn.commit()
         conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/income-categories/<int:category_id>/delete", methods=["POST"])
@@ -283,7 +387,7 @@ def delete_income_category(category_id):
     conn.close()
     if cursor.rowcount == 0:
         print(f"[budget-app] refused income category delete {category_id} (still referenced or missing)")
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/expenses/add", methods=["POST"])
@@ -294,7 +398,7 @@ def add_expense():
     account_id = request.form.get("account_id", "").strip()
 
     if category_id and account_id:
-        spent_at = datetime.utcnow().isoformat(timespec="seconds")
+        spent_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
         conn = get_connection()
         conn.execute(
             "INSERT INTO expenses (notes, amount, category_id, account_id, spent_at) VALUES (?, ?, ?, ?, ?)",
@@ -303,7 +407,7 @@ def add_expense():
         conn.commit()
         conn.close()
 
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/expenses/<int:expense_id>/delete", methods=["POST"])
@@ -312,7 +416,7 @@ def delete_expense(expense_id):
     conn.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
     conn.commit()
     conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/accounts/add", methods=["POST"])
@@ -327,7 +431,7 @@ def add_account():
         )
         conn.commit()
         conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/accounts/<int:account_id>/delete", methods=["POST"])
@@ -338,7 +442,7 @@ def delete_account(account_id):
     conn.close()
     if cursor.rowcount == 0:
         print(f"[budget-app] refused account delete {account_id} (still referenced or missing)")
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/accounts/<int:account_id>/edit", methods=["POST"])
@@ -353,7 +457,7 @@ def edit_account(account_id):
         )
         conn.commit()
         conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/income/<int:income_id>/delete", methods=["POST"])
@@ -362,7 +466,7 @@ def delete_income(income_id):
     conn.execute("DELETE FROM income_entries WHERE id = ?", (income_id,))
     conn.commit()
     conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 @app.route("/income/add", methods=["POST"])
@@ -373,7 +477,7 @@ def add_income():
     category_id = request.form.get("category_id", "").strip()
 
     if category_id and account_id:
-        received_at = datetime.utcnow().isoformat(timespec="seconds")
+        received_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
         conn = get_connection()
         conn.execute(
             "INSERT INTO income_entries (notes, amount, category_id, account_id, received_at) VALUES (?, ?, ?, ?, ?)",
@@ -381,7 +485,7 @@ def add_income():
         )
         conn.commit()
         conn.close()
-    return redirect(url_for("index"))
+    return redirect_home()
 
 
 init_db()
