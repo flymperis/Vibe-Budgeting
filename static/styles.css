@@ -1,8 +1,8 @@
 body {
     font-family: Arial, sans-serif;
     margin: 0;
-    background: #f6f7fb;
-    color: #222;
+    background: #0f0b1b;
+    color: #ebe7ff;
 }
 
 .container {
@@ -29,32 +29,36 @@ form {
 input, select, button {
     padding: 0.55rem 0.7rem;
     border-radius: 8px;
-    border: 1px solid #d2d6e2;
+    border: 1px solid #3a2b67;
+    background: #1c1430;
+    color: #f2edff;
 }
 
 button {
-    background: #1f6feb;
+    background: #8b5cf6;
     color: #fff;
     border: 0;
     cursor: pointer;
+    font-weight: 600;
 }
 
 button:hover {
-    background: #185bcc;
+    background: #7c3aed;
 }
 
 table {
     width: 100%;
     border-collapse: collapse;
-    background: white;
+    background: #171127;
     border-radius: 10px;
     overflow: hidden;
+    border: 1px solid #2b2148;
 }
 
 th, td {
     text-align: left;
     padding: 0.7rem;
-    border-bottom: 1px solid #eceef5;
+    border-bottom: 1px solid #2b2148;
 }
 
 .tabs {
@@ -68,27 +72,28 @@ th, td {
 }
 
 .tabs label {
-    background: #dbe5ff;
+    background: #22183b;
     padding: 0.7rem;
     text-align: center;
     border-radius: 8px 8px 0 0;
     font-weight: 600;
     cursor: pointer;
+    color: #cbbdff;
 }
 
 .tabs .tab-content {
     display: none;
     grid-column: 1 / -1;
-    background: white;
+    background: #141022;
     padding: 1rem;
     border-radius: 0 0 10px 10px;
-    border: 1px solid #dbe0ef;
+    border: 1px solid #2b2148;
 }
 
 #tab-expenses:checked ~ label[for="tab-expenses"],
 #tab-income:checked ~ label[for="tab-income"],
 #tab-summary:checked ~ label[for="tab-summary"] {
-    background: #1f6feb;
+    background: #8b5cf6;
     color: #fff;
 }
 
@@ -105,17 +110,40 @@ th, td {
 }
 
 .card {
-    background: #f4f7ff;
-    border: 1px solid #dae4ff;
+    background: #1a1230;
+    border: 1px solid #3a2b67;
     border-radius: 8px;
     padding: 0.8rem;
 }
 
 .card p {
     margin: 0;
-    color: #4f5c7a;
+    color: #b8a8ef;
 }
 
 .card strong {
     font-size: 1.2rem;
+    color: #ede9fe;
+}
+
+.inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.inline-form input[type="text"] {
+    min-width: 220px;
+    flex: 1 1 220px;
+}
+
+.list-stack {
+    display: grid;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.muted {
+    color: #9d90cb;
 }

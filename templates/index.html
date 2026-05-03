@@ -27,6 +27,18 @@
                     <button type="submit">Add Category</button>
                 </form>
 
+                <h2>Edit Categories</h2>
+                <div class="list-stack">
+                    {% for category in categories %}
+                        <form action="/categories/{{ category.id }}/edit" class="inline-form" method="post">
+                            <input name="name" required type="text" value="{{ category.name }}">
+                            <button type="submit">Save</button>
+                        </form>
+                    {% else %}
+                        <p class="muted">No categories yet.</p>
+                    {% endfor %}
+                </div>
+
                 <h2>Add Expense</h2>
                 <form action="/expenses/add" method="post">
                     <input name="item" placeholder="Expense item" required>
@@ -65,6 +77,19 @@
                     <input min="0" name="opening_balance" placeholder="Opening balance" required step="0.01" type="number">
                     <button type="submit">Add Account</button>
                 </form>
+
+                <h2>Edit Accounts</h2>
+                <div class="list-stack">
+                    {% for account in accounts %}
+                        <form action="/accounts/{{ account.id }}/edit" class="inline-form" method="post">
+                            <input name="name" required type="text" value="{{ account.name }}">
+                            <input min="0" name="opening_balance" required step="0.01" type="number" value="{{ account.opening_balance }}">
+                            <button type="submit">Save</button>
+                        </form>
+                    {% else %}
+                        <p class="muted">No accounts yet.</p>
+                    {% endfor %}
+                </div>
 
                 <h2>Add Income Entry</h2>
                 <form action="/income/add" method="post">

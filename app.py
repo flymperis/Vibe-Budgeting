@@ -118,6 +118,17 @@ def add_category():
     return redirect(url_for("index"))
 
 
+@app.route("/categories/<int:category_id>/edit", methods=["POST"])
+def edit_category(category_id):
+    name = request.form.get("name", "").strip()
+    if name:
+        conn = get_connection()
+        conn.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
+        conn.commit()
+        conn.close()
+    return redirect(url_for("index"))
+
+
 @app.route("/expenses/add", methods=["POST"])
 def add_expense():
     item = request.form.get("item", "").strip()
@@ -145,6 +156,21 @@ def add_account():
         conn.execute(
             "INSERT OR IGNORE INTO accounts(name, opening_balance) VALUES (?, ?)",
             (name, float(opening_balance)),
+        )
+        conn.commit()
+        conn.close()
+    return redirect(url_for("index"))
+
+
+@app.route("/accounts/<int:account_id>/edit", methods=["POST"])
+def edit_account(account_id):
+    name = request.form.get("name", "").strip()
+    opening_balance = request.form.get("opening_balance", "0").strip()
+    if name:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE accounts SET name = ?, opening_balance = ? WHERE id = ?",
+            (name, float(opening_balance), account_id),
         )
         conn.commit()
         conn.close()
