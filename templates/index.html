@@ -28,7 +28,7 @@
                     <h2 class="home-title">{{ month_heading }}</h2>
                     <p class="muted small-hint home-intro">
                         Income / Expenses / Net are for the selected month.
-                        Account balances are running totals (all time).
+                        {{ balance_scope_hint }}
                     </p>
                     <form action="/" class="month-picker home-month-picker" method="get">
                         <input name="panel" type="hidden" value="home">
@@ -53,23 +53,6 @@
                     </div>
 
                     <h3 class="home-balances-heading">Account balances</h3>
-                    <div class="home-balances-wrap">
-                        <table class="home-balances-table">
-                            <thead>
-                                <tr><th>Account</th><th>Balance</th></tr>
-                            </thead>
-                            <tbody>
-                                {% for account in account_balances %}
-                                    <tr>
-                                        <td>{{ account.name }}</td>
-                                        <td>{{ "%.2f"|format(account.current_balance) }}</td>
-                                    </tr>
-                                {% else %}
-                                    <tr><td colspan="2">No accounts yet.</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
 
                     <div class="home-quick-bar">
                         <button id="home-btn-expense" type="button" class="btn-home-quick btn-home-quick-expense" aria-expanded="false" aria-controls="home-drawer-expense">
@@ -126,6 +109,24 @@
                                 <button type="submit">Add income</button>
                             </form>
                         </div>
+                    </div>
+
+                    <div class="home-balances-wrap">
+                        <table class="home-balances-table">
+                            <thead>
+                                <tr><th>Account</th><th>Balance</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for account in account_balances %}
+                                    <tr>
+                                        <td>{{ account.name }}</td>
+                                        <td>{{ "%.2f"|format(account.current_balance) }}</td>
+                                    </tr>
+                                {% else %}
+                                    <tr><td colspan="2">No accounts yet.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
 
                     <p class="home-more-links muted">
@@ -409,9 +410,10 @@
                         </div>
                         <div class="card">
                             <p>Net Balance</p>
-                            <strong>{{ "%.2f"|format(net_balance) }}</strong>
+                            <strong>{{ "%.2f"|format(accounts_total_balance) }}</strong>
                         </div>
                     </div>
+                    <p class="muted small-hint consolidated-net-hint">Net Balance is the sum of the per-account balances (third column).</p>
 
                     <div class="consolidated-columns">
                         <div class="consolidated-column">
@@ -454,6 +456,7 @@
 
                         <div class="consolidated-column">
                             <h3 class="column-title">Balances</h3>
+                            <p class="muted column-scope-hint small-hint">{{ balance_scope_hint }}</p>
                             <table>
                                 <thead>
                                     <tr><th>Account</th><th>Balance</th></tr>

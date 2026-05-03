@@ -1056,6 +1056,21 @@ def index():
         (month_start_d, month_end_d),
     ).fetchall()
 
+    today_d = datetime.now().date()
+    sel_y, sel_m = int(year_str), int(month_str)
+    if (today_d.year, today_d.month) == (sel_y, sel_m):
+        balance_cutoff_d = (today_d + timedelta(days=1)).isoformat()
+        balance_scope_hint = (
+            "Account balances use opening balance plus movements through today "
+            "(only while this month is selected)."
+        )
+    else:
+        balance_cutoff_d = month_end_d
+        balance_scope_hint = (
+            f"Account balances are through the end of {month_heading} "
+            "(opening balance plus movements up to then)."
+        )
+
     account_balances = conn.execute(
         """
         SELECT
@@ -1068,16 +1083,20 @@ def index():
         LEFT JOIN (
             SELECT account_id, SUM(amount) AS total_income
             FROM income_entries
+            WHERE date(received_at) < date(?)
             GROUP BY account_id
         ) income_totals ON income_totals.account_id = a.id
         LEFT JOIN (
             SELECT account_id, SUM(amount) AS total_expenses
             FROM expenses
+            WHERE date(spent_at) < date(?)
             GROUP BY account_id
         ) expense_totals ON expense_totals.account_id = a.id
         ORDER BY a.name
-        """
+        """,
+        (balance_cutoff_d, balance_cutoff_d),
     ).fetchall()
+    accounts_total_balance = sum(float(r["current_balance"]) for r in account_balances)
 
     year_start_d = f"{year_filter:04d}-01-01"
     year_end_d = f"{year_filter + 1:04d}-01-01"
@@ -1144,6 +1163,7 @@ def index():
         total_expenses=total_expenses,
         total_income=total_income,
         net_balance=total_income - total_expenses,
+        accounts_total_balance=accounts_total_balance,
         expense_breakdown=expense_breakdown,
         income_breakdown=income_breakdown,
         account_balances=account_balances,
@@ -1161,6 +1181,7 @@ def index():
         expense_filter_month=expense_filter_month,
         income_filter_month=income_filter_month,
         month_heading=month_heading,
+        balance_scope_hint=balance_scope_hint,
     )
 
 
