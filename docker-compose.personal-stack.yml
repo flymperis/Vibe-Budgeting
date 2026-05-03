@@ -159,6 +159,11 @@ services:
 
   # --- VIBE BUDGETING (Flask / SQLite) ---
   # Φάκελος budget-data σε ΤΟΠΙΚΟ δίσκο αν γίνεται — όχι SMB-only path για τη SQLite.
+  # Στο Windows το build.context ως URL (https://github.com/...git#main) συχνά σκάει:
+  #   CreateFile ... https:: The filename ... syntax is incorrect
+  # Χρησιμοποίησε πάντα τοπικό clone:
+  #   git clone https://github.com/flymperis/Vibe-Budgeting.git ./Vibe-Budgeting
+  # Ενημέρωση: git -C ./Vibe-Budgeting pull && docker compose build --no-cache vibe-budgeting
   vibe-budgeting:
     build:
       context: ./Vibe-Budgeting
