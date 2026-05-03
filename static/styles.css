@@ -188,8 +188,9 @@ form {
     margin-bottom: 1rem;
 }
 
-.year-picker input[type="number"] {
-    max-width: 7rem;
+.year-picker input[type="number"],
+.year-picker select.year-shell-select {
+    max-width: 8rem;
 }
 
 .list-pagination {
@@ -226,6 +227,40 @@ form {
 .list-month-filter {
     align-items: center;
     margin-bottom: 1rem;
+}
+
+.cal-dropdown-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.65rem 1rem;
+}
+
+.cal-dropdown-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.shell-cal-picker .shell-cal-month {
+    min-width: 11rem;
+}
+
+.shell-cal-picker .shell-cal-year {
+    min-width: 5.75rem;
+}
+
+.list-cal-picker .list-cal-month {
+    min-width: 11rem;
+}
+
+.list-cal-picker .list-cal-year {
+    min-width: 5.75rem;
+}
+
+.year-shell-select {
+    min-width: 6.5rem;
 }
 
 .entries-table-wrap {
@@ -290,7 +325,8 @@ table.yearly-table {
     gap: 0.5rem;
 }
 
-#panel-yearly .year-picker input[type="number"] {
+#panel-yearly .year-picker input[type="number"],
+#panel-yearly .year-picker select.year-shell-select {
     min-width: 6rem;
 }
 
@@ -475,15 +511,21 @@ th, td {
 
 .consolidated-summary-cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 0.25rem;
 }
 
-.consolidated-net-hint {
-    margin: -0.35rem 0 0.85rem;
+.consolidated-net-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-height: 0;
 }
 
-.consolidated-column .column-scope-hint {
-    margin: -0.25rem 0 0.55rem;
-    font-size: 0.88rem;
+.consolidated-net-card .consolidated-net-card-hint {
+    margin: 0.55rem 0 0;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--muted);
 }
 
 .home-title {
@@ -610,6 +652,7 @@ th, td {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 1rem;
     align-items: start;
+    margin-top: 0.85rem;
 }
 
 .consolidated-column {
@@ -891,7 +934,14 @@ th, td {
         gap: 0.45rem;
     }
 
-    #panel-summary .month-picker input[type="month"],
+    #panel-summary .month-picker .cal-dropdown-row {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    #panel-summary .month-picker .shell-cal-month,
+    #panel-summary .month-picker .shell-cal-year,
     #panel-summary .month-picker button[type="submit"] {
         width: 100%;
         max-width: none;
@@ -949,7 +999,14 @@ th, td {
         gap: 0.45rem;
     }
 
-    #panel-home .month-picker.home-month-picker input[type="month"],
+    #panel-home .month-picker.home-month-picker .cal-dropdown-row {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    #panel-home .month-picker.home-month-picker .shell-cal-month,
+    #panel-home .month-picker.home-month-picker .shell-cal-year,
     #panel-home .month-picker.home-month-picker button[type="submit"] {
         width: 100%;
         max-width: none;
@@ -975,7 +1032,14 @@ th, td {
         gap: 0.45rem;
     }
 
-    .list-month-filter input[type="month"],
+    .list-month-filter .cal-dropdown-row {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+    }
+
+    .list-month-filter .list-cal-month,
+    .list-month-filter .list-cal-year,
     .list-month-filter button[type="submit"],
     .list-month-filter .btn-secondary {
         width: 100%;
@@ -1041,6 +1105,7 @@ th, td {
     }
 
     #panel-yearly .year-picker input[type="number"],
+    #panel-yearly .year-picker select.year-shell-select,
     #panel-yearly .year-picker button[type="submit"] {
         width: 100%;
         max-width: none;

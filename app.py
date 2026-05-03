@@ -63,6 +63,38 @@ def normalize_year(value):
         return datetime.now().year
 
 
+def resolve_month_filter_from_request():
+    """Primary UI month: ?month=YYYY-MM or ?cal_year=&cal_month= (from dropdowns)."""
+    raw = (request.args.get("month") or "").strip()
+    if raw:
+        return normalize_month(raw)
+    y_raw = (request.args.get("cal_year") or "").strip()
+    m_raw = (request.args.get("cal_month") or "").strip()
+    if y_raw and m_raw:
+        try:
+            y, m = int(y_raw), int(m_raw)
+            if 2000 <= y <= 2100 and 1 <= m <= 12:
+                return f"{y:04d}-{m:02d}"
+        except ValueError:
+            pass
+    return normalize_month("")
+
+
+def resolve_list_month_filter(legacy_key, year_key, month_key):
+    """Expense/income list month: legacy ?exp_month= or dropdown ?exp_cal_year=&exp_cal_month=."""
+    m_raw = (request.args.get(month_key) or "").strip()
+    if not m_raw:
+        return parse_optional_month(request.args.get(legacy_key))
+    y_raw = (request.args.get(year_key) or "").strip()
+    if not y_raw:
+        return parse_optional_month(request.args.get(legacy_key))
+    try:
+        formed = f"{int(y_raw):04d}-{int(m_raw):02d}"
+        return parse_optional_month(formed)
+    except ValueError:
+        return parse_optional_month(request.args.get(legacy_key))
+
+
 def parse_optional_month(value):
     """YYYY-MM for list filters, or None when absent / invalid."""
     raw = (value or "").strip()
@@ -923,7 +955,7 @@ def index():
         active_panel = "home"
         section_from_legacy = None
 
-    month_filter = normalize_month(request.args.get("month"))
+    month_filter = resolve_month_filter_from_request()
     year_filter = normalize_year(request.args.get("year"))
     year_str, month_str = month_filter.split("-", 1)
     month_start = datetime(int(year_str), int(month_str), 1)
@@ -939,7 +971,7 @@ def index():
     categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     income_categories = conn.execute("SELECT id, name FROM income_categories ORDER BY name").fetchall()
 
-    expense_filter_month = parse_optional_month(request.args.get("exp_month"))
+    expense_filter_month = resolve_list_month_filter("exp_month", "exp_cal_year", "exp_cal_month")
     expense_where = ""
     expense_where_params = []
     if expense_filter_month:
@@ -978,7 +1010,7 @@ def index():
 
     accounts = conn.execute("SELECT id, name, opening_balance FROM accounts ORDER BY name").fetchall()
 
-    income_filter_month = parse_optional_month(request.args.get("inc_month"))
+    income_filter_month = resolve_list_month_filter("inc_month", "inc_cal_year", "inc_cal_month")
     income_where = ""
     income_where_params = []
     if income_filter_month:
@@ -1182,6 +1214,7 @@ def index():
         income_filter_month=income_filter_month,
         month_heading=month_heading,
         balance_scope_hint=balance_scope_hint,
+        cal=calendar,
     )
 
 

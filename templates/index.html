@@ -7,6 +7,52 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
+    {% macro shell_month_year_row(ym, suffix, cal) -%}
+    {% set y = ym[0:4]|int %}
+    {% set m = ym[5:7]|int %}
+    <div class="cal-dropdown-row shell-cal-picker">
+        <div class="cal-dropdown-field">
+            <label class="month-label" for="shell-m-{{ suffix }}">Month</label>
+            <select id="shell-m-{{ suffix }}" name="cal_month" class="shell-cal-month" autocomplete="off">
+                {% for mi in range(1, 13) %}
+                    <option value="{{ mi }}" {% if mi == m %}selected{% endif %}>{{ cal.month_name[mi] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="cal-dropdown-field">
+            <label class="month-label" for="shell-y-{{ suffix }}">Year</label>
+            <select id="shell-y-{{ suffix }}" name="cal_year" class="shell-cal-year" autocomplete="off">
+                {% for yi in range(2000, 2101) %}
+                    <option value="{{ yi }}" {% if yi == y %}selected{% endif %}>{{ yi }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    {%- endmacro %}
+
+    {% macro list_filter_month_row(filter_ym, month_name, year_name, mid, yid, cal, shell_ym) -%}
+    <div class="cal-dropdown-row list-cal-picker">
+        <div class="cal-dropdown-field">
+            <label class="month-label" for="{{ mid }}">List month</label>
+            <select id="{{ mid }}" name="{{ month_name }}" class="list-cal-month" autocomplete="off">
+                <option value="">All months</option>
+                {% for mi in range(1, 13) %}
+                    <option value="{{ mi }}" {% if filter_ym and filter_ym[5:7]|int == mi %}selected{% endif %}>{{ cal.month_name[mi] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="cal-dropdown-field">
+            <label class="month-label" for="{{ yid }}">Year</label>
+            <select id="{{ yid }}" name="{{ year_name }}" class="list-cal-year" autocomplete="off">
+                <option value="">—</option>
+                {% for yi in range(2000, 2101) %}
+                    <option value="{{ yi }}" {% if filter_ym and filter_ym[0:4]|int == yi %}selected{% elif not filter_ym and shell_ym[0:4]|int == yi %}selected{% endif %}>{{ yi }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    {%- endmacro %}
+
     <main class="container">
         <div class="header-row">
             <h1>Vibe Budgeting</h1>
@@ -32,8 +78,7 @@
                     </p>
                     <form action="/" class="month-picker home-month-picker" method="get">
                         <input name="panel" type="hidden" value="home">
-                        <label class="month-label" for="home-month-input">Month</label>
-                        <input id="home-month-input" class="month-shell-sync" name="month" type="month" value="{{ month_filter }}">
+                        {{ shell_month_year_row(month_filter, 'home', cal) }}
                         <button type="submit">Apply</button>
                     </form>
 
@@ -167,8 +212,7 @@
                         <input name="panel" type="hidden" value="expenses">
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <input name="exp_page" type="hidden" value="1">
-                        <label class="month-label" for="exp-month-filter">List month</label>
-                        <input id="exp-month-filter" name="exp_month" type="month" value="{{ expense_filter_month or '' }}">
+                        {{ list_filter_month_row(expense_filter_month, 'exp_cal_month', 'exp_cal_year', 'exp-cal-month', 'exp-cal-year', cal, month_filter) }}
                         <button type="submit">Apply</button>
                         {% if expense_filter_month %}
                             <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter) }}">All months</a>
@@ -292,8 +336,7 @@
                         <input name="panel" type="hidden" value="income">
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <input name="inc_page" type="hidden" value="1">
-                        <label class="month-label" for="inc-month-filter">List month</label>
-                        <input id="inc-month-filter" name="inc_month" type="month" value="{{ income_filter_month or '' }}">
+                        {{ list_filter_month_row(income_filter_month, 'inc_cal_month', 'inc_cal_year', 'inc-cal-month', 'inc-cal-year', cal, month_filter) }}
                         <button type="submit">Apply</button>
                         {% if income_filter_month %}
                             <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter) }}">All months</a>
@@ -395,8 +438,7 @@
                         {% if active_panel == 'settings' %}
                             <input name="settings_section" type="hidden" value="{{ settings_section }}">
                         {% endif %}
-                        <label class="month-label" for="month-input">Month</label>
-                        <input id="month-input" class="month-shell-sync" name="month" type="month" value="{{ month_filter }}">
+                        {{ shell_month_year_row(month_filter, 'summary', cal) }}
                         <button type="submit">Apply</button>
                     </form>
                     <div class="stats consolidated-summary-cards">
@@ -408,12 +450,12 @@
                             <p>Total Expenses</p>
                             <strong>{{ "%.2f"|format(total_expenses) }}</strong>
                         </div>
-                        <div class="card">
+                        <div class="card consolidated-net-card">
                             <p>Net Balance</p>
                             <strong>{{ "%.2f"|format(accounts_total_balance) }}</strong>
+                            <p class="muted consolidated-net-card-hint">Sum of the per-account balances (Balances column).</p>
                         </div>
                     </div>
-                    <p class="muted small-hint consolidated-net-hint">Net Balance is the sum of the per-account balances (third column).</p>
 
                     <div class="consolidated-columns">
                         <div class="consolidated-column">
@@ -456,7 +498,6 @@
 
                         <div class="consolidated-column">
                             <h3 class="column-title">Balances</h3>
-                            <p class="muted column-scope-hint small-hint">{{ balance_scope_hint }}</p>
                             <table>
                                 <thead>
                                     <tr><th>Account</th><th>Balance</th></tr>
@@ -482,7 +523,11 @@
                         <input name="panel" type="hidden" value="yearly">
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <label class="month-label" for="yearly-year-input">Year</label>
-                        <input id="yearly-year-input" max="2100" min="2000" name="year" required type="number" value="{{ year_filter }}">
+                        <select id="yearly-year-input" class="year-shell-select" name="year" required autocomplete="off">
+                            {% for yi in range(2000, 2101) %}
+                                <option value="{{ yi }}" {% if yi == year_filter %}selected{% endif %}>{{ yi }}</option>
+                            {% endfor %}
+                        </select>
                         <button type="submit">Apply</button>
                     </form>
                     <div class="yearly-table-wrap">
@@ -711,13 +756,26 @@
 
             function readShellMonth() {
                 const fallbackMonth = "{{ month_filter }}";
-                const activeShell = document.querySelector(".panel.active .month-shell-sync[type='month']");
-                if (activeShell && activeShell.value) {
-                    return activeShell.value;
+                function ymFromPair(yearEl, monthEl) {
+                    if (!yearEl || !monthEl || !yearEl.value || !monthEl.value) {
+                        return "";
+                    }
+                    return `${yearEl.value}-${String(monthEl.value).padStart(2, "0")}`;
                 }
-                const anyShell = document.querySelector(".month-shell-sync[type='month']");
-                if (anyShell && anyShell.value) {
-                    return anyShell.value;
+                const activePanel = document.querySelector(".panel.active");
+                if (activePanel) {
+                    const y = activePanel.querySelector(".shell-cal-year");
+                    const m = activePanel.querySelector(".shell-cal-month");
+                    const pair = ymFromPair(y, m);
+                    if (pair) {
+                        return pair;
+                    }
+                }
+                const anyY = document.querySelector(".shell-cal-year");
+                const anyM = document.querySelector(".shell-cal-month");
+                const fallbackPair = ymFromPair(anyY, anyM);
+                if (fallbackPair) {
+                    return fallbackPair;
                 }
                 return fallbackMonth;
             }
@@ -750,10 +808,10 @@
                     params.delete("year");
                 }
                 if (panelKey === "expenses") {
-                    const expMonthEl = document.getElementById("exp-month-filter");
-                    const expMonthVal = expMonthEl && expMonthEl.value ? expMonthEl.value.trim() : "";
-                    if (expMonthVal) {
-                        params.set("exp_month", expMonthVal);
+                    const expM = document.getElementById("exp-cal-month");
+                    const expY = document.getElementById("exp-cal-year");
+                    if (expM && expY && expM.value && expY.value) {
+                        params.set("exp_month", `${expY.value}-${String(expM.value).padStart(2, "0")}`);
                     } else {
                         params.delete("exp_month");
                     }
@@ -762,10 +820,10 @@
                     params.delete("exp_page");
                 }
                 if (panelKey === "income") {
-                    const incMonthEl = document.getElementById("inc-month-filter");
-                    const incMonthVal = incMonthEl && incMonthEl.value ? incMonthEl.value.trim() : "";
-                    if (incMonthVal) {
-                        params.set("inc_month", incMonthVal);
+                    const incM = document.getElementById("inc-cal-month");
+                    const incY = document.getElementById("inc-cal-year");
+                    if (incM && incY && incM.value && incY.value) {
+                        params.set("inc_month", `${incY.value}-${String(incM.value).padStart(2, "0")}`);
                     } else {
                         params.delete("inc_month");
                     }
