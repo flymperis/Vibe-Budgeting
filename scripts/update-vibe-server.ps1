@@ -1,10 +1,11 @@
 # Replaces Vibe-Budgeting under $BaseDir from GitHub zip. Paths in $PreserveRelativePaths survive the folder wipe.
 param(
-    [string]$BaseDir = "C:\Users\fotis\Documents\Tailscale-Personal",
+    # Folder that contains docker-compose.yml and subfolder Vibe-Budgeting (default: current directory).
+    [string]$BaseDir = $(Get-Location).Path,
     [string]$RepoZipUrl = "https://github.com/flymperis/Vibe-Budgeting/archive/refs/heads/main.zip",
     [string]$CodeloadZipUrl = "https://codeload.github.com/flymperis/Vibe-Budgeting/zip/refs/heads/main",
-    # Must match the service name in your compose file (e.g. vibe-budgeting on personal stack; standalone repo sample uses budget-app)
-    [string]$ServiceName = "vibe-budgeting",
+    # Must match the service name in your compose file (root docker-compose.yml uses budget-app).
+    [string]$ServiceName = "budget-app",
     # Folder that contains docker-compose.yml AND the Vibe-Budgeting subfolder (defaults to $BaseDir)
     [string]$ComposeProjectDir = "",
     [int]$MaxAttempts = 5,

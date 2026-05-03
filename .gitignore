@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 *.pyd
 database.db
+budget-data/
 .env
 .venv/
 venv/

@@ -5,7 +5,7 @@ services:
     ports:
       - "5000:5000"
     environment:
-      # Folder mount avoids many \"unable to open database file\" issues vs binding a single db file (SMB/NFS).
+      # SQLite on a mounted folder survives container recreate (see README).
       - DATABASE_PATH=/app/data/database.db
     volumes:
       - ./budget-data:/app/data
