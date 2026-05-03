@@ -279,6 +279,7 @@
                         Download an empty workbook that matches the import layout (same sheet names and columns).
                         Fill rows or paste data from another export, then import below. Matching uses category and account names, not IDs.
                         Expense amounts may be positive or negative in the sheet; they are stored as negatives. Income amounts are stored positive.
+                        Category and account names used on movement rows are created automatically if missing (after applying the category and account sheets).
                     </p>
                     <p class="migration-actions">
                         <a class="btn-secondary" href="{{ url_for('export_migration_template') }}">Download migration template (.xlsx)</a>

@@ -487,6 +487,79 @@ def _lookup_id(conn, sql, name):
     return row["id"] if row else None
 
 
+def _collect_import_movements(expense_rows, income_rows):
+    errors = []
+    insert_expenses = []
+    for idx, row in enumerate(expense_rows, start=2):
+        notes_val = row.get("notes")
+        notes = "" if notes_val is None else str(notes_val)
+        try:
+            amount = _parse_excel_expense_amount(row.get("amount"), SHEET_EXPENSES, idx)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        cat_name = row.get("category_name")
+        acc_name = row.get("account_name")
+        if cat_name is None or not str(cat_name).strip():
+            errors.append(f"{SHEET_EXPENSES} row {idx}: missing category_name")
+            continue
+        if acc_name is None or not str(acc_name).strip():
+            errors.append(f"{SHEET_EXPENSES} row {idx}: missing account_name")
+            continue
+        cat_name = str(cat_name).strip()
+        acc_name = str(acc_name).strip()
+        try:
+            spent_at = _parse_excel_timestamp(row.get("spent_at"), SHEET_EXPENSES, idx, "spent_at")
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        created_at = None
+        try:
+            if row.get("created_at") not in (None, ""):
+                created_at = _optional_created_at(row.get("created_at"), SHEET_EXPENSES, idx)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        insert_expenses.append((notes, amount, cat_name, acc_name, spent_at, created_at))
+
+    insert_income = []
+    for idx, row in enumerate(income_rows, start=2):
+        notes_val = row.get("notes")
+        notes = "" if notes_val is None else str(notes_val)
+        try:
+            amount = _parse_excel_income_amount(row.get("amount"), SHEET_INCOME, idx)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        cat_name = row.get("category_name")
+        acc_name = row.get("account_name")
+        if cat_name is None or not str(cat_name).strip():
+            errors.append(f"{SHEET_INCOME} row {idx}: missing category_name")
+            continue
+        if acc_name is None or not str(acc_name).strip():
+            errors.append(f"{SHEET_INCOME} row {idx}: missing account_name")
+            continue
+        cat_name = str(cat_name).strip()
+        acc_name = str(acc_name).strip()
+        try:
+            received_at = _parse_excel_timestamp(
+                row.get("received_at"), SHEET_INCOME, idx, "received_at"
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        created_at = None
+        try:
+            if row.get("created_at") not in (None, ""):
+                created_at = _optional_created_at(row.get("created_at"), SHEET_INCOME, idx)
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        insert_income.append((notes, amount, cat_name, acc_name, received_at, created_at))
+
+    return insert_expenses, insert_income, errors
+
+
 def _run_import_workbook(wb, replace_movements, sync_opening_balances):
     errors = []
     required_sheets = {
@@ -505,6 +578,18 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
     income_cat_rows = _sheet_as_dicts(wb[SHEET_INCOME_CATEGORIES])
     expense_rows = _sheet_as_dicts(wb[SHEET_EXPENSES])
     income_rows = _sheet_as_dicts(wb[SHEET_INCOME])
+
+    insert_expenses, insert_income, parse_errors = _collect_import_movements(
+        expense_rows, income_rows
+    )
+    if parse_errors:
+        return parse_errors
+
+    expense_cats_from_movements = {row[2] for row in insert_expenses}
+    income_cats_from_movements = {row[2] for row in insert_income}
+    accounts_from_movements = {row[3] for row in insert_expenses} | {
+        row[3] for row in insert_income
+    }
 
     conn = get_connection()
     try:
@@ -535,101 +620,43 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
                     (opening_balance, name),
                 )
 
+        if errors:
+            conn.rollback()
+            return errors
+
         for idx, row in enumerate(expense_cat_rows, start=2):
             name = row.get("name")
             if name is None or not str(name).strip():
-                errors.append(f"{SHEET_EXPENSE_CATEGORIES} row {idx}: missing name")
                 continue
             conn.execute(
                 "INSERT OR IGNORE INTO categories(name) VALUES (?)",
                 (str(name).strip(),),
             )
 
+        for name in sorted(expense_cats_from_movements):
+            conn.execute("INSERT OR IGNORE INTO categories(name) VALUES (?)", (name,))
+
         for idx, row in enumerate(income_cat_rows, start=2):
             name = row.get("name")
             if name is None or not str(name).strip():
-                errors.append(f"{SHEET_INCOME_CATEGORIES} row {idx}: missing name")
                 continue
             conn.execute(
                 "INSERT OR IGNORE INTO income_categories(name) VALUES (?)",
                 (str(name).strip(),),
             )
 
+        for name in sorted(income_cats_from_movements):
+            conn.execute("INSERT OR IGNORE INTO income_categories(name) VALUES (?)", (name,))
+
+        for acc_name in sorted(accounts_from_movements):
+            conn.execute(
+                "INSERT OR IGNORE INTO accounts(name, opening_balance) VALUES (?, ?)",
+                (acc_name, 0.0),
+            )
+
         if replace_movements:
             conn.execute("DELETE FROM expenses")
             conn.execute("DELETE FROM income_entries")
-
-        insert_expenses = []
-        for idx, row in enumerate(expense_rows, start=2):
-            notes_val = row.get("notes")
-            notes = "" if notes_val is None else str(notes_val)
-            try:
-                amount = _parse_excel_expense_amount(row.get("amount"), SHEET_EXPENSES, idx)
-            except ValueError as exc:
-                errors.append(str(exc))
-                continue
-            cat_name = row.get("category_name")
-            acc_name = row.get("account_name")
-            if cat_name is None or not str(cat_name).strip():
-                errors.append(f"{SHEET_EXPENSES} row {idx}: missing category_name")
-                continue
-            if acc_name is None or not str(acc_name).strip():
-                errors.append(f"{SHEET_EXPENSES} row {idx}: missing account_name")
-                continue
-            cat_name = str(cat_name).strip()
-            acc_name = str(acc_name).strip()
-            try:
-                spent_at = _parse_excel_timestamp(row.get("spent_at"), SHEET_EXPENSES, idx, "spent_at")
-            except ValueError as exc:
-                errors.append(str(exc))
-                continue
-            created_at = None
-            try:
-                if row.get("created_at") not in (None, ""):
-                    created_at = _optional_created_at(row.get("created_at"), SHEET_EXPENSES, idx)
-            except ValueError as exc:
-                errors.append(str(exc))
-                continue
-            insert_expenses.append((notes, amount, cat_name, acc_name, spent_at, created_at))
-
-        insert_income = []
-        for idx, row in enumerate(income_rows, start=2):
-            notes_val = row.get("notes")
-            notes = "" if notes_val is None else str(notes_val)
-            try:
-                amount = _parse_excel_income_amount(row.get("amount"), SHEET_INCOME, idx)
-            except ValueError as exc:
-                errors.append(str(exc))
-                continue
-            cat_name = row.get("category_name")
-            acc_name = row.get("account_name")
-            if cat_name is None or not str(cat_name).strip():
-                errors.append(f"{SHEET_INCOME} row {idx}: missing category_name")
-                continue
-            if acc_name is None or not str(acc_name).strip():
-                errors.append(f"{SHEET_INCOME} row {idx}: missing account_name")
-                continue
-            cat_name = str(cat_name).strip()
-            acc_name = str(acc_name).strip()
-            try:
-                received_at = _parse_excel_timestamp(
-                    row.get("received_at"), SHEET_INCOME, idx, "received_at"
-                )
-            except ValueError as exc:
-                errors.append(str(exc))
-                continue
-            created_at = None
-            try:
-                if row.get("created_at") not in (None, ""):
-                    created_at = _optional_created_at(row.get("created_at"), SHEET_INCOME, idx)
-            except ValueError as exc:
-                errors.append(str(exc))
-                continue
-            insert_income.append((notes, amount, cat_name, acc_name, received_at, created_at))
-
-        if errors:
-            conn.rollback()
-            return errors
 
         for notes, amount, cat_name, acc_name, spent_at, created_at in insert_expenses:
             category_id = _lookup_id(conn, "SELECT id FROM categories WHERE name = ?", cat_name)
