@@ -467,6 +467,94 @@ th, td {
     color: var(--muted);
 }
 
+.flash-stack {
+    margin: 0 0 1rem;
+    display: grid;
+    gap: 0.45rem;
+}
+
+.flash {
+    margin: 0;
+    padding: 0.55rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 0.95rem;
+}
+
+.flash-success {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.45);
+    color: var(--text);
+}
+
+.flash-error {
+    background: rgba(220, 38, 38, 0.12);
+    border-color: rgba(220, 38, 38, 0.45);
+    color: var(--text);
+}
+
+:root[data-theme="dark"] .flash-success {
+    background: rgba(34, 197, 94, 0.15);
+}
+
+:root[data-theme="dark"] .flash-error {
+    background: rgba(220, 38, 38, 0.18);
+}
+
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.45rem 0.85rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--tab-text);
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.btn-secondary:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    background: var(--surface);
+}
+
+.migration-actions {
+    margin: 0 0 1rem;
+}
+
+.migration-import-form {
+    display: grid;
+    gap: 0.55rem;
+    max-width: 32rem;
+    margin-bottom: 1.25rem;
+}
+
+.file-upload-row {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.file-upload-label {
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+
+.checkbox-row {
+    display: flex;
+    gap: 0.45rem;
+    align-items: flex-start;
+    font-size: 0.92rem;
+    line-height: 1.35;
+}
+
+.checkbox-row input {
+    margin-top: 0.2rem;
+}
+
 @media (max-width: 900px) {
     .app-layout {
         grid-template-columns: 1fr;

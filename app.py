@@ -1,10 +1,23 @@
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, send_file, url_for
+import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from urllib.parse import urlparse
 
+from openpyxl import Workbook, load_workbook
+
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
 DB_PATH = "database.db"
+EXPORT_FORMAT_VERSION = 1
+
+SHEET_META = "_meta"
+SHEET_ACCOUNTS = "Accounts"
+SHEET_EXPENSE_CATEGORIES = "ExpenseCategories"
+SHEET_INCOME_CATEGORIES = "IncomeCategories"
+SHEET_EXPENSES = "Expenses"
+SHEET_INCOME = "Income"
 ALLOWED_PANELS = {"expenses", "income", "summary", "settings"}
 SETTINGS_SECTIONS = {"general", "expenses", "income"}
 
@@ -204,6 +217,7 @@ def resolve_active_panel():
             "/categories/add": "settings",
             "/expenses/add": "expenses",
             "/income/add": "income",
+            "/import/excel": "settings",
         }
         if path in mapping:
             return mapping[path]
@@ -235,6 +249,428 @@ def redirect_home(panel=None):
             settings_section=settings_section if target == "settings" else None,
         )
     )
+
+
+def _normalize_header_key(value):
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def _sheet_as_dicts(ws):
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+    headers_raw = [_normalize_header_key(cell) for cell in rows[0]]
+    headers = []
+    for raw in headers_raw:
+        headers.append(raw if raw else "")
+    out = []
+    for row in rows[1:]:
+        if row is None:
+            continue
+        cells = list(row)
+        if not cells:
+            continue
+        if all(cell is None or str(cell).strip() == "" for cell in cells):
+            continue
+        row_dict = {}
+        for idx, header in enumerate(headers):
+            if not header:
+                continue
+            row_dict[header] = cells[idx] if idx < len(cells) else None
+        out.append(row_dict)
+    return out
+
+
+def _parse_excel_amount(value, sheet, row_num):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise ValueError(f"{sheet} row {row_num}: missing amount")
+    try:
+        amount = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{sheet} row {row_num}: invalid amount") from exc
+    if amount < 0:
+        raise ValueError(f"{sheet} row {row_num}: amount cannot be negative")
+    return amount
+
+
+def _parse_excel_timestamp(value, sheet, row_num, column_label):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise ValueError(f"{sheet} row {row_num}: missing {column_label}")
+    if isinstance(value, datetime):
+        return value.replace(microsecond=0).isoformat(timespec="seconds")
+    text = str(value).strip()
+    try:
+        normalized = text.replace(" ", "T", 1)
+        if len(normalized) == 10:
+            normalized = f"{normalized}T00:00:00"
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                parsed = None
+        if parsed is None:
+            raise ValueError(f"{sheet} row {row_num}: invalid {column_label}")
+    return parsed.replace(microsecond=0).isoformat(timespec="seconds")
+
+
+def _optional_created_at(value, sheet, row_num):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    return _parse_excel_timestamp(value, sheet, row_num, "created_at")
+
+
+def _build_export_workbook(conn):
+    wb = Workbook()
+    ws_meta = wb.active
+    ws_meta.title = SHEET_META
+    ws_meta.append(["key", "value"])
+    ws_meta.append(["format_version", EXPORT_FORMAT_VERSION])
+    ws_meta.append(["exported_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")])
+
+    ws_accounts = wb.create_sheet(SHEET_ACCOUNTS)
+    ws_accounts.append(["name", "opening_balance"])
+    for row in conn.execute("SELECT name, opening_balance FROM accounts ORDER BY name"):
+        ws_accounts.append([row["name"], row["opening_balance"]])
+
+    ws_ec = wb.create_sheet(SHEET_EXPENSE_CATEGORIES)
+    ws_ec.append(["name"])
+    for row in conn.execute("SELECT name FROM categories ORDER BY name"):
+        ws_ec.append([row["name"]])
+
+    ws_ic = wb.create_sheet(SHEET_INCOME_CATEGORIES)
+    ws_ic.append(["name"])
+    for row in conn.execute("SELECT name FROM income_categories ORDER BY name"):
+        ws_ic.append([row["name"]])
+
+    ws_exp = wb.create_sheet(SHEET_EXPENSES)
+    ws_exp.append(["notes", "amount", "category_name", "account_name", "spent_at", "created_at"])
+    for row in conn.execute(
+        """
+        SELECT e.notes, e.amount, c.name AS category_name, a.name AS account_name, e.spent_at, e.created_at
+        FROM expenses e
+        JOIN categories c ON c.id = e.category_id
+        JOIN accounts a ON a.id = e.account_id
+        ORDER BY e.spent_at ASC, e.id ASC
+        """
+    ):
+        ws_exp.append(
+            [
+                row["notes"],
+                row["amount"],
+                row["category_name"],
+                row["account_name"],
+                row["spent_at"],
+                row["created_at"],
+            ]
+        )
+
+    ws_inc = wb.create_sheet(SHEET_INCOME)
+    ws_inc.append(["notes", "amount", "category_name", "account_name", "received_at", "created_at"])
+    for row in conn.execute(
+        """
+        SELECT i.notes, i.amount, c.name AS category_name, a.name AS account_name, i.received_at, i.created_at
+        FROM income_entries i
+        JOIN income_categories c ON c.id = i.category_id
+        JOIN accounts a ON a.id = i.account_id
+        ORDER BY i.received_at ASC, i.id ASC
+        """
+    ):
+        ws_inc.append(
+            [
+                row["notes"],
+                row["amount"],
+                row["category_name"],
+                row["account_name"],
+                row["received_at"],
+                row["created_at"],
+            ]
+        )
+
+    return wb
+
+
+def _lookup_id(conn, sql, name):
+    row = conn.execute(sql, (name.strip(),)).fetchone()
+    return row["id"] if row else None
+
+
+def _run_import_workbook(wb, replace_movements, sync_opening_balances):
+    errors = []
+    required_sheets = {
+        SHEET_ACCOUNTS,
+        SHEET_EXPENSE_CATEGORIES,
+        SHEET_INCOME_CATEGORIES,
+        SHEET_EXPENSES,
+        SHEET_INCOME,
+    }
+    missing = [name for name in required_sheets if name not in wb.sheetnames]
+    if missing:
+        return [f"Missing sheets: {', '.join(missing)}"]
+
+    accounts_rows = _sheet_as_dicts(wb[SHEET_ACCOUNTS])
+    expense_cat_rows = _sheet_as_dicts(wb[SHEET_EXPENSE_CATEGORIES])
+    income_cat_rows = _sheet_as_dicts(wb[SHEET_INCOME_CATEGORIES])
+    expense_rows = _sheet_as_dicts(wb[SHEET_EXPENSES])
+    income_rows = _sheet_as_dicts(wb[SHEET_INCOME])
+
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN")
+
+        for idx, row in enumerate(accounts_rows, start=2):
+            name = row.get("name")
+            if name is None or not str(name).strip():
+                errors.append(f"{SHEET_ACCOUNTS} row {idx}: missing name")
+                continue
+            name = str(name).strip()
+            opening_raw = row.get("opening_balance")
+            if opening_raw is None or str(opening_raw).strip() == "":
+                opening_balance = 0.0
+            else:
+                try:
+                    opening_balance = float(opening_raw)
+                except (TypeError, ValueError):
+                    errors.append(f"{SHEET_ACCOUNTS} row {idx}: invalid opening_balance")
+                    continue
+            conn.execute(
+                "INSERT OR IGNORE INTO accounts(name, opening_balance) VALUES (?, ?)",
+                (name, opening_balance),
+            )
+            if sync_opening_balances:
+                conn.execute(
+                    "UPDATE accounts SET opening_balance = ? WHERE name = ?",
+                    (opening_balance, name),
+                )
+
+        for idx, row in enumerate(expense_cat_rows, start=2):
+            name = row.get("name")
+            if name is None or not str(name).strip():
+                errors.append(f"{SHEET_EXPENSE_CATEGORIES} row {idx}: missing name")
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO categories(name) VALUES (?)",
+                (str(name).strip(),),
+            )
+
+        for idx, row in enumerate(income_cat_rows, start=2):
+            name = row.get("name")
+            if name is None or not str(name).strip():
+                errors.append(f"{SHEET_INCOME_CATEGORIES} row {idx}: missing name")
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO income_categories(name) VALUES (?)",
+                (str(name).strip(),),
+            )
+
+        if replace_movements:
+            conn.execute("DELETE FROM expenses")
+            conn.execute("DELETE FROM income_entries")
+
+        insert_expenses = []
+        for idx, row in enumerate(expense_rows, start=2):
+            notes_val = row.get("notes")
+            notes = "" if notes_val is None else str(notes_val)
+            try:
+                amount = _parse_excel_amount(row.get("amount"), SHEET_EXPENSES, idx)
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            cat_name = row.get("category_name")
+            acc_name = row.get("account_name")
+            if cat_name is None or not str(cat_name).strip():
+                errors.append(f"{SHEET_EXPENSES} row {idx}: missing category_name")
+                continue
+            if acc_name is None or not str(acc_name).strip():
+                errors.append(f"{SHEET_EXPENSES} row {idx}: missing account_name")
+                continue
+            cat_name = str(cat_name).strip()
+            acc_name = str(acc_name).strip()
+            try:
+                spent_at = _parse_excel_timestamp(row.get("spent_at"), SHEET_EXPENSES, idx, "spent_at")
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            created_at = None
+            try:
+                if row.get("created_at") not in (None, ""):
+                    created_at = _optional_created_at(row.get("created_at"), SHEET_EXPENSES, idx)
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            insert_expenses.append((notes, amount, cat_name, acc_name, spent_at, created_at))
+
+        insert_income = []
+        for idx, row in enumerate(income_rows, start=2):
+            notes_val = row.get("notes")
+            notes = "" if notes_val is None else str(notes_val)
+            try:
+                amount = _parse_excel_amount(row.get("amount"), SHEET_INCOME, idx)
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            cat_name = row.get("category_name")
+            acc_name = row.get("account_name")
+            if cat_name is None or not str(cat_name).strip():
+                errors.append(f"{SHEET_INCOME} row {idx}: missing category_name")
+                continue
+            if acc_name is None or not str(acc_name).strip():
+                errors.append(f"{SHEET_INCOME} row {idx}: missing account_name")
+                continue
+            cat_name = str(cat_name).strip()
+            acc_name = str(acc_name).strip()
+            try:
+                received_at = _parse_excel_timestamp(
+                    row.get("received_at"), SHEET_INCOME, idx, "received_at"
+                )
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            created_at = None
+            try:
+                if row.get("created_at") not in (None, ""):
+                    created_at = _optional_created_at(row.get("created_at"), SHEET_INCOME, idx)
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            insert_income.append((notes, amount, cat_name, acc_name, received_at, created_at))
+
+        if errors:
+            conn.rollback()
+            return errors
+
+        for notes, amount, cat_name, acc_name, spent_at, created_at in insert_expenses:
+            category_id = _lookup_id(conn, "SELECT id FROM categories WHERE name = ?", cat_name)
+            account_id = _lookup_id(conn, "SELECT id FROM accounts WHERE name = ?", acc_name)
+            if category_id is None:
+                errors.append(f"{SHEET_EXPENSES}: unknown expense category {cat_name!r}")
+            if account_id is None:
+                errors.append(f"{SHEET_EXPENSES}: unknown account {acc_name!r}")
+
+        for notes, amount, cat_name, acc_name, received_at, created_at in insert_income:
+            category_id = _lookup_id(conn, "SELECT id FROM income_categories WHERE name = ?", cat_name)
+            account_id = _lookup_id(conn, "SELECT id FROM accounts WHERE name = ?", acc_name)
+            if category_id is None:
+                errors.append(f"{SHEET_INCOME}: unknown income category {cat_name!r}")
+            if account_id is None:
+                errors.append(f"{SHEET_INCOME}: unknown account {acc_name!r}")
+
+        if errors:
+            conn.rollback()
+            return errors
+
+        for notes, amount, cat_name, acc_name, spent_at, created_at in insert_expenses:
+            category_id = _lookup_id(conn, "SELECT id FROM categories WHERE name = ?", cat_name)
+            account_id = _lookup_id(conn, "SELECT id FROM accounts WHERE name = ?", acc_name)
+            if created_at:
+                conn.execute(
+                    """
+                    INSERT INTO expenses (notes, amount, category_id, account_id, spent_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (notes, amount, category_id, account_id, spent_at, created_at),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO expenses (notes, amount, category_id, account_id, spent_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (notes, amount, category_id, account_id, spent_at),
+                )
+
+        for notes, amount, cat_name, acc_name, received_at, created_at in insert_income:
+            category_id = _lookup_id(conn, "SELECT id FROM income_categories WHERE name = ?", cat_name)
+            account_id = _lookup_id(conn, "SELECT id FROM accounts WHERE name = ?", acc_name)
+            if created_at:
+                conn.execute(
+                    """
+                    INSERT INTO income_entries (notes, amount, category_id, account_id, received_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (notes, amount, category_id, account_id, received_at, created_at),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO income_entries (notes, amount, category_id, account_id, received_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (notes, amount, category_id, account_id, received_at),
+                )
+
+        conn.commit()
+        return []
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+@app.route("/export/excel")
+def export_excel():
+    conn = get_connection()
+    try:
+        wb = _build_export_workbook(conn)
+    finally:
+        conn.close()
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"budget-migration-{stamp}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        max_age=0,
+    )
+
+
+@app.route("/import/excel", methods=["POST"])
+def import_excel():
+    upload = request.files.get("file")
+    if not upload or upload.filename.strip() == "":
+        flash("Choose an Excel file (.xlsx).", "error")
+        return redirect_home(panel="settings")
+
+    replace_movements = request.form.get("replace_movements") == "1"
+    sync_opening_balances = request.form.get("sync_opening_balances") == "1"
+
+    raw = upload.read()
+    if not raw:
+        flash("The uploaded file is empty.", "error")
+        return redirect_home(panel="settings")
+
+    try:
+        workbook = load_workbook(BytesIO(raw), data_only=True)
+    except Exception as exc:
+        flash(f"Could not read the Excel file: {exc}", "error")
+        return redirect_home(panel="settings")
+
+    errors = _run_import_workbook(workbook, replace_movements, sync_opening_balances)
+    if errors:
+        preview = "; ".join(errors[:8])
+        extra = f" (+{len(errors) - 8} more)" if len(errors) > 8 else ""
+        flash(f"Import failed. {preview}{extra}", "error")
+        return redirect_home(panel="settings")
+
+    flash(
+        "Import completed. Accounts/categories from the file were merged (new names added)."
+        + (
+            " Existing expense and income rows were replaced by the file."
+            if replace_movements
+            else " Movement rows from the file were added (existing rows kept)."
+        ),
+        "success",
+    )
+    return redirect_home(panel="settings")
 
 
 @app.route("/")

@@ -12,6 +12,16 @@
             <h1>Budget App</h1>
         </div>
 
+        {% with flashes = get_flashed_messages(with_categories=true) %}
+            {% if flashes %}
+                <div class="flash-stack" role="status">
+                    {% for category, message in flashes %}
+                        <p class="flash flash-{{ category }}">{{ message }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
         <div class="app-layout">
             <div class="panel-shell">
                 <section class="panel {% if active_panel == 'expenses' %}active{% endif %}" id="panel-expenses">
@@ -269,6 +279,34 @@
                                         <span class="theme-switch-slider"></span>
                                     </label>
                                 </div>
+
+                                <h2>Excel backup &amp; migration</h2>
+                                <p class="muted small-hint">
+                                    Export includes accounts, categories, and every expense/income row (matched by name on import).
+                                    Use “Replace movements” on the target system to avoid duplicates when moving data once.
+                                </p>
+                                <p class="migration-actions">
+                                    <a class="btn-secondary" href="{{ url_for('export_excel') }}">Download Excel export</a>
+                                </p>
+                                <h3>Import from Excel</h3>
+                                <form action="{{ url_for('import_excel') }}" class="migration-import-form" enctype="multipart/form-data" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <input name="next_panel" type="hidden" value="settings">
+                                    <input name="settings_section" type="hidden" value="general">
+                                    <label class="file-upload-row">
+                                        <span class="file-upload-label">File (.xlsx)</span>
+                                        <input accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" name="file" required type="file">
+                                    </label>
+                                    <label class="checkbox-row">
+                                        <input name="replace_movements" type="checkbox" value="1">
+                                        Replace all movements (delete existing expenses &amp; income rows, then import sheet rows)
+                                    </label>
+                                    <label class="checkbox-row">
+                                        <input name="sync_opening_balances" type="checkbox" value="1">
+                                        Overwrite opening balances for accounts that already exist (from Accounts sheet)
+                                    </label>
+                                    <button type="submit">Import</button>
+                                </form>
 
                                 <h2>Accounts</h2>
                                 <p class="muted small-hint">Accounts are shared between expenses and income.</p>
