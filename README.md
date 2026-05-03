@@ -2,6 +2,16 @@
 
 Small Flask + SQLite budget tracker. Run with Docker or locally with Python.
 
+## Stack
+
+| Piece | Where |
+|-------|--------|
+| **Flask** (`Flask` in `requirements.txt`) | Web app (`app.py` → `app:app`). |
+| **Gunicorn** (`gunicorn` in `requirements.txt`) | Production HTTP server inside Docker (`Dockerfile` `CMD`: binds `:5000`, `--preload`, 2 workers). |
+| **SQLite** | Data via `DATABASE_PATH` (default `/app/data/database.db` in the image). |
+
+Locally, `python app.py` runs Flask’s built-in dev server (not Gunicorn).
+
 ## Quick start (Docker)
 
 From the repository root:
