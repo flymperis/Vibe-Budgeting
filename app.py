@@ -365,13 +365,14 @@ def _sheet_as_dicts(ws):
 
 
 def _parse_excel_expense_amount(value, sheet, row_num):
+    """Excel import: sign is kept. Negative = spending; positive = refund/credit (adds back to balance)."""
     if value is None or (isinstance(value, str) and not value.strip()):
         raise ValueError(f"{sheet} row {row_num}: missing amount")
     try:
         amount = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{sheet} row {row_num}: invalid amount") from exc
-    return -abs(amount)
+    return amount
 
 
 def _parse_excel_income_amount(value, sheet, row_num):
