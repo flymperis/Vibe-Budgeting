@@ -1,6 +1,6 @@
 from flask import Flask, redirect, render_template, request, url_for
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 app = Flask(__name__)
@@ -246,6 +246,12 @@ def index():
         active_panel = "expenses"
 
     month_filter = normalize_month(request.args.get("month"))
+    year_str, month_str = month_filter.split("-", 1)
+    month_start = datetime(int(year_str), int(month_str), 1)
+    month_end = month_start + timedelta(days=32)
+    month_end = month_end.replace(day=1)
+    month_start_iso = month_start.strftime("%Y-%m-%d %H:%M:%S")
+    month_end_iso = month_end.strftime("%Y-%m-%d %H:%M:%S")
     settings_section = normalize_settings_section(request.args.get("settings_section"))
 
     categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
@@ -293,17 +299,17 @@ def index():
         """
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM expenses
-        WHERE strftime('%Y-%m', spent_at) = ?
+        WHERE spent_at >= ? AND spent_at < ?
         """,
-        (month_filter,),
+        (month_start_iso, month_end_iso),
     ).fetchone()["total"]
     total_income = conn.execute(
         """
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM income_entries
-        WHERE strftime('%Y-%m', received_at) = ?
+        WHERE received_at >= ? AND received_at < ?
         """,
-        (month_filter,),
+        (month_start_iso, month_end_iso),
     ).fetchone()["total"]
 
     expense_breakdown = conn.execute(
@@ -311,11 +317,11 @@ def index():
         SELECT c.name AS category_name, SUM(e.amount) AS total_amount
         FROM expenses e
         JOIN categories c ON c.id = e.category_id
-        WHERE strftime('%Y-%m', e.spent_at) = ?
+        WHERE e.spent_at >= ? AND e.spent_at < ?
         GROUP BY c.name
         ORDER BY total_amount DESC
         """,
-        (month_filter,),
+        (month_start_iso, month_end_iso),
     ).fetchall()
 
     income_breakdown = conn.execute(
@@ -323,11 +329,11 @@ def index():
         SELECT c.name AS category_name, SUM(i.amount) AS total_amount
         FROM income_entries i
         JOIN income_categories c ON c.id = i.category_id
-        WHERE strftime('%Y-%m', i.received_at) = ?
+        WHERE i.received_at >= ? AND i.received_at < ?
         GROUP BY c.name
         ORDER BY total_amount DESC
         """,
-        (month_filter,),
+        (month_start_iso, month_end_iso),
     ).fetchall()
 
     account_balances = conn.execute(
