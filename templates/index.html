@@ -55,7 +55,23 @@
 
     <main class="container">
         <div class="header-row">
-            <h1>Vibe Budgeting</h1>
+            <div class="brand-lockup">
+                <svg class="app-logo" viewBox="0 0 118 58" aria-hidden="true" focusable="false">
+                    <defs>
+                        <linearGradient id="vb-logo-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="var(--accent-hover)"/>
+                            <stop offset="55%" stop-color="var(--accent)"/>
+                            <stop offset="100%" stop-color="var(--tab-text)"/>
+                        </linearGradient>
+                    </defs>
+                    <g transform="translate(2 2) rotate(-5 54 26)">
+                        <text class="app-logo-text" x="0" y="40" fill="url(#vb-logo-grad)">VB</text>
+                        <path class="app-logo-squiggle" d="M 2 46 Q 26 54 52 44 Q 76 36 102 46" fill="none" stroke-width="2.25" stroke-linecap="round"/>
+                        <circle class="app-logo-dot" cx="98" cy="10" r="4"/>
+                    </g>
+                </svg>
+                <h1 class="brand-title">Vibe Budgeting</h1>
+            </div>
         </div>
 
         {% with flashes = get_flashed_messages(with_categories=true) %}
