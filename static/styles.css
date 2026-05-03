@@ -320,13 +320,15 @@ table.yearly-table {
     color: #f87171;
 }
 
-#panel-yearly .year-picker {
+#panel-yearly .year-picker,
+#panel-reports .reports-year-picker {
     flex-wrap: wrap;
     gap: 0.5rem;
 }
 
 #panel-yearly .year-picker input[type="number"],
-#panel-yearly .year-picker select.year-shell-select {
+#panel-yearly .year-picker select.year-shell-select,
+#panel-reports .reports-year-picker select.year-shell-select {
     min-width: 6rem;
 }
 
@@ -381,12 +383,38 @@ table.yearly-table {
     white-space: normal;
 }
 
+.menu-item-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.menu-item-icon {
+    flex-shrink: 0;
+    width: 1.15rem;
+    height: 1.15rem;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.menu-item-text {
+    flex: 1;
+    min-width: 0;
+}
+
 .menu-item.active {
     background: var(--accent);
     color: #fff;
 }
 
 .side-menu button.menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
     padding: 0.45rem 0.55rem;
     font-size: 0.88rem;
     font-weight: 600;
@@ -1161,24 +1189,33 @@ th, td {
         grid-template-columns: 1fr;
     }
 
-    #panel-yearly .year-picker {
+    #panel-yearly .year-picker,
+    #panel-reports .reports-year-picker {
         flex-direction: column;
         align-items: stretch;
     }
 
-    #panel-yearly .year-picker .month-label {
+    #panel-yearly .year-picker .month-label,
+    #panel-reports .reports-year-picker .month-label {
         margin-bottom: -0.2rem;
     }
 
     #panel-yearly .year-picker input[type="number"],
     #panel-yearly .year-picker select.year-shell-select,
-    #panel-yearly .year-picker button[type="submit"] {
+    #panel-yearly .year-picker button[type="submit"],
+    #panel-reports .reports-year-picker select.year-shell-select,
+    #panel-reports .reports-year-picker button[type="submit"] {
         width: 100%;
         max-width: none;
         box-sizing: border-box;
     }
 
     .yearly-table-wrap {
+        margin-inline: -0.15rem;
+        padding-bottom: 0.35rem;
+    }
+
+    .reports-balance-wrap {
         margin-inline: -0.15rem;
         padding-bottom: 0.35rem;
     }

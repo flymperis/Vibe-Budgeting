@@ -21,7 +21,7 @@ SHEET_EXPENSE_CATEGORIES = "ExpenseCategories"
 SHEET_INCOME_CATEGORIES = "IncomeCategories"
 SHEET_EXPENSES = "Expenses"
 SHEET_INCOME = "Income"
-ALLOWED_PANELS = {"home", "expenses", "income", "transfer", "summary", "yearly", "settings"}
+ALLOWED_PANELS = {"home", "expenses", "income", "transfer", "summary", "yearly", "reports", "settings"}
 SETTINGS_SECTIONS = {"general", "expenses", "income", "export", "migration"}
 
 
@@ -185,6 +185,49 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def fetch_account_balances_through(conn, balance_cutoff_d):
+    """Per-account balance with income, expenses, and transfers strictly before balance_cutoff_d (YYYY-MM-DD)."""
+    return conn.execute(
+        """
+        SELECT
+            a.id,
+            a.name,
+            a.opening_balance
+                + COALESCE(income_totals.total_income, 0)
+                + COALESCE(expense_totals.total_expenses, 0)
+                + COALESCE(transfer_in.t_in, 0)
+                - COALESCE(transfer_out.t_out, 0) AS current_balance
+        FROM accounts a
+        LEFT JOIN (
+            SELECT account_id, SUM(amount) AS total_income
+            FROM income_entries
+            WHERE date(received_at) < date(?)
+            GROUP BY account_id
+        ) income_totals ON income_totals.account_id = a.id
+        LEFT JOIN (
+            SELECT account_id, SUM(amount) AS total_expenses
+            FROM expenses
+            WHERE date(spent_at) < date(?)
+            GROUP BY account_id
+        ) expense_totals ON expense_totals.account_id = a.id
+        LEFT JOIN (
+            SELECT to_account_id AS account_id, SUM(amount) AS t_in
+            FROM account_transfers
+            WHERE date(transferred_at) < date(?)
+            GROUP BY to_account_id
+        ) transfer_in ON transfer_in.account_id = a.id
+        LEFT JOIN (
+            SELECT from_account_id AS account_id, SUM(amount) AS t_out
+            FROM account_transfers
+            WHERE date(transferred_at) < date(?)
+            GROUP BY from_account_id
+        ) transfer_out ON transfer_out.account_id = a.id
+        ORDER BY a.name
+        """,
+        (balance_cutoff_d, balance_cutoff_d, balance_cutoff_d, balance_cutoff_d),
+    ).fetchall()
 
 
 def _column_names(conn, table):
@@ -433,6 +476,11 @@ def redirect_home(panel=None, settings_section=None):
         query["settings_section"] = sec
     if target == "yearly":
         query["year"] = year_for_redirect
+    report_year_redirect = normalize_year(
+        request.form.get("report_year") or request.args.get("report_year")
+    )
+    if target == "reports":
+        query["report_year"] = report_year_redirect
     exp_pg = normalize_list_page(request.form.get("exp_page") or request.args.get("exp_page") or 1)
     inc_pg = normalize_list_page(request.form.get("inc_page") or request.args.get("inc_page") or 1)
     if target == "expenses" and exp_pg > 1:
@@ -979,6 +1027,7 @@ def index():
 
     month_filter = resolve_month_filter_from_request()
     year_filter = normalize_year(request.args.get("year"))
+    report_year = normalize_year(request.args.get("report_year"))
     year_str, month_str = month_filter.split("-", 1)
     month_start = datetime(int(year_str), int(month_str), 1)
     month_end = month_start + timedelta(days=32)
@@ -1125,45 +1174,7 @@ def index():
             "(opening balance plus movements up to then)."
         )
 
-    account_balances = conn.execute(
-        """
-        SELECT
-            a.id,
-            a.name,
-            a.opening_balance
-                + COALESCE(income_totals.total_income, 0)
-                + COALESCE(expense_totals.total_expenses, 0)
-                + COALESCE(transfer_in.t_in, 0)
-                - COALESCE(transfer_out.t_out, 0) AS current_balance
-        FROM accounts a
-        LEFT JOIN (
-            SELECT account_id, SUM(amount) AS total_income
-            FROM income_entries
-            WHERE date(received_at) < date(?)
-            GROUP BY account_id
-        ) income_totals ON income_totals.account_id = a.id
-        LEFT JOIN (
-            SELECT account_id, SUM(amount) AS total_expenses
-            FROM expenses
-            WHERE date(spent_at) < date(?)
-            GROUP BY account_id
-        ) expense_totals ON expense_totals.account_id = a.id
-        LEFT JOIN (
-            SELECT to_account_id AS account_id, SUM(amount) AS t_in
-            FROM account_transfers
-            WHERE date(transferred_at) < date(?)
-            GROUP BY to_account_id
-        ) transfer_in ON transfer_in.account_id = a.id
-        LEFT JOIN (
-            SELECT from_account_id AS account_id, SUM(amount) AS t_out
-            FROM account_transfers
-            WHERE date(transferred_at) < date(?)
-            GROUP BY from_account_id
-        ) transfer_out ON transfer_out.account_id = a.id
-        ORDER BY a.name
-        """,
-        (balance_cutoff_d, balance_cutoff_d, balance_cutoff_d, balance_cutoff_d),
-    ).fetchall()
+    account_balances = fetch_account_balances_through(conn, balance_cutoff_d)
     account_transfers = conn.execute(
         """
         SELECT
@@ -1232,6 +1243,34 @@ def index():
     yearly_total_delta = yearly_total_income - yearly_total_expenses
     transfer_default_date = datetime.now().date().isoformat()
 
+    jan1_this_year = f"{report_year:04d}-01-01"
+    rows_before_jan = fetch_account_balances_through(conn, jan1_this_year)
+    prev_balance_total = sum(float(r["current_balance"]) for r in rows_before_jan)
+    report_balance_rows = []
+    for month_num in range(1, 13):
+        month_start = datetime(report_year, month_num, 1)
+        month_end_exclusive = month_start + timedelta(days=32)
+        month_end_exclusive = month_end_exclusive.replace(day=1)
+        month_end_cutoff = month_end_exclusive.strftime("%Y-%m-%d")
+
+        if report_year == today_d.year and month_num == today_d.month:
+            snap_cutoff = (today_d + timedelta(days=1)).isoformat()
+        else:
+            snap_cutoff = month_end_cutoff
+
+        rows_m = fetch_account_balances_through(conn, snap_cutoff)
+        total_bal = sum(float(r["current_balance"]) for r in rows_m)
+        change = total_bal - prev_balance_total
+        prev_balance_total = total_bal
+        report_balance_rows.append(
+            {
+                "month_label": calendar.month_name[month_num],
+                "month_num": month_num,
+                "total_balance": total_bal,
+                "change": change,
+            }
+        )
+
     conn.close()
 
     return render_template(
@@ -1270,6 +1309,8 @@ def index():
         balance_scope_hint=balance_scope_hint,
         cal=calendar,
         transfer_default_date=transfer_default_date,
+        report_year=report_year,
+        report_balance_rows=report_balance_rows,
     )
 
 

@@ -432,7 +432,7 @@
                 </section>
 
                 <section class="panel {% if active_panel == 'transfer' %}active{% endif %}" id="panel-transfer">
-                    <h2>Balance transfer</h2>
+                    <h2>Bank Transfer</h2>
                     <p class="muted small-hint">Move money between your accounts (e.g. Piraeus → AlphaBank). Balances update from the transfer date.</p>
                     {% if accounts %}
                         <form action="{{ url_for('add_transfer') }}" class="panel-add-form transfer-add-form" method="post">
@@ -622,6 +622,45 @@
                     </div>
                 </section>
 
+                <section class="panel {% if active_panel == 'reports' %}active{% endif %}" id="panel-reports">
+                    <h2>Reports</h2>
+                    <p class="muted small-hint">
+                        Total bank balance = sum of all account balances. Each row is a snapshot after that month
+                        (for the current month in this year, through today). “Month Δ” is the change from the prior snapshot.
+                    </p>
+                    <form action="/" class="year-picker reports-year-picker" method="get">
+                        <input name="panel" type="hidden" value="reports">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <label class="month-label" for="reports-year-select">Year</label>
+                        <select id="reports-year-select" class="year-shell-select" name="report_year" required autocomplete="off">
+                            {% for yi in range(2000, 2101) %}
+                                <option value="{{ yi }}" {% if yi == report_year %}selected{% endif %}>{{ yi }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit">Apply</button>
+                    </form>
+                    <div class="yearly-table-wrap reports-balance-wrap">
+                        <table class="yearly-table reports-balance-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Month</th>
+                                    <th scope="col">Total balance</th>
+                                    <th scope="col">Month Δ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in report_balance_rows %}
+                                    <tr>
+                                        <th scope="row">{{ row.month_label }}</th>
+                                        <td>{{ "%.2f"|format(row.total_balance) }}</td>
+                                        <td class="{% if row.change > 0 %}delta-positive{% elif row.change < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ "%.2f"|format(row.change) }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
                 <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">
                     <div class="settings-layout">
                         <nav aria-label="Settings sections" class="settings-nav">
@@ -777,13 +816,54 @@
             </div>
 
             <aside class="side-menu">
-                <button class="menu-item {% if active_panel == 'home' %}active{% endif %}" data-target="panel-home" type="button">Home</button>
-                <button class="menu-item {% if active_panel == 'expenses' %}active{% endif %}" data-target="panel-expenses" type="button">Expenses</button>
-                <button class="menu-item {% if active_panel == 'income' %}active{% endif %}" data-target="panel-income" type="button">Income</button>
-                <button class="menu-item {% if active_panel == 'transfer' %}active{% endif %}" data-target="panel-transfer" type="button">Balance transfer</button>
-                <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">Consolidated</button>
-                <button class="menu-item {% if active_panel == 'yearly' %}active{% endif %}" data-target="panel-yearly" type="button">Yearly</button>
-                <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">Settings</button>
+                <button class="menu-item {% if active_panel == 'home' %}active{% endif %}" data-target="panel-home" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                        <span class="menu-item-text">Home</span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'expenses' %}active{% endif %}" data-target="panel-expenses" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><rect height="16" rx="2" width="22" x="1" y="4"/><line x1="1" x2="23" y1="10" y2="10"/></svg>
+                        <span class="menu-item-text">Expenses</span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'income' %}active{% endif %}" data-target="panel-income" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><line x1="12" x2="12" y1="19" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                        <span class="menu-item-text">Income</span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'transfer' %}active{% endif %}" data-target="panel-transfer" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><line x1="3" x2="21" y1="5" y2="5"/><polyline points="7 23 3 19 7 15"/><line x1="21" x2="3" y1="19" y2="19"/></svg>
+                        <span class="menu-item-text">Bank Transfer</span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="3"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                        <span class="menu-item-text">Consolidated</span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'yearly' %}active{% endif %}" data-target="panel-yearly" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="4"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+                        <span class="menu-item-text">Yearly</span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'reports' %}active{% endif %}" data-target="panel-reports" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+                        <span class="menu-item-text">Reports</span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                        <span class="menu-item-text">Settings</span>
+                    </span>
+                </button>
             </aside>
         </div>
     </main>
@@ -870,6 +950,16 @@
                 } else {
                     params.delete("year");
                 }
+                if (panelKey === "reports") {
+                    const reportsYear = document.getElementById("reports-year-select");
+                    const fallbackReportYear = "{{ report_year }}";
+                    const ry = reportsYear && reportsYear.value ? reportsYear.value : String(fallbackReportYear);
+                    if (ry) {
+                        params.set("report_year", ry);
+                    }
+                } else {
+                    params.delete("report_year");
+                }
                 if (panelKey === "expenses") {
                     const expM = document.getElementById("exp-cal-month");
                     const expY = document.getElementById("exp-cal-year");
@@ -928,6 +1018,7 @@
                         "panel-transfer": "transfer",
                         "panel-summary": "summary",
                         "panel-yearly": "yearly",
+                        "panel-reports": "reports",
                         "panel-settings": "settings"
                     };
                     const panelValue = panelMap[target];
