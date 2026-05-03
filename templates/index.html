@@ -26,10 +26,13 @@
             <div class="panel-shell">
                 <section class="panel {% if active_panel == 'expenses' %}active{% endif %}" id="panel-expenses">
                     <h2>Add Expense</h2>
-                    <form action="/expenses/add" method="post">
+                    <form action="/expenses/add" class="panel-add-form" method="post">
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <input name="exp_page" type="hidden" value="{{ expense_page }}">
                         <input name="next_panel" type="hidden" value="expenses">
+                        {% if expense_filter_month %}
+                            <input name="exp_month" type="hidden" value="{{ expense_filter_month }}">
+                        {% endif %}
                         <textarea name="notes" placeholder="Notes" rows="2"></textarea>
                         <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
                         <select name="category_id" required>
@@ -46,6 +49,18 @@
                     </form>
 
                     <h2>Expenses</h2>
+                    <form action="{{ url_for('index') }}" class="list-month-filter month-picker" method="get">
+                        <input name="panel" type="hidden" value="expenses">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <input name="exp_page" type="hidden" value="1">
+                        <label class="month-label" for="exp-month-filter">List month</label>
+                        <input id="exp-month-filter" name="exp_month" type="month" value="{{ expense_filter_month or '' }}">
+                        <button type="submit">Apply</button>
+                        {% if expense_filter_month %}
+                            <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter) }}">All months</a>
+                        {% endif %}
+                    </form>
+                    <div class="entries-table-wrap">
                     <table class="entries-table">
                         <thead>
                             <tr><th>Category</th><th>Account</th><th>Amount</th><th class="cell-notes-head">Notes</th><th class="cell-date-head">Date</th><th></th></tr>
@@ -69,6 +84,9 @@
                                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                                     <input name="exp_page" type="hidden" value="{{ expense_page }}">
                                                     <input name="next_panel" type="hidden" value="expenses">
+                                                    {% if expense_filter_month %}
+                                                        <input name="exp_month" type="hidden" value="{{ expense_filter_month }}">
+                                                    {% endif %}
                                                     <textarea name="notes" placeholder="Notes" rows="2">{{ expense.notes }}</textarea>
                                                     <input name="amount" required step="any" type="number" value="{{ expense.amount }}">
                                                     <select name="category_id" required>
@@ -89,6 +107,9 @@
                                                 <input name="month" type="hidden" value="{{ month_filter }}">
                                                 <input name="exp_page" type="hidden" value="{{ expense_page }}">
                                                 <input name="next_panel" type="hidden" value="expenses">
+                                                {% if expense_filter_month %}
+                                                    <input name="exp_month" type="hidden" value="{{ expense_filter_month }}">
+                                                {% endif %}
                                                 <button class="btn-icon btn-icon-delete" type="submit" title="Delete expense" aria-label="Delete expense">
                                                     <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
                                                 </button>
@@ -101,6 +122,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    </div>
                     {% if expense_num_pages > 1 %}
                         <nav aria-label="Expense list pages" class="list-pagination">
                             <span class="muted list-pagination-meta">
@@ -108,11 +130,19 @@
                             </span>
                             <span class="list-pagination-buttons">
                                 {% if expense_page > 1 %}
-                                    <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter, exp_page=expense_page - 1) }}">Previous</a>
+                                    {% if expense_filter_month %}
+                                        <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter, exp_month=expense_filter_month, exp_page=expense_page - 1) }}">Previous</a>
+                                    {% else %}
+                                        <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter, exp_page=expense_page - 1) }}">Previous</a>
+                                    {% endif %}
                                 {% endif %}
                                 <span class="muted">Page {{ expense_page }} / {{ expense_num_pages }}</span>
                                 {% if expense_page < expense_num_pages %}
-                                    <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter, exp_page=expense_page + 1) }}">Next</a>
+                                    {% if expense_filter_month %}
+                                        <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter, exp_month=expense_filter_month, exp_page=expense_page + 1) }}">Next</a>
+                                    {% else %}
+                                        <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter, exp_page=expense_page + 1) }}">Next</a>
+                                    {% endif %}
                                 {% endif %}
                             </span>
                         </nav>
@@ -121,10 +151,13 @@
 
                 <section class="panel {% if active_panel == 'income' %}active{% endif %}" id="panel-income">
                     <h2>Add Income Entry</h2>
-                    <form action="/income/add" method="post">
+                    <form action="/income/add" class="panel-add-form" method="post">
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <input name="inc_page" type="hidden" value="{{ income_page }}">
                         <input name="next_panel" type="hidden" value="income">
+                        {% if income_filter_month %}
+                            <input name="inc_month" type="hidden" value="{{ income_filter_month }}">
+                        {% endif %}
                         <textarea name="notes" placeholder="Notes" rows="2"></textarea>
                         <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
                         <select name="category_id" required>
@@ -141,6 +174,18 @@
                     </form>
 
                     <h2>Income Entries</h2>
+                    <form action="{{ url_for('index') }}" class="list-month-filter month-picker" method="get">
+                        <input name="panel" type="hidden" value="income">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <input name="inc_page" type="hidden" value="1">
+                        <label class="month-label" for="inc-month-filter">List month</label>
+                        <input id="inc-month-filter" name="inc_month" type="month" value="{{ income_filter_month or '' }}">
+                        <button type="submit">Apply</button>
+                        {% if income_filter_month %}
+                            <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter) }}">All months</a>
+                        {% endif %}
+                    </form>
+                    <div class="entries-table-wrap">
                     <table class="entries-table">
                         <thead>
                             <tr><th>Category</th><th>Account</th><th>Amount</th><th class="cell-notes-head">Notes</th><th class="cell-date-head">Date</th><th></th></tr>
@@ -164,6 +209,9 @@
                                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                                     <input name="inc_page" type="hidden" value="{{ income_page }}">
                                                     <input name="next_panel" type="hidden" value="income">
+                                                    {% if income_filter_month %}
+                                                        <input name="inc_month" type="hidden" value="{{ income_filter_month }}">
+                                                    {% endif %}
                                                     <textarea name="notes" placeholder="Notes" rows="2">{{ entry.notes }}</textarea>
                                                     <input min="0" name="amount" required step="0.01" type="number" value="{{ entry.amount }}">
                                                     <select name="category_id" required>
@@ -184,6 +232,9 @@
                                                 <input name="month" type="hidden" value="{{ month_filter }}">
                                                 <input name="inc_page" type="hidden" value="{{ income_page }}">
                                                 <input name="next_panel" type="hidden" value="income">
+                                                {% if income_filter_month %}
+                                                    <input name="inc_month" type="hidden" value="{{ income_filter_month }}">
+                                                {% endif %}
                                                 <button class="btn-icon btn-icon-delete" type="submit" title="Delete income" aria-label="Delete income">
                                                     <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
                                                 </button>
@@ -196,6 +247,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    </div>
                     {% if income_num_pages > 1 %}
                         <nav aria-label="Income list pages" class="list-pagination">
                             <span class="muted list-pagination-meta">
@@ -203,11 +255,19 @@
                             </span>
                             <span class="list-pagination-buttons">
                                 {% if income_page > 1 %}
-                                    <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter, inc_page=income_page - 1) }}">Previous</a>
+                                    {% if income_filter_month %}
+                                        <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter, inc_month=income_filter_month, inc_page=income_page - 1) }}">Previous</a>
+                                    {% else %}
+                                        <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter, inc_page=income_page - 1) }}">Previous</a>
+                                    {% endif %}
                                 {% endif %}
                                 <span class="muted">Page {{ income_page }} / {{ income_num_pages }}</span>
                                 {% if income_page < income_num_pages %}
-                                    <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter, inc_page=income_page + 1) }}">Next</a>
+                                    {% if income_filter_month %}
+                                        <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter, inc_month=income_filter_month, inc_page=income_page + 1) }}">Next</a>
+                                    {% else %}
+                                        <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter, inc_page=income_page + 1) }}">Next</a>
+                                    {% endif %}
                                 {% endif %}
                             </span>
                         </nav>
@@ -561,10 +621,28 @@
                 } else {
                     params.delete("year");
                 }
-                if (panelKey !== "expenses") {
+                if (panelKey === "expenses") {
+                    const expMonthEl = document.getElementById("exp-month-filter");
+                    const expMonthVal = expMonthEl && expMonthEl.value ? expMonthEl.value.trim() : "";
+                    if (expMonthVal) {
+                        params.set("exp_month", expMonthVal);
+                    } else {
+                        params.delete("exp_month");
+                    }
+                } else {
+                    params.delete("exp_month");
                     params.delete("exp_page");
                 }
-                if (panelKey !== "income") {
+                if (panelKey === "income") {
+                    const incMonthEl = document.getElementById("inc-month-filter");
+                    const incMonthVal = incMonthEl && incMonthEl.value ? incMonthEl.value.trim() : "";
+                    if (incMonthVal) {
+                        params.set("inc_month", incMonthVal);
+                    } else {
+                        params.delete("inc_month");
+                    }
+                } else {
+                    params.delete("inc_month");
                     params.delete("inc_page");
                 }
                 const nextUrl = `${window.location.pathname}?${params.toString()}`;

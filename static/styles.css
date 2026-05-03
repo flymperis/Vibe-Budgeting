@@ -223,6 +223,22 @@ form {
     scrollbar-gutter: stable;
 }
 
+.list-month-filter {
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.entries-table-wrap {
+    overflow-x: auto;
+    margin-top: 0.35rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+}
+
+.entries-table-wrap .entries-table {
+    min-width: 36rem;
+}
+
 table.yearly-table {
     min-width: 300px;
     width: 100%;
@@ -701,9 +717,66 @@ th, td {
 }
 
 @media (max-width: 900px) {
+    main.container {
+        overflow-x: clip;
+        max-width: 100%;
+    }
+
     .container {
         margin: 1rem auto;
         padding: 0 0.65rem;
+    }
+
+    #panel-expenses .panel-add-form,
+    #panel-income .panel-add-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    #panel-expenses .panel-add-form textarea,
+    #panel-income .panel-add-form textarea {
+        min-width: 0;
+        width: 100%;
+        flex: 0 1 auto;
+        box-sizing: border-box;
+    }
+
+    #panel-expenses .panel-add-form input:not([type="hidden"]),
+    #panel-expenses .panel-add-form select,
+    #panel-expenses .panel-add-form button,
+    #panel-income .panel-add-form input:not([type="hidden"]),
+    #panel-income .panel-add-form select,
+    #panel-income .panel-add-form button {
+        width: 100%;
+        max-width: none;
+        box-sizing: border-box;
+    }
+
+    .entries-table-wrap {
+        margin-inline: -0.15rem;
+        padding-bottom: 0.35rem;
+    }
+
+    .side-menu button.menu-item {
+        min-height: 44px;
+        padding: 0.5rem 0.45rem;
+        word-break: normal;
+        overflow-wrap: normal;
+        hyphens: manual;
+    }
+
+    .list-month-filter {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.45rem;
+    }
+
+    .list-month-filter input[type="month"],
+    .list-month-filter button[type="submit"],
+    .list-month-filter .btn-secondary {
+        width: 100%;
+        max-width: none;
+        box-sizing: border-box;
     }
 
     .app-layout {

@@ -63,6 +63,35 @@ def normalize_year(value):
         return datetime.now().year
 
 
+def parse_optional_month(value):
+    """YYYY-MM for list filters, or None when absent / invalid."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        parts = raw.split("-", 1)
+        if len(parts) != 2:
+            return None
+        year_num, month_num = int(parts[0]), int(parts[1])
+        if year_num < 2000 or year_num > 2100 or month_num < 1 or month_num > 12:
+            return None
+        return f"{year_num:04d}-{month_num:02d}"
+    except ValueError:
+        return None
+
+
+def month_bounds_iso(ym_str):
+    """Half-open [start, end) ISO timestamps for calendar month ym_str."""
+    ys, ms = ym_str.split("-", 1)
+    month_start = datetime(int(ys), int(ms), 1)
+    month_end = month_start + timedelta(days=32)
+    month_end = month_end.replace(day=1)
+    return (
+        month_start.strftime("%Y-%m-%d %H:%M:%S"),
+        month_end.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+
 def normalize_month(value):
     raw = (value or "").strip()
     if not raw:
@@ -329,6 +358,12 @@ def redirect_home(panel=None, settings_section=None):
         query["exp_page"] = exp_pg
     if target == "income" and inc_pg > 1:
         query["inc_page"] = inc_pg
+    exp_fm = parse_optional_month(request.form.get("exp_month") or request.args.get("exp_month"))
+    inc_fm = parse_optional_month(request.form.get("inc_month") or request.args.get("inc_month"))
+    if target == "expenses" and exp_fm:
+        query["exp_month"] = exp_fm
+    if target == "income" and inc_fm:
+        query["inc_month"] = inc_fm
     return redirect(url_for("index", **query))
 
 
@@ -867,12 +902,23 @@ def index():
     categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     income_categories = conn.execute("SELECT id, name FROM income_categories ORDER BY name").fetchall()
 
-    expense_total = conn.execute("SELECT COUNT(*) AS n FROM expenses").fetchone()["n"]
+    expense_filter_month = parse_optional_month(request.args.get("exp_month"))
+    expense_where = ""
+    expense_where_params = []
+    if expense_filter_month:
+        eb = month_bounds_iso(expense_filter_month)
+        expense_where = "WHERE e.spent_at >= ? AND e.spent_at < ?"
+        expense_where_params = [eb[0], eb[1]]
+
+    expense_total = conn.execute(
+        f"SELECT COUNT(*) AS n FROM expenses e {expense_where}",
+        expense_where_params,
+    ).fetchone()["n"]
     expense_num_pages = max(1, (expense_total + LIST_PAGE_SIZE - 1) // LIST_PAGE_SIZE)
     expense_page = min(normalize_list_page(request.args.get("exp_page")), expense_num_pages)
     expense_offset = (expense_page - 1) * LIST_PAGE_SIZE
     expenses = conn.execute(
-        """
+        f"""
         SELECT
             e.id,
             e.category_id,
@@ -886,20 +932,32 @@ def index():
         FROM expenses e
         JOIN categories c ON c.id = e.category_id
         JOIN accounts a ON a.id = e.account_id
+        {expense_where}
         ORDER BY e.spent_at DESC
         LIMIT ? OFFSET ?
         """,
-        (LIST_PAGE_SIZE, expense_offset),
+        (*expense_where_params, LIST_PAGE_SIZE, expense_offset),
     ).fetchall()
 
     accounts = conn.execute("SELECT id, name, opening_balance FROM accounts ORDER BY name").fetchall()
 
-    income_total = conn.execute("SELECT COUNT(*) AS n FROM income_entries").fetchone()["n"]
+    income_filter_month = parse_optional_month(request.args.get("inc_month"))
+    income_where = ""
+    income_where_params = []
+    if income_filter_month:
+        ib = month_bounds_iso(income_filter_month)
+        income_where = "WHERE i.received_at >= ? AND i.received_at < ?"
+        income_where_params = [ib[0], ib[1]]
+
+    income_total = conn.execute(
+        f"SELECT COUNT(*) AS n FROM income_entries i {income_where}",
+        income_where_params,
+    ).fetchone()["n"]
     income_num_pages = max(1, (income_total + LIST_PAGE_SIZE - 1) // LIST_PAGE_SIZE)
     income_page = min(normalize_list_page(request.args.get("inc_page")), income_num_pages)
     income_offset = (income_page - 1) * LIST_PAGE_SIZE
     income_entries = conn.execute(
-        """
+        f"""
         SELECT
             i.id,
             i.category_id,
@@ -913,10 +971,11 @@ def index():
         FROM income_entries i
         JOIN income_categories c ON c.id = i.category_id
         JOIN accounts a ON a.id = i.account_id
+        {income_where}
         ORDER BY i.received_at DESC
         LIMIT ? OFFSET ?
         """,
-        (LIST_PAGE_SIZE, income_offset),
+        (*income_where_params, LIST_PAGE_SIZE, income_offset),
     ).fetchall()
 
     total_expenses = conn.execute(
@@ -1062,6 +1121,8 @@ def index():
         income_total=income_total,
         income_num_pages=income_num_pages,
         list_page_size=LIST_PAGE_SIZE,
+        expense_filter_month=expense_filter_month,
+        income_filter_month=income_filter_month,
     )
 
 
