@@ -119,6 +119,60 @@ h3 {
     font-size: 0.9rem;
 }
 
+.recurring-rules-stack {
+    display: grid;
+    gap: 0.85rem;
+}
+
+.recurring-rule-form .recurring-rule-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.recurring-rule-badge {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.18rem 0.5rem;
+    border-radius: 6px;
+}
+
+.recurring-rule-expense {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.recurring-rule-income {
+    background: #dcfce7;
+    color: #166534;
+}
+
+:root[data-theme="dark"] .recurring-rule-expense {
+    background: #3f1d1d;
+    color: #fca5a5;
+}
+
+:root[data-theme="dark"] .recurring-rule-income {
+    background: #14532d;
+    color: #86efac;
+}
+
+.recurring-rule-paused {
+    font-size: 0.82rem;
+}
+
+.recurring-enabled-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.88rem;
+    white-space: nowrap;
+}
+
 .sr-only {
     position: absolute;
     width: 1px;
@@ -1177,6 +1231,7 @@ th, td {
     #panel-home .panel-add-form,
     #panel-expenses .panel-add-form,
     #panel-income .panel-add-form,
+    #panel-recurring .panel-add-form,
     #panel-transfer .panel-add-form {
         flex-direction: column;
         align-items: stretch;
@@ -1185,6 +1240,7 @@ th, td {
     #panel-home .panel-add-form textarea,
     #panel-expenses .panel-add-form textarea,
     #panel-income .panel-add-form textarea,
+    #panel-recurring .panel-add-form textarea,
     #panel-transfer .panel-add-form textarea {
         min-width: 0;
         width: 100%;
@@ -1201,6 +1257,9 @@ th, td {
     #panel-income .panel-add-form input:not([type="hidden"]),
     #panel-income .panel-add-form select,
     #panel-income .panel-add-form button,
+    #panel-recurring .panel-add-form input:not([type="hidden"]),
+    #panel-recurring .panel-add-form select,
+    #panel-recurring .panel-add-form button,
     #panel-transfer .panel-add-form input:not([type="hidden"]),
     #panel-transfer .panel-add-form select,
     #panel-transfer .panel-add-form button {

@@ -21,7 +21,17 @@ SHEET_EXPENSE_CATEGORIES = "ExpenseCategories"
 SHEET_INCOME_CATEGORIES = "IncomeCategories"
 SHEET_EXPENSES = "Expenses"
 SHEET_INCOME = "Income"
-ALLOWED_PANELS = {"home", "expenses", "income", "transfer", "summary", "yearly", "reports", "settings"}
+ALLOWED_PANELS = {
+    "home",
+    "expenses",
+    "income",
+    "recurring",
+    "transfer",
+    "summary",
+    "yearly",
+    "reports",
+    "settings",
+}
 SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration"}
 
 
@@ -48,6 +58,109 @@ def normalize_list_page(value):
         return max(1, int(str(value).strip()))
     except (TypeError, ValueError):
         return 1
+
+
+def normalize_day_of_month(value):
+    try:
+        d = int(str(value).strip())
+        return min(31, max(1, d))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _parse_row_created_date(row):
+    raw = row["created_at"]
+    if raw is None:
+        return datetime.now().date()
+    s = str(raw)
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return datetime.now().date()
+
+
+def _due_date_in_month(ym: str, day_of_month: int):
+    y, m = map(int, ym.split("-", 1))
+    last = calendar.monthrange(y, m)[1]
+    d = min(day_of_month, last)
+    return datetime(y, m, d).date()
+
+
+def _month_iter(start_ym: str, end_ym: str):
+    y, m = map(int, start_ym.split("-", 1))
+    ey, em = map(int, end_ym.split("-", 1))
+    while (y, m) <= (ey, em):
+        yield f"{y:04d}-{m:02d}"
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+
+def apply_recurring_entries(conn):
+    """Insert expense/income rows for due recurring rules (catch-up through current month)."""
+    today = datetime.now().date()
+    today_ym = f"{today.year:04d}-{today.month:02d}"
+    rules = conn.execute(
+        "SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at FROM recurring_entries WHERE enabled = 1"
+    ).fetchall()
+    posted = 0
+    for rule in rules:
+        created_d = _parse_row_created_date(rule)
+        start_ym = f"{created_d.year:04d}-{created_d.month:02d}"
+        note_text = (rule["notes"] or "").strip()
+        prefix = "[Recurring] "
+        full_notes = f"{prefix}{note_text}" if note_text else prefix.strip()
+
+        for ym in _month_iter(start_ym, today_ym):
+            exists = conn.execute(
+                "SELECT 1 FROM recurring_applied WHERE recurring_id = ? AND ym = ?",
+                (rule["id"], ym),
+            ).fetchone()
+            if exists:
+                continue
+            due = _due_date_in_month(ym, rule["day_of_month"])
+            if due < created_d:
+                continue
+            if today < due:
+                continue
+            et = rule["entry_type"]
+            if et == "expense":
+                conn.execute(
+                    """
+                    INSERT INTO expenses (notes, amount, category_id, account_id, spent_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        full_notes,
+                        -abs(float(rule["amount"])),
+                        int(rule["category_id"]),
+                        int(rule["account_id"]),
+                        due.isoformat(),
+                    ),
+                )
+            elif et == "income":
+                conn.execute(
+                    """
+                    INSERT INTO income_entries (notes, amount, category_id, account_id, received_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        full_notes,
+                        abs(float(rule["amount"])),
+                        int(rule["category_id"]),
+                        int(rule["account_id"]),
+                        due.isoformat(),
+                    ),
+                )
+            else:
+                continue
+            conn.execute(
+                "INSERT INTO recurring_applied (recurring_id, ym) VALUES (?, ?)",
+                (rule["id"], ym),
+            )
+            posted += 1
+    return posted
 
 
 def normalize_year(value):
@@ -390,6 +503,35 @@ def migrate_schema(conn):
     migrate_account_transfers(conn)
     migrate_expenses_signed_amounts(conn)
     migrate_txn_dates_to_day(conn)
+    migrate_recurring_entries(conn)
+
+
+def migrate_recurring_entries(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recurring_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_type TEXT NOT NULL CHECK (entry_type IN ('expense', 'income')),
+            amount REAL NOT NULL CHECK (amount > 0),
+            category_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL REFERENCES accounts(id),
+            day_of_month INTEGER NOT NULL CHECK (day_of_month >= 1 AND day_of_month <= 31),
+            notes TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recurring_applied (
+            recurring_id INTEGER NOT NULL,
+            ym TEXT NOT NULL,
+            PRIMARY KEY (recurring_id, ym),
+            FOREIGN KEY (recurring_id) REFERENCES recurring_entries(id) ON DELETE CASCADE
+        )
+        """
+    )
 
 
 def migrate_account_transfers(conn):
@@ -542,6 +684,7 @@ def resolve_active_panel():
             ("/expenses/", "expenses"),
             ("/income/", "income"),
             ("/transfers/", "transfer"),
+            ("/recurring/", "recurring"),
         ):
             if path.startswith(prefix):
                 return mapped
@@ -1099,6 +1242,14 @@ def import_excel():
 def index():
     conn = get_connection()
 
+    posted_recurring = apply_recurring_entries(conn)
+    if posted_recurring > 0:
+        conn.commit()
+        flash(
+            f"Posted {posted_recurring} recurring entr{'ies' if posted_recurring != 1 else 'y'}.",
+            "success",
+        )
+
     raw_panel = request.args.get("panel", "").strip()
     if raw_panel == "export":
         active_panel = "settings"
@@ -1129,6 +1280,28 @@ def index():
 
     categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     income_categories = conn.execute("SELECT id, name FROM income_categories ORDER BY name").fetchall()
+
+    recurring_entries = conn.execute(
+        """
+        SELECT
+            r.id,
+            r.entry_type,
+            r.amount,
+            r.category_id,
+            r.account_id,
+            r.day_of_month,
+            r.notes,
+            r.enabled,
+            r.created_at,
+            a.name AS account_name,
+            COALESCE(c.name, ic.name) AS category_name
+        FROM recurring_entries r
+        JOIN accounts a ON a.id = r.account_id
+        LEFT JOIN categories c ON r.entry_type = 'expense' AND c.id = r.category_id
+        LEFT JOIN income_categories ic ON r.entry_type = 'income' AND ic.id = r.category_id
+        ORDER BY r.day_of_month, r.id
+        """
+    ).fetchall()
 
     expense_filter_month = resolve_list_month_filter("exp_month", "exp_cal_year", "exp_cal_month")
     expense_where = ""
@@ -1392,7 +1565,141 @@ def index():
         transfer_default_date=transfer_default_date,
         report_year=report_year,
         report_chart_spec=report_chart_spec,
+        recurring_entries=recurring_entries,
     )
+
+
+def _parse_category_choice(raw):
+    """Return ('expense'|'income', category_id) or (None, None)."""
+    s = (raw or "").strip()
+    if s.startswith("e-"):
+        try:
+            return "expense", int(s[2:])
+        except ValueError:
+            return None, None
+    if s.startswith("i-"):
+        try:
+            return "income", int(s[2:])
+        except ValueError:
+            return None, None
+    return None, None
+
+
+def _recurring_category_ok(conn, entry_type, category_id):
+    if entry_type == "expense":
+        return conn.execute("SELECT 1 FROM categories WHERE id = ?", (category_id,)).fetchone()
+    if entry_type == "income":
+        return conn.execute("SELECT 1 FROM income_categories WHERE id = ?", (category_id,)).fetchone()
+    return None
+
+
+@app.route("/recurring/add", methods=["POST"])
+def add_recurring():
+    entry_type, category_id = _parse_category_choice(request.form.get("category_choice"))
+    amount_raw = request.form.get("amount", "").strip()
+    account_raw = request.form.get("account_id", "").strip()
+    day_raw = request.form.get("day_of_month", "1").strip()
+    notes = request.form.get("notes", "").strip()
+
+    if not entry_type or category_id is None or not account_raw:
+        flash("Choose type, category, and account.", "error")
+        return redirect_home(panel="recurring")
+
+    conn = get_connection()
+    if not _recurring_category_ok(conn, entry_type, category_id):
+        conn.close()
+        flash("Invalid category for that type.", "error")
+        return redirect_home(panel="recurring")
+
+    try:
+        account_id = int(account_raw)
+        if not conn.execute("SELECT 1 FROM accounts WHERE id = ?", (account_id,)).fetchone():
+            conn.close()
+            flash("Invalid account.", "error")
+            return redirect_home(panel="recurring")
+        amt = abs(float(amount_raw))
+        dom = normalize_day_of_month(day_raw)
+    except (TypeError, ValueError):
+        conn.close()
+        flash("Invalid amount or account.", "error")
+        return redirect_home(panel="recurring")
+
+    if amt <= 0:
+        conn.close()
+        flash("Amount must be positive.", "error")
+        return redirect_home(panel="recurring")
+
+    conn.execute(
+        """
+        INSERT INTO recurring_entries (entry_type, amount, category_id, account_id, day_of_month, notes, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
+        """,
+        (entry_type, amt, category_id, account_id, dom, notes),
+    )
+    conn.commit()
+    conn.close()
+    flash("Recurring rule added.", "success")
+    return redirect_home(panel="recurring")
+
+
+@app.route("/recurring/<int:recurring_id>/edit", methods=["POST"])
+def edit_recurring(recurring_id):
+    entry_type, category_id = _parse_category_choice(request.form.get("category_choice"))
+    amount_raw = request.form.get("amount", "").strip()
+    account_raw = request.form.get("account_id", "").strip()
+    day_raw = request.form.get("day_of_month", "1").strip()
+    notes = request.form.get("notes", "").strip()
+    enabled = 1 if request.form.get("enabled") == "1" else 0
+
+    if not entry_type or category_id is None or not account_raw:
+        flash("Choose type, category, and account.", "error")
+        return redirect_home(panel="recurring")
+
+    conn = get_connection()
+    if not _recurring_category_ok(conn, entry_type, category_id):
+        conn.close()
+        flash("Invalid category for that type.", "error")
+        return redirect_home(panel="recurring")
+
+    try:
+        account_id = int(account_raw)
+        if not conn.execute("SELECT 1 FROM accounts WHERE id = ?", (account_id,)).fetchone():
+            conn.close()
+            flash("Invalid account.", "error")
+            return redirect_home(panel="recurring")
+        amt = abs(float(amount_raw))
+        dom = normalize_day_of_month(day_raw)
+    except (TypeError, ValueError):
+        conn.close()
+        flash("Invalid amount or account.", "error")
+        return redirect_home(panel="recurring")
+
+    if amt <= 0:
+        conn.close()
+        flash("Amount must be positive.", "error")
+        return redirect_home(panel="recurring")
+
+    cur = conn.execute(
+        "UPDATE recurring_entries SET entry_type = ?, amount = ?, category_id = ?, account_id = ?, day_of_month = ?, notes = ?, enabled = ? WHERE id = ?",
+        (entry_type, amt, category_id, account_id, dom, notes, enabled, recurring_id),
+    )
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        flash("Rule not found.", "error")
+    else:
+        flash("Recurring rule updated.", "success")
+    return redirect_home(panel="recurring")
+
+
+@app.route("/recurring/<int:recurring_id>/delete", methods=["POST"])
+def delete_recurring(recurring_id):
+    conn = get_connection()
+    conn.execute("DELETE FROM recurring_entries WHERE id = ?", (recurring_id,))
+    conn.commit()
+    conn.close()
+    flash("Recurring rule removed.", "success")
+    return redirect_home(panel="recurring")
 
 
 @app.route("/categories/add", methods=["POST"])
