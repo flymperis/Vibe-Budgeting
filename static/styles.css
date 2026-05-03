@@ -184,6 +184,26 @@ th, td {
     flex: 1 1 220px;
 }
 
+.inline-form input[type="number"] {
+    width: 150px;
+}
+
+.cell-actions form {
+    margin-bottom: 0;
+}
+
+.cell-actions button {
+    width: 100%;
+}
+
+.btn-danger {
+    background: #dc2626;
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+}
+
 .list-stack {
     display: grid;
     gap: 0.5rem;

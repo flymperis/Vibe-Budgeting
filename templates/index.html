@@ -30,7 +30,7 @@
                     <h2>Expenses</h2>
                     <table>
                         <thead>
-                            <tr><th>Item</th><th>Category</th><th>Amount</th></tr>
+                            <tr><th>Item</th><th>Category</th><th>Amount</th><th></th></tr>
                         </thead>
                         <tbody>
                             {% for expense in expenses %}
@@ -38,9 +38,14 @@
                                     <td>{{ expense.item }}</td>
                                     <td>{{ expense.category_name }}</td>
                                     <td>{{ "%.2f"|format(expense.amount) }}</td>
+                                    <td class="cell-actions">
+                                        <form action="/expenses/{{ expense.id }}/delete" method="post">
+                                            <button class="btn-danger" type="submit">Delete</button>
+                                        </form>
+                                    </td>
                                 </tr>
                             {% else %}
-                                <tr><td colspan="3">No expenses yet.</td></tr>
+                                <tr><td colspan="4">No expenses yet.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -62,7 +67,7 @@
                     <h2>Income Entries</h2>
                     <table>
                         <thead>
-                            <tr><th>Source</th><th>Account</th><th>Amount</th></tr>
+                            <tr><th>Source</th><th>Account</th><th>Amount</th><th></th></tr>
                         </thead>
                         <tbody>
                             {% for entry in income_entries %}
@@ -70,9 +75,14 @@
                                     <td>{{ entry.source }}</td>
                                     <td>{{ entry.account_name }}</td>
                                     <td>{{ "%.2f"|format(entry.amount) }}</td>
+                                    <td class="cell-actions">
+                                        <form action="/income/{{ entry.id }}/delete" method="post">
+                                            <button class="btn-danger" type="submit">Delete</button>
+                                        </form>
+                                    </td>
                                 </tr>
                             {% else %}
-                                <tr><td colspan="3">No income entries yet.</td></tr>
+                                <tr><td colspan="4">No income entries yet.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -129,6 +139,7 @@
                             <form action="/categories/{{ category.id }}/edit" class="inline-form" method="post">
                                 <input name="name" required type="text" value="{{ category.name }}">
                                 <button type="submit">Save</button>
+                                <button class="btn-danger" formaction="/categories/{{ category.id }}/delete" formmethod="post" type="submit">Delete</button>
                             </form>
                         {% else %}
                             <p class="muted">No categories yet.</p>
@@ -149,6 +160,7 @@
                                 <input name="name" required type="text" value="{{ account.name }}">
                                 <input min="0" name="opening_balance" required step="0.01" type="number" value="{{ account.opening_balance }}">
                                 <button type="submit">Save</button>
+                                <button class="btn-danger" formaction="/accounts/{{ account.id }}/delete" formmethod="post" type="submit">Delete</button>
                             </form>
                         {% else %}
                             <p class="muted">No accounts yet.</p>

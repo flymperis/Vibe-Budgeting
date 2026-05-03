@@ -8,6 +8,7 @@ DB_PATH = "database.db"
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -129,6 +130,17 @@ def edit_category(category_id):
     return redirect(url_for("index"))
 
 
+@app.route("/categories/<int:category_id>/delete", methods=["POST"])
+def delete_category(category_id):
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    conn.commit()
+    conn.close()
+    if cursor.rowcount == 0:
+        print(f"[budget-app] refused category delete {category_id} (still referenced or missing)")
+    return redirect(url_for("index"))
+
+
 @app.route("/expenses/add", methods=["POST"])
 def add_expense():
     item = request.form.get("item", "").strip()
@@ -147,6 +159,15 @@ def add_expense():
     return redirect(url_for("index"))
 
 
+@app.route("/expenses/<int:expense_id>/delete", methods=["POST"])
+def delete_expense(expense_id):
+    conn = get_connection()
+    conn.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for("index"))
+
+
 @app.route("/accounts/add", methods=["POST"])
 def add_account():
     name = request.form.get("name", "").strip()
@@ -162,6 +183,17 @@ def add_account():
     return redirect(url_for("index"))
 
 
+@app.route("/accounts/<int:account_id>/delete", methods=["POST"])
+def delete_account(account_id):
+    conn = get_connection()
+    cursor = conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    conn.commit()
+    conn.close()
+    if cursor.rowcount == 0:
+        print(f"[budget-app] refused account delete {account_id} (still referenced or missing)")
+    return redirect(url_for("index"))
+
+
 @app.route("/accounts/<int:account_id>/edit", methods=["POST"])
 def edit_account(account_id):
     name = request.form.get("name", "").strip()
@@ -174,6 +206,15 @@ def edit_account(account_id):
         )
         conn.commit()
         conn.close()
+    return redirect(url_for("index"))
+
+
+@app.route("/income/<int:income_id>/delete", methods=["POST"])
+def delete_income(income_id):
+    conn = get_connection()
+    conn.execute("DELETE FROM income_entries WHERE id = ?", (income_id,))
+    conn.commit()
+    conn.close()
     return redirect(url_for("index"))
 
 
