@@ -1,71 +1,24 @@
 # Vibe Budgeting.
 
-Small Flask + SQLite budget tracker. Run with Docker or locally with Python.
-
-## Stack
-
-| Piece | Where |
-|-------|--------|
-| **Flask** (`Flask` in `requirements.txt`) | Web app (`app.py` → `app:app`). |
-| **Gunicorn** (`gunicorn` in `requirements.txt`) | Production HTTP server inside Docker (`Dockerfile` `CMD`: binds `:5000`, `--preload`, 2 workers). |
-| **SQLite** | Data via `DATABASE_PATH` (default `/app/data/database.db` in the image). |
-
-Locally, `python app.py` runs Flask’s built-in dev server (not Gunicorn).
-
-## Quick start (Docker)
-
-From the repository root:
+Run with **Docker** only:
 
 ```bash
+git clone https://github.com/flymperis/Vibe-Budgeting.git
+cd Vibe-Budgeting
 mkdir -p budget-data
-docker compose build
-docker compose up -d
+docker compose up --build -d
 ```
 
 Open **http://localhost:5000**.
 
-- Data lives on the host in `./budget-data` (mounted at `/app/data` in the container). Removing or recreating the container does **not** delete it as long as this volume stays.
-- The image defaults `DATABASE_PATH=/app/data/database.db` (see `Dockerfile`). You can override via environment.
+Data is stored in `./budget-data` on the host (survives container recreate).
 
-### Useful environment variables
+Optional environment variables (set under `environment:` in `docker-compose.yml`):
 
 | Variable | Purpose |
 |----------|---------|
-| `FLASK_SECRET_KEY` | Session signing in production (**set a long random value**). |
-| `DATABASE_PATH` | SQLite file path inside the container (default `/app/data/database.db`). |
-| `ALLOW_REGISTRATION` | `true` / `false` — allow open signup on `/register`. |
-| `VB_LEGACY_ADMIN_PASSWORD` | Only used when migrating an old DB without users; default legacy login is `admin` / `changeme` until you change it. |
+| `FLASK_SECRET_KEY` | Strong random string for sessions in production. |
+| `ALLOW_REGISTRATION` | `true` or `false` — allow `/register`. |
+| `DATABASE_PATH` | Default `/app/data/database.db` (see `Dockerfile`). |
 
-## Local development (no Docker)
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate   # Windows
-pip install -r requirements.txt
-python app.py
-```
-
-Creates `database.db` in the current directory.
-
-## Embedding in your own stack
-
-See **`examples/vibe-budgeting.snippet.yml`** for a drop-in `docker-compose` service fragment (adjust `build.context` if you clone this repo next to your compose file).
-
-## Windows deploy helper (optional)
-
-For setups where your compose file lives **next to** a subfolder named `Vibe-Budgeting` (zip-based update of that folder only):
-
-1. Open CMD and `cd` to that folder (the one that contains `docker-compose.yml`).
-2. Run:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Vibe-Budgeting\scripts\update-vibe-server.ps1 -BaseDir (Get-Location) -ServiceName budget-app
-```
-
-Or run `scripts\update-vibe-server.bat` from that same folder after `cd`.
-
-`-ServiceName` must match your compose service name. If you use this repository alone (`build: .` at the repo root), prefer **`git pull`** instead of this script.
-
-## Requirements
-
-- Docker with Compose **or** Python 3.12+ with dependencies from `requirements.txt`
+Stack: Flask app served by Gunicorn in the container; SQLite database file on the mounted volume.

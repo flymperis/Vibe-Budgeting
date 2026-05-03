@@ -804,7 +804,7 @@ def migrate_expenses_signed_amounts(conn):
 
 
 def init_db():
-    print(f"[budget-app] SQLite database path: {DB_PATH!r}", file=sys.stderr)
+    print(f"[vibe-budgeting] SQLite database path: {DB_PATH!r}", file=sys.stderr)
     conn = get_connection()
     conn.executescript(
         """
@@ -2098,7 +2098,7 @@ def delete_category(category_id):
     conn.commit()
     conn.close()
     if cursor.rowcount == 0:
-        print(f"[budget-app] refused category delete {category_id} (still referenced or missing)")
+        print(f"[vibe-budgeting] refused category delete {category_id} (still referenced or missing)")
     return redirect_home()
 
 
@@ -2140,7 +2140,7 @@ def delete_income_category(category_id):
     conn.commit()
     conn.close()
     if cursor.rowcount == 0:
-        print(f"[budget-app] refused income category delete {category_id} (still referenced or missing)")
+        print(f"[vibe-budgeting] refused income category delete {category_id} (still referenced or missing)")
     return redirect_home()
 
 
@@ -2244,7 +2244,7 @@ def delete_account(account_id):
     conn.commit()
     conn.close()
     if cursor.rowcount == 0:
-        print(f"[budget-app] refused account delete {account_id} (still referenced or missing)")
+        print(f"[vibe-budgeting] refused account delete {account_id} (still referenced or missing)")
     return redirect_home()
 
 

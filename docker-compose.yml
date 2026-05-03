@@ -1,11 +1,10 @@
 services:
-  budget-app:
+  vibe-budgeting:
     build: .
-    container_name: budget-app
+    container_name: vibe-budgeting
     ports:
       - "5000:5000"
     environment:
-      # SQLite on a mounted folder survives container recreate (see README).
       - DATABASE_PATH=/app/data/database.db
     volumes:
       - ./budget-data:/app/data
