@@ -5,5 +5,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
+      # Host path must be a regular file before first `up`, or Docker may create a directory and SQLite fails.
+      # Example: mkdir -p ./budget-data && touch ./budget-data/database.db
       - ./database.db:/app/database.db
     restart: unless-stopped

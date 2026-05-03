@@ -9,4 +9,5 @@ COPY . .
 
 EXPOSE 5000
 
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "app:app"]
+# --preload: init_db() runs once in the master; without it each worker imports app and races on SQLite.
+CMD ["gunicorn", "--preload", "-w", "2", "-b", "0.0.0.0:5000", "app:app"]

@@ -10,7 +10,20 @@ from urllib.parse import urlparse
 from openpyxl import Workbook, load_workbook
 from werkzeug.security import check_password_hash, generate_password_hash
 
-DB_PATH = "database.db"
+DB_PATH = os.environ.get("DATABASE_PATH") or os.environ.get("VB_DATABASE_PATH") or "database.db"
+
+
+def _ensure_database_path():
+    """Avoid Docker bind-mount footgun: missing host file becomes a directory and breaks SQLite."""
+    abs_db = os.path.abspath(DB_PATH)
+    if os.path.exists(abs_db) and os.path.isdir(abs_db):
+        raise RuntimeError(
+            f"DATABASE_PATH {DB_PATH!r} points to a directory, not a SQLite file. "
+            "Docker often creates a directory when the host path did not exist. "
+            "Fix: remove that path on the host, then create an empty file, e.g. "
+            "`mkdir -p budget-data && rm -rf budget-data/database.db && touch budget-data/database.db` "
+            "(adjust paths to match your compose volume)."
+        )
 EXPORT_FORMAT_VERSION = 1
 LIST_PAGE_SIZE = 75
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "true").lower() in ("1", "true", "yes")
@@ -2374,6 +2387,7 @@ def delete_transfer(transfer_id):
     return redirect_home()
 
 
+_ensure_database_path()
 init_db()
 
 if __name__ == "__main__":
