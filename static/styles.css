@@ -55,25 +55,14 @@ h1 {
 
 .app-logo {
     flex-shrink: 0;
-    width: 3.5rem;
+    width: 4rem;
     height: auto;
     display: block;
-    filter: drop-shadow(0 2px 8px rgba(91, 33, 182, 0.22));
+    filter: drop-shadow(0 2px 8px rgba(124, 58, 237, 0.22));
 }
 
 :root[data-theme="dark"] .app-logo {
-    filter: drop-shadow(0 2px 12px rgba(139, 92, 246, 0.35));
-}
-
-.app-logo-frame {
-    fill: var(--surface);
-    stroke: var(--accent);
-    stroke-width: 2;
-}
-
-:root[data-theme="dark"] .app-logo-frame {
-    fill: var(--surface-alt);
-    stroke: #a78bfa;
+    filter: drop-shadow(0 2px 12px rgba(139, 92, 246, 0.38));
 }
 
 .app-logo-fill {
@@ -81,7 +70,31 @@ h1 {
 }
 
 :root[data-theme="dark"] .app-logo-fill {
-    fill: #c4b5fd;
+    fill: #d8ccff;
+}
+
+/* Meme-y “stonks” chart: jagged line up + arrow */
+.app-logo-stonks {
+    stroke: #16a34a;
+    stroke-width: 3.1;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+:root[data-theme="dark"] .app-logo-stonks {
+    stroke: #4ade80;
+}
+
+.app-logo-stonks-marker {
+    overflow: visible;
+}
+
+.app-logo-stonks-tip {
+    fill: #16a34a;
+}
+
+:root[data-theme="dark"] .app-logo-stonks-tip {
+    fill: #4ade80;
 }
 
 .header-row {

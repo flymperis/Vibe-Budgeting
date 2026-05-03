@@ -4,10 +4,14 @@
       <stop offset="0%" stop-color="#7c3aed"/>
       <stop offset="100%" stop-color="#5b21b6"/>
     </linearGradient>
+    <marker id="fv-stonk" markerWidth="5" markerHeight="5" refX="4.4" refY="2.5" orient="auto" markerUnits="strokeWidth">
+      <polygon fill="#22c55e" points="0 0, 5 2.5, 0 5"/>
+    </marker>
   </defs>
   <rect width="32" height="32" rx="8" fill="url(#bg)"/>
-  <path fill="#ffffff" d="M 5.5 8 L 10 22 L 12 22 L 16.5 8 H 13.9 L 11 18.4 L 8.1 8 Z"/>
-  <path fill="#ffffff" d="M 17 8 H 20 V 22 H 17 Z"/>
-  <path fill="#ffffff" d="M 20 8 H 21.8 Q 26.6 8 26.6 11.4 Q 26.6 14.4 21.6 14.4 H 20 V 8 Z"/>
-  <path fill="#ffffff" d="M 20 14.4 H 22.6 Q 27.6 14.4 27.6 18 Q 27.6 21.6 22.6 21.6 H 20 V 14.4 Z"/>
+  <g transform="translate(3.6 8.2) scale(0.56)">
+    <path fill="#ffffff" d="M 5.5 8 L 10 22 L 12 22 L 16.5 8 H 13.9 L 11 18.4 L 8.1 8 Z"/>
+    <path fill="#ffffff" fill-rule="evenodd" d="M 17 22 L 17 8 L 20.15 8 C 25.6 8 28 10.2 28 12.85 C 28 14.95 25.3 16.05 21.2 16.05 L 20.15 16.05 L 20.15 16.65 C 26.2 16.85 28 18.95 28 20.85 C 28 22.55 24.85 22 20.15 22 L 17 22 Z M 21.25 10.6 C 23.85 10.15 25.9 11.35 25.9 13.05 C 25.9 14.55 23.95 15.35 21.45 14.95 C 19.35 14.6 19.15 11.35 21.25 10.6 Z M 21.35 17.75 C 24.25 17.25 26.15 18.45 26.15 20.35 C 26.15 21.95 23.65 21.75 21.35 21.35 C 19.25 20.95 19.15 18.45 21.35 17.75 Z"/>
+  </g>
+  <polyline fill="none" stroke="#22c55e" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#fv-stonk)" points="17.5,23.5 20.5,19.5 22.5,21.5 25.5,14.5 27.5,16.5 29.5,10 31,7.5"/>
 </svg>
