@@ -219,10 +219,24 @@ form {
 .yearly-table-wrap {
     overflow-x: auto;
     margin-top: 0.5rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
 }
 
 table.yearly-table {
-    min-width: 420px;
+    min-width: 300px;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+}
+
+.yearly-table th:first-child,
+.yearly-table td:first-child {
+    text-align: left;
+}
+
+.yearly-table th:nth-child(n + 2),
+.yearly-table td:nth-child(n + 2) {
+    text-align: right;
 }
 
 .yearly-table .delta-positive {
@@ -233,6 +247,11 @@ table.yearly-table {
 .yearly-table .delta-negative {
     color: #dc2626;
     font-weight: 700;
+}
+
+.yearly-table .delta-neutral {
+    color: var(--text);
+    font-weight: 600;
 }
 
 .yearly-totals-row th,
@@ -248,6 +267,15 @@ table.yearly-table {
 
 :root[data-theme="dark"] .yearly-table .delta-negative {
     color: #f87171;
+}
+
+#panel-yearly .year-picker {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+#panel-yearly .year-picker input[type="number"] {
+    min-width: 6rem;
 }
 
 .month-label {
@@ -673,13 +701,31 @@ th, td {
 }
 
 @media (max-width: 900px) {
+    .container {
+        margin: 1rem auto;
+        padding: 0 0.65rem;
+    }
+
     .app-layout {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 0.75rem;
+        grid-template-columns: unset;
+    }
+
+    .panel-shell {
+        grid-column: unset;
+        grid-row: unset;
+        padding: 0.75rem;
+        min-width: 0;
     }
 
     .side-menu {
         position: static;
+        grid-column: unset;
+        grid-row: unset;
         grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-self: stretch;
     }
 
     .settings-layout {
@@ -696,5 +742,50 @@ th, td {
 
     .consolidated-columns {
         grid-template-columns: 1fr;
+    }
+
+    #panel-yearly .year-picker {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    #panel-yearly .year-picker .month-label {
+        margin-bottom: -0.2rem;
+    }
+
+    #panel-yearly .year-picker input[type="number"],
+    #panel-yearly .year-picker button[type="submit"] {
+        width: 100%;
+        max-width: none;
+        box-sizing: border-box;
+    }
+
+    .yearly-table-wrap {
+        margin-inline: -0.15rem;
+        padding-bottom: 0.35rem;
+    }
+
+    table.yearly-table {
+        font-size: 0.875rem;
+    }
+
+    .yearly-table th,
+    .yearly-table td {
+        padding: 0.45rem 0.35rem;
+    }
+}
+
+@media (max-width: 380px) {
+    .side-menu {
+        grid-template-columns: 1fr;
+    }
+
+    table.yearly-table {
+        font-size: 0.8125rem;
+    }
+
+    .yearly-table th,
+    .yearly-table td {
+        padding: 0.4rem 0.25rem;
     }
 }

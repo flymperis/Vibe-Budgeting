@@ -325,14 +325,14 @@
                                         <th scope="row">{{ row.month_label }}</th>
                                         <td>{{ "%.2f"|format(row.income) }}</td>
                                         <td>{{ "%.2f"|format(row.expenses) }}</td>
-                                        <td class="{% if row.delta >= 0 %}delta-positive{% else %}delta-negative{% endif %}">{{ "%.2f"|format(row.delta) }}</td>
+                                        <td class="{% if row.delta > 0 %}delta-positive{% elif row.delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ "%.2f"|format(row.delta) }}</td>
                                     </tr>
                                 {% endfor %}
                                 <tr class="yearly-totals-row">
                                     <th scope="row">Total</th>
                                     <td>{{ "%.2f"|format(yearly_total_income) }}</td>
                                     <td>{{ "%.2f"|format(yearly_total_expenses) }}</td>
-                                    <td class="{% if yearly_total_delta >= 0 %}delta-positive{% else %}delta-negative{% endif %}">{{ "%.2f"|format(yearly_total_delta) }}</td>
+                                    <td class="{% if yearly_total_delta > 0 %}delta-positive{% elif yearly_total_delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ "%.2f"|format(yearly_total_delta) }}</td>
                                 </tr>
                             </tbody>
                         </table>
