@@ -48,11 +48,34 @@
                                     <td>{{ "%.2f"|format(expense.amount) }}</td>
                                     <td>{{ expense.spent_at }}</td>
                                     <td class="cell-actions">
-                                        <form action="/expenses/{{ expense.id }}/delete" method="post">
-                                            <input name="month" type="hidden" value="{{ month_filter }}">
-                                            <input name="next_panel" type="hidden" value="expenses">
-                                            <button class="btn-danger" type="submit">Delete</button>
-                                        </form>
+                                        <div class="action-stack">
+                                            <details class="edit-details">
+                                                <summary>Edit</summary>
+                                                <form action="/expenses/{{ expense.id }}/edit" class="inline-edit-form" method="post">
+                                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                                    <input name="next_panel" type="hidden" value="expenses">
+                                                    <textarea name="notes" placeholder="Notes" rows="2">{{ expense.notes }}</textarea>
+                                                    <input min="0" name="amount" required step="0.01" type="number" value="{{ expense.amount }}">
+                                                    <select name="category_id" required>
+                                                        {% for category in categories %}
+                                                            <option {% if category.id == expense.category_id %}selected{% endif %} value="{{ category.id }}">{{ category.name }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                    <select name="account_id" required>
+                                                        {% for account in accounts %}
+                                                            <option {% if account.id == expense.account_id %}selected{% endif %} value="{{ account.id }}">{{ account.name }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                    <input name="spent_at" type="datetime-local" value="{{ expense.spent_at|dt_local }}">
+                                                    <button type="submit">Save</button>
+                                                </form>
+                                            </details>
+                                            <form action="/expenses/{{ expense.id }}/delete" method="post">
+                                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                                <input name="next_panel" type="hidden" value="expenses">
+                                                <button class="btn-danger" type="submit">Delete</button>
+                                            </form>
+                                        </div>
                                     </td>
                                 </tr>
                             {% else %}
@@ -96,11 +119,34 @@
                                     <td>{{ "%.2f"|format(entry.amount) }}</td>
                                     <td>{{ entry.received_at }}</td>
                                     <td class="cell-actions">
-                                        <form action="/income/{{ entry.id }}/delete" method="post">
-                                            <input name="month" type="hidden" value="{{ month_filter }}">
-                                            <input name="next_panel" type="hidden" value="income">
-                                            <button class="btn-danger" type="submit">Delete</button>
-                                        </form>
+                                        <div class="action-stack">
+                                            <details class="edit-details">
+                                                <summary>Edit</summary>
+                                                <form action="/income/{{ entry.id }}/edit" class="inline-edit-form" method="post">
+                                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                                    <input name="next_panel" type="hidden" value="income">
+                                                    <textarea name="notes" placeholder="Notes" rows="2">{{ entry.notes }}</textarea>
+                                                    <input min="0" name="amount" required step="0.01" type="number" value="{{ entry.amount }}">
+                                                    <select name="category_id" required>
+                                                        {% for category in income_categories %}
+                                                            <option {% if category.id == entry.category_id %}selected{% endif %} value="{{ category.id }}">{{ category.name }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                    <select name="account_id" required>
+                                                        {% for account in accounts %}
+                                                            <option {% if account.id == entry.account_id %}selected{% endif %} value="{{ account.id }}">{{ account.name }}</option>
+                                                        {% endfor %}
+                                                    </select>
+                                                    <input name="received_at" type="datetime-local" value="{{ entry.received_at|dt_local }}">
+                                                    <button type="submit">Save</button>
+                                                </form>
+                                            </details>
+                                            <form action="/income/{{ entry.id }}/delete" method="post">
+                                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                                <input name="next_panel" type="hidden" value="income">
+                                                <button class="btn-danger" type="submit">Delete</button>
+                                            </form>
+                                        </div>
                                     </td>
                                 </tr>
                             {% else %}

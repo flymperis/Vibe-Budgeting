@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 app = Flask(__name__)
 DB_PATH = "database.db"
 ALLOWED_PANELS = {"expenses", "income", "summary", "settings"}
+SETTINGS_SECTIONS = {"general", "expenses", "income"}
 
 
 def normalize_month(value):
@@ -21,6 +22,39 @@ def normalize_month(value):
         return f"{month_year:04d}-{month_num:02d}"
     except ValueError:
         return datetime.now().strftime("%Y-%m")
+
+
+def normalize_settings_section(value):
+    section = (value or "").strip().lower()
+    return section if section in SETTINGS_SECTIONS else "general"
+
+
+def to_datetime_local_value(raw):
+    if raw is None:
+        return ""
+    text = str(raw).strip()
+    if not text:
+        return ""
+    try:
+        normalized = text.replace(" ", "T", 1)
+        if len(normalized) == 10:
+            normalized = f"{normalized}T00:00"
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                parsed = None
+        if parsed is None:
+            return ""
+    return parsed.replace(microsecond=0).isoformat(timespec="minutes")
+
+
+@app.template_filter("dt_local")
+def dt_local_filter(raw):
+    return to_datetime_local_value(raw)
 
 
 def get_connection():
@@ -190,7 +224,17 @@ def resolve_active_panel():
 def redirect_home(panel=None):
     target = panel if panel in ALLOWED_PANELS else resolve_active_panel()
     month = normalize_month(request.form.get("month") or request.args.get("month"))
-    return redirect(url_for("index", panel=target, month=month))
+    settings_section = normalize_settings_section(
+        request.form.get("settings_section") or request.args.get("settings_section")
+    )
+    return redirect(
+        url_for(
+            "index",
+            panel=target,
+            month=month,
+            settings_section=settings_section if target == "settings" else None,
+        )
+    )
 
 
 @app.route("/")
@@ -202,6 +246,7 @@ def index():
         active_panel = "expenses"
 
     month_filter = normalize_month(request.args.get("month"))
+    settings_section = normalize_settings_section(request.args.get("settings_section"))
 
     categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     income_categories = conn.execute("SELECT id, name FROM income_categories ORDER BY name").fetchall()
@@ -209,6 +254,8 @@ def index():
         """
         SELECT
             e.id,
+            e.category_id,
+            e.account_id,
             e.notes,
             e.amount,
             e.spent_at,
@@ -227,6 +274,8 @@ def index():
         """
         SELECT
             i.id,
+            i.category_id,
+            i.account_id,
             i.notes,
             i.amount,
             i.received_at,
@@ -315,6 +364,7 @@ def index():
         income_entries=income_entries,
         active_panel=active_panel,
         month_filter=month_filter,
+        settings_section=settings_section,
         total_expenses=total_expenses,
         total_income=total_income,
         net_balance=total_income - total_expenses,
@@ -410,6 +460,36 @@ def add_expense():
     return redirect_home()
 
 
+@app.route("/expenses/<int:expense_id>/edit", methods=["POST"])
+def edit_expense(expense_id):
+    notes = request.form.get("notes", "").strip()
+    amount = request.form.get("amount", "0").strip()
+    category_id = request.form.get("category_id", "").strip()
+    account_id = request.form.get("account_id", "").strip()
+    spent_at_raw = request.form.get("spent_at", "").strip()
+
+    if category_id and account_id:
+        spent_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
+        if spent_at_raw:
+            try:
+                spent_at = datetime.fromisoformat(spent_at_raw).isoformat(timespec="seconds")
+            except ValueError:
+                spent_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
+        conn = get_connection()
+        conn.execute(
+            """
+            UPDATE expenses
+            SET notes = ?, amount = ?, category_id = ?, account_id = ?, spent_at = ?
+            WHERE id = ?
+            """,
+            (notes, float(amount), int(category_id), int(account_id), spent_at, expense_id),
+        )
+        conn.commit()
+        conn.close()
+
+    return redirect_home()
+
+
 @app.route("/expenses/<int:expense_id>/delete", methods=["POST"])
 def delete_expense(expense_id):
     conn = get_connection()
@@ -485,6 +565,36 @@ def add_income():
         )
         conn.commit()
         conn.close()
+    return redirect_home()
+
+
+@app.route("/income/<int:income_id>/edit", methods=["POST"])
+def edit_income(income_id):
+    notes = request.form.get("notes", "").strip()
+    amount = request.form.get("amount", "0").strip()
+    account_id = request.form.get("account_id", "").strip()
+    category_id = request.form.get("category_id", "").strip()
+    received_at_raw = request.form.get("received_at", "").strip()
+
+    if category_id and account_id:
+        received_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
+        if received_at_raw:
+            try:
+                received_at = datetime.fromisoformat(received_at_raw).isoformat(timespec="seconds")
+            except ValueError:
+                received_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
+        conn = get_connection()
+        conn.execute(
+            """
+            UPDATE income_entries
+            SET notes = ?, amount = ?, category_id = ?, account_id = ?, received_at = ?
+            WHERE id = ?
+            """,
+            (notes, float(amount), int(category_id), int(account_id), received_at, income_id),
+        )
+        conn.commit()
+        conn.close()
+
     return redirect_home()
 
 

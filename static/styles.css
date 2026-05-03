@@ -366,6 +366,38 @@ th, td {
     width: 100%;
 }
 
+.action-stack {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 140px;
+}
+
+.edit-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--tab-text);
+    list-style: none;
+}
+
+.edit-details summary::-webkit-details-marker {
+    display: none;
+}
+
+.inline-edit-form {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.45rem;
+    padding: 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.inline-edit-form textarea {
+    min-width: 0;
+    width: 100%;
+}
+
 .btn-danger {
     background: #dc2626;
 }
