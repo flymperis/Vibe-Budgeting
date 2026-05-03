@@ -18,7 +18,7 @@ SHEET_EXPENSE_CATEGORIES = "ExpenseCategories"
 SHEET_INCOME_CATEGORIES = "IncomeCategories"
 SHEET_EXPENSES = "Expenses"
 SHEET_INCOME = "Income"
-ALLOWED_PANELS = {"expenses", "income", "summary", "settings"}
+ALLOWED_PANELS = {"expenses", "income", "summary", "export", "migration", "settings"}
 SETTINGS_SECTIONS = {"general", "expenses", "income"}
 
 
@@ -217,7 +217,7 @@ def resolve_active_panel():
             "/categories/add": "settings",
             "/expenses/add": "expenses",
             "/income/add": "income",
-            "/import/excel": "settings",
+            "/import/excel": "migration",
         }
         if path in mapping:
             return mapping[path]
@@ -390,6 +390,35 @@ def _build_export_workbook(conn):
                 row["created_at"],
             ]
         )
+
+    return wb
+
+
+def _build_migration_template_workbook():
+    wb = Workbook()
+    ws_meta = wb.active
+    ws_meta.title = SHEET_META
+    ws_meta.append(["key", "value"])
+    ws_meta.append(["format_version", EXPORT_FORMAT_VERSION])
+    ws_meta.append(["kind", "migration_template"])
+
+    ws_accounts = wb.create_sheet(SHEET_ACCOUNTS)
+    ws_accounts.append(["name", "opening_balance"])
+    ws_accounts.append(["Main", 0])
+
+    ws_ec = wb.create_sheet(SHEET_EXPENSE_CATEGORIES)
+    ws_ec.append(["name"])
+    ws_ec.append(["General"])
+
+    ws_ic = wb.create_sheet(SHEET_INCOME_CATEGORIES)
+    ws_ic.append(["name"])
+    ws_ic.append(["General"])
+
+    ws_exp = wb.create_sheet(SHEET_EXPENSES)
+    ws_exp.append(["notes", "amount", "category_name", "account_name", "spent_at", "created_at"])
+
+    ws_inc = wb.create_sheet(SHEET_INCOME)
+    ws_inc.append(["notes", "amount", "category_name", "account_name", "received_at", "created_at"])
 
     return wb
 
@@ -627,7 +656,22 @@ def export_excel():
     return send_file(
         buffer,
         as_attachment=True,
-        download_name=f"budget-migration-{stamp}.xlsx",
+        download_name=f"budget-export-{stamp}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        max_age=0,
+    )
+
+
+@app.route("/export/migration-template")
+def export_migration_template():
+    wb = _build_migration_template_workbook()
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="budget-migration-template.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         max_age=0,
     )
@@ -638,7 +682,7 @@ def import_excel():
     upload = request.files.get("file")
     if not upload or upload.filename.strip() == "":
         flash("Choose an Excel file (.xlsx).", "error")
-        return redirect_home(panel="settings")
+        return redirect_home(panel="migration")
 
     replace_movements = request.form.get("replace_movements") == "1"
     sync_opening_balances = request.form.get("sync_opening_balances") == "1"
@@ -646,20 +690,20 @@ def import_excel():
     raw = upload.read()
     if not raw:
         flash("The uploaded file is empty.", "error")
-        return redirect_home(panel="settings")
+        return redirect_home(panel="migration")
 
     try:
         workbook = load_workbook(BytesIO(raw), data_only=True)
     except Exception as exc:
         flash(f"Could not read the Excel file: {exc}", "error")
-        return redirect_home(panel="settings")
+        return redirect_home(panel="migration")
 
     errors = _run_import_workbook(workbook, replace_movements, sync_opening_balances)
     if errors:
         preview = "; ".join(errors[:8])
         extra = f" (+{len(errors) - 8} more)" if len(errors) > 8 else ""
         flash(f"Import failed. {preview}{extra}", "error")
-        return redirect_home(panel="settings")
+        return redirect_home(panel="migration")
 
     flash(
         "Import completed. Accounts/categories from the file were merged (new names added)."
@@ -670,7 +714,7 @@ def import_excel():
         ),
         "success",
     )
-    return redirect_home(panel="settings")
+    return redirect_home(panel="migration")
 
 
 @app.route("/")

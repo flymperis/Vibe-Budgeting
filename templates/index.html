@@ -262,6 +262,47 @@
                     </div>
                 </section>
 
+                <section class="panel {% if active_panel == 'export' %}active{% endif %}" id="panel-export">
+                    <h2>Export current data</h2>
+                    <p class="muted small-hint">
+                        Downloads one Excel file with accounts, expense/income categories, and every expense and income row.
+                        Use this for backups or as the starting point before editing offline.
+                    </p>
+                    <p class="migration-actions">
+                        <a class="btn-secondary" href="{{ url_for('export_excel') }}">Download full export (.xlsx)</a>
+                    </p>
+                </section>
+
+                <section class="panel {% if active_panel == 'migration' %}active{% endif %}" id="panel-migration">
+                    <h2>Migration</h2>
+                    <p class="muted small-hint">
+                        Download an empty workbook that matches the import layout (same sheet names and columns).
+                        Fill rows or paste data from another export, then import below. Matching uses category and account names, not IDs.
+                    </p>
+                    <p class="migration-actions">
+                        <a class="btn-secondary" href="{{ url_for('export_migration_template') }}">Download migration template (.xlsx)</a>
+                    </p>
+
+                    <h3>Import from Excel</h3>
+                    <form action="{{ url_for('import_excel') }}" class="migration-import-form" enctype="multipart/form-data" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <input name="next_panel" type="hidden" value="migration">
+                        <label class="file-upload-row">
+                            <span class="file-upload-label">File (.xlsx)</span>
+                            <input accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" name="file" required type="file">
+                        </label>
+                        <label class="checkbox-row">
+                            <input name="replace_movements" type="checkbox" value="1">
+                            Replace all movements (delete existing expenses &amp; income rows, then import sheet rows)
+                        </label>
+                        <label class="checkbox-row">
+                            <input name="sync_opening_balances" type="checkbox" value="1">
+                            Overwrite opening balances for accounts that already exist (from Accounts sheet)
+                        </label>
+                        <button type="submit">Import</button>
+                    </form>
+                </section>
+
                 <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">
                     <div class="settings-layout">
                         <nav aria-label="Settings sections" class="settings-nav">
@@ -279,34 +320,6 @@
                                         <span class="theme-switch-slider"></span>
                                     </label>
                                 </div>
-
-                                <h2>Excel backup &amp; migration</h2>
-                                <p class="muted small-hint">
-                                    Export includes accounts, categories, and every expense/income row (matched by name on import).
-                                    Use “Replace movements” on the target system to avoid duplicates when moving data once.
-                                </p>
-                                <p class="migration-actions">
-                                    <a class="btn-secondary" href="{{ url_for('export_excel') }}">Download Excel export</a>
-                                </p>
-                                <h3>Import from Excel</h3>
-                                <form action="{{ url_for('import_excel') }}" class="migration-import-form" enctype="multipart/form-data" method="post">
-                                    <input name="month" type="hidden" value="{{ month_filter }}">
-                                    <input name="next_panel" type="hidden" value="settings">
-                                    <input name="settings_section" type="hidden" value="general">
-                                    <label class="file-upload-row">
-                                        <span class="file-upload-label">File (.xlsx)</span>
-                                        <input accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" name="file" required type="file">
-                                    </label>
-                                    <label class="checkbox-row">
-                                        <input name="replace_movements" type="checkbox" value="1">
-                                        Replace all movements (delete existing expenses &amp; income rows, then import sheet rows)
-                                    </label>
-                                    <label class="checkbox-row">
-                                        <input name="sync_opening_balances" type="checkbox" value="1">
-                                        Overwrite opening balances for accounts that already exist (from Accounts sheet)
-                                    </label>
-                                    <button type="submit">Import</button>
-                                </form>
 
                                 <h2>Accounts</h2>
                                 <p class="muted small-hint">Accounts are shared between expenses and income.</p>
@@ -402,6 +415,8 @@
                 <button class="menu-item {% if active_panel == 'expenses' %}active{% endif %}" data-target="panel-expenses" type="button">Expenses</button>
                 <button class="menu-item {% if active_panel == 'income' %}active{% endif %}" data-target="panel-income" type="button">Income</button>
                 <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">Consolidated</button>
+                <button class="menu-item {% if active_panel == 'export' %}active{% endif %}" data-target="panel-export" type="button">Export current data</button>
+                <button class="menu-item {% if active_panel == 'migration' %}active{% endif %}" data-target="panel-migration" type="button">Migration</button>
                 <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">Settings</button>
             </aside>
         </div>
@@ -484,6 +499,8 @@
                         "panel-expenses": "expenses",
                         "panel-income": "income",
                         "panel-summary": "summary",
+                        "panel-export": "export",
+                        "panel-migration": "migration",
                         "panel-settings": "settings"
                     };
                     const panelValue = panelMap[target];
