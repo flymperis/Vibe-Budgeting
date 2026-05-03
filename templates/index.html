@@ -10,161 +10,167 @@
     <main class="container">
         <div class="header-row">
             <h1>Budget App</h1>
-            <button class="theme-toggle" id="theme-toggle" type="button">Light Mode</button>
         </div>
 
-        <div class="tabs">
-            <input checked id="tab-expenses" name="tabs" type="radio">
-            <label for="tab-expenses">Expenses & Categories</label>
+        <div class="app-layout">
+            <div class="panel-shell">
+                <section class="panel active" id="panel-expenses">
+                    <h2>Add Category</h2>
+                    <form action="/categories/add" method="post">
+                        <input name="name" placeholder="Category name" required>
+                        <button type="submit">Add Category</button>
+                    </form>
 
-            <input id="tab-income" name="tabs" type="radio">
-            <label for="tab-income">Income & Accounts</label>
+                    <h2>Add Expense</h2>
+                    <form action="/expenses/add" method="post">
+                        <input name="item" placeholder="Expense item" required>
+                        <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
+                        <select name="category_id" required>
+                            {% for category in categories %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit">Add Expense</button>
+                    </form>
 
-            <input id="tab-summary" name="tabs" type="radio">
-            <label for="tab-summary">Consolidated</label>
+                    <h2>Expenses</h2>
+                    <table>
+                        <thead>
+                            <tr><th>Item</th><th>Category</th><th>Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for expense in expenses %}
+                                <tr>
+                                    <td>{{ expense.item }}</td>
+                                    <td>{{ expense.category_name }}</td>
+                                    <td>{{ "%.2f"|format(expense.amount) }}</td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="3">No expenses yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </section>
 
-            <section class="tab-content">
-                <h2>Add Category</h2>
-                <form action="/categories/add" method="post">
-                    <input name="name" placeholder="Category name" required>
-                    <button type="submit">Add Category</button>
-                </form>
+                <section class="panel" id="panel-income">
+                    <h2>Add Account</h2>
+                    <form action="/accounts/add" method="post">
+                        <input name="name" placeholder="Account name" required>
+                        <input min="0" name="opening_balance" placeholder="Opening balance" required step="0.01" type="number">
+                        <button type="submit">Add Account</button>
+                    </form>
 
-                <h2>Edit Categories</h2>
-                <div class="list-stack">
-                    {% for category in categories %}
-                        <form action="/categories/{{ category.id }}/edit" class="inline-form" method="post">
-                            <input name="name" required type="text" value="{{ category.name }}">
-                            <button type="submit">Save</button>
-                        </form>
-                    {% else %}
-                        <p class="muted">No categories yet.</p>
-                    {% endfor %}
-                </div>
+                    <h2>Add Income Entry</h2>
+                    <form action="/income/add" method="post">
+                        <input name="source" placeholder="Income source" required>
+                        <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
+                        <select name="account_id" required>
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit">Add Income</button>
+                    </form>
 
-                <h2>Add Expense</h2>
-                <form action="/expenses/add" method="post">
-                    <input name="item" placeholder="Expense item" required>
-                    <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
-                    <select name="category_id" required>
+                    <h2>Income Entries</h2>
+                    <table>
+                        <thead>
+                            <tr><th>Source</th><th>Account</th><th>Amount</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in income_entries %}
+                                <tr>
+                                    <td>{{ entry.source }}</td>
+                                    <td>{{ entry.account_name }}</td>
+                                    <td>{{ "%.2f"|format(entry.amount) }}</td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="3">No income entries yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </section>
+
+                <section class="panel" id="panel-summary">
+                    <h2>Consolidated</h2>
+                    <div class="stats">
+                        <div class="card">
+                            <p>Total Income</p>
+                            <strong>{{ "%.2f"|format(total_income) }}</strong>
+                        </div>
+                        <div class="card">
+                            <p>Total Expenses</p>
+                            <strong>{{ "%.2f"|format(total_expenses) }}</strong>
+                        </div>
+                        <div class="card">
+                            <p>Net Balance</p>
+                            <strong>{{ "%.2f"|format(net_balance) }}</strong>
+                        </div>
+                    </div>
+
+                    <h2>Balances Per Account</h2>
+                    <table>
+                        <thead>
+                            <tr><th>Account</th><th>Current Balance</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for account in account_balances %}
+                                <tr>
+                                    <td>{{ account.name }}</td>
+                                    <td>{{ "%.2f"|format(account.current_balance) }}</td>
+                                </tr>
+                            {% else %}
+                                <tr><td colspan="2">No accounts yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </section>
+
+                <section class="panel" id="panel-settings">
+                    <h2>Theme</h2>
+                    <button class="theme-toggle" id="theme-toggle" type="button">Light Mode</button>
+
+                    <h2>Edit Categories</h2>
+                    <div class="list-stack">
                         {% for category in categories %}
-                            <option value="{{ category.id }}">{{ category.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit">Add Expense</button>
-                </form>
-
-                <h2>Expenses</h2>
-                <table>
-                    <thead>
-                        <tr><th>Item</th><th>Category</th><th>Amount</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for expense in expenses %}
-                            <tr>
-                                <td>{{ expense.item }}</td>
-                                <td>{{ expense.category_name }}</td>
-                                <td>{{ "%.2f"|format(expense.amount) }}</td>
-                            </tr>
+                            <form action="/categories/{{ category.id }}/edit" class="inline-form" method="post">
+                                <input name="name" required type="text" value="{{ category.name }}">
+                                <button type="submit">Save</button>
+                            </form>
                         {% else %}
-                            <tr><td colspan="3">No expenses yet.</td></tr>
+                            <p class="muted">No categories yet.</p>
                         {% endfor %}
-                    </tbody>
-                </table>
-            </section>
+                    </div>
 
-            <section class="tab-content">
-                <h2>Add Account</h2>
-                <form action="/accounts/add" method="post">
-                    <input name="name" placeholder="Account name" required>
-                    <input min="0" name="opening_balance" placeholder="Opening balance" required step="0.01" type="number">
-                    <button type="submit">Add Account</button>
-                </form>
-
-                <h2>Edit Accounts</h2>
-                <div class="list-stack">
-                    {% for account in accounts %}
-                        <form action="/accounts/{{ account.id }}/edit" class="inline-form" method="post">
-                            <input name="name" required type="text" value="{{ account.name }}">
-                            <input min="0" name="opening_balance" required step="0.01" type="number" value="{{ account.opening_balance }}">
-                            <button type="submit">Save</button>
-                        </form>
-                    {% else %}
-                        <p class="muted">No accounts yet.</p>
-                    {% endfor %}
-                </div>
-
-                <h2>Add Income Entry</h2>
-                <form action="/income/add" method="post">
-                    <input name="source" placeholder="Income source" required>
-                    <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
-                    <select name="account_id" required>
+                    <h2>Edit Accounts</h2>
+                    <div class="list-stack">
                         {% for account in accounts %}
-                            <option value="{{ account.id }}">{{ account.name }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit">Add Income</button>
-                </form>
-
-                <h2>Income Entries</h2>
-                <table>
-                    <thead>
-                        <tr><th>Source</th><th>Account</th><th>Amount</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for entry in income_entries %}
-                            <tr>
-                                <td>{{ entry.source }}</td>
-                                <td>{{ entry.account_name }}</td>
-                                <td>{{ "%.2f"|format(entry.amount) }}</td>
-                            </tr>
+                            <form action="/accounts/{{ account.id }}/edit" class="inline-form" method="post">
+                                <input name="name" required type="text" value="{{ account.name }}">
+                                <input min="0" name="opening_balance" required step="0.01" type="number" value="{{ account.opening_balance }}">
+                                <button type="submit">Save</button>
+                            </form>
                         {% else %}
-                            <tr><td colspan="3">No income entries yet.</td></tr>
+                            <p class="muted">No accounts yet.</p>
                         {% endfor %}
-                    </tbody>
-                </table>
-            </section>
+                    </div>
+                </section>
+            </div>
 
-            <section class="tab-content">
-                <h2>Consolidated</h2>
-                <div class="stats">
-                    <div class="card">
-                        <p>Total Income</p>
-                        <strong>{{ "%.2f"|format(total_income) }}</strong>
-                    </div>
-                    <div class="card">
-                        <p>Total Expenses</p>
-                        <strong>{{ "%.2f"|format(total_expenses) }}</strong>
-                    </div>
-                    <div class="card">
-                        <p>Net Balance</p>
-                        <strong>{{ "%.2f"|format(net_balance) }}</strong>
-                    </div>
-                </div>
-
-                <h2>Balances Per Account</h2>
-                <table>
-                    <thead>
-                        <tr><th>Account</th><th>Current Balance</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for account in account_balances %}
-                            <tr>
-                                <td>{{ account.name }}</td>
-                                <td>{{ "%.2f"|format(account.current_balance) }}</td>
-                            </tr>
-                        {% else %}
-                            <tr><td colspan="2">No accounts yet.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </section>
+            <aside class="side-menu">
+                <button class="menu-item active" data-target="panel-expenses" type="button">Expenses</button>
+                <button class="menu-item" data-target="panel-income" type="button">Income</button>
+                <button class="menu-item" data-target="panel-summary" type="button">Consolidated</button>
+                <button class="menu-item" data-target="panel-settings" type="button">Settings</button>
+            </aside>
         </div>
     </main>
     <script>
         (function () {
             const root = document.documentElement;
             const button = document.getElementById("theme-toggle");
+            const menuButtons = document.querySelectorAll(".menu-item");
+            const panels = document.querySelectorAll(".panel");
             const savedTheme = localStorage.getItem("theme");
             const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
             const theme = savedTheme || (prefersDark ? "dark" : "light");
@@ -178,6 +184,18 @@
                 root.setAttribute("data-theme", next);
                 localStorage.setItem("theme", next);
                 button.textContent = next === "dark" ? "Light Mode" : "Dark Mode";
+            });
+
+            menuButtons.forEach(function (menuButton) {
+                menuButton.addEventListener("click", function () {
+                    const target = menuButton.getAttribute("data-target");
+                    menuButtons.forEach(function (item) {
+                        item.classList.toggle("active", item === menuButton);
+                    });
+                    panels.forEach(function (panel) {
+                        panel.classList.toggle("active", panel.id === target);
+                    });
+                });
             });
         })();
     </script>

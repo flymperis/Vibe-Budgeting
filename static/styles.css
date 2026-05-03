@@ -12,16 +12,16 @@
 }
 
 :root[data-theme="dark"] {
-    --bg: #0f0b1b;
-    --text: #ebe7ff;
-    --surface: #141022;
-    --surface-alt: #1a1230;
-    --border: #2f2450;
-    --muted: #aa9bd7;
-    --tab: #22183b;
+    --bg: #08080b;
+    --text: #f2eeff;
+    --surface: #111116;
+    --surface-alt: #181821;
+    --border: #2e2844;
+    --muted: #b1a6d6;
+    --tab: #181821;
     --accent: #8b5cf6;
     --accent-hover: #7c3aed;
-    --tab-text: #cbbdff;
+    --tab-text: #d2c7ff;
 }
 
 body {
@@ -32,13 +32,13 @@ body {
 }
 
 .container {
-    max-width: 1000px;
+    max-width: 1200px;
     margin: 2rem auto;
     padding: 0 1rem;
 }
 
 h1 {
-    margin-bottom: 1rem;
+    margin: 0;
 }
 
 .header-row {
@@ -50,6 +50,7 @@ h1 {
 
 .theme-toggle {
     white-space: nowrap;
+    margin-bottom: 1rem;
 }
 
 h2 {
@@ -61,6 +62,51 @@ form {
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 1rem;
+}
+
+.app-layout {
+    display: grid;
+    grid-template-columns: 1fr 230px;
+    gap: 1rem;
+    align-items: start;
+}
+
+.panel-shell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+}
+
+.panel {
+    display: none;
+}
+
+.panel.active {
+    display: block;
+}
+
+.side-menu {
+    display: grid;
+    gap: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem;
+    position: sticky;
+    top: 1rem;
+}
+
+.menu-item {
+    width: 100%;
+    text-align: left;
+    background: var(--surface-alt);
+    color: var(--tab-text);
+}
+
+.menu-item.active {
+    background: var(--accent);
+    color: #fff;
 }
 
 input, select, button {
@@ -96,48 +142,6 @@ th, td {
     text-align: left;
     padding: 0.7rem;
     border-bottom: 1px solid var(--border);
-}
-
-.tabs {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.25rem;
-}
-
-.tabs input[type="radio"] {
-    display: none;
-}
-
-.tabs label {
-    background: var(--tab);
-    padding: 0.7rem;
-    text-align: center;
-    border-radius: 8px 8px 0 0;
-    font-weight: 600;
-    cursor: pointer;
-    color: var(--tab-text);
-}
-
-.tabs .tab-content {
-    display: none;
-    grid-column: 1 / -1;
-    background: var(--surface);
-    padding: 1rem;
-    border-radius: 0 0 10px 10px;
-    border: 1px solid var(--border);
-}
-
-#tab-expenses:checked ~ label[for="tab-expenses"],
-#tab-income:checked ~ label[for="tab-income"],
-#tab-summary:checked ~ label[for="tab-summary"] {
-    background: var(--accent);
-    color: #fff;
-}
-
-#tab-expenses:checked ~ .tab-content:nth-of-type(1),
-#tab-income:checked ~ .tab-content:nth-of-type(2),
-#tab-summary:checked ~ .tab-content:nth-of-type(3) {
-    display: block;
 }
 
 .stats {
@@ -183,4 +187,15 @@ th, td {
 
 .muted {
     color: var(--muted);
+}
+
+@media (max-width: 900px) {
+    .app-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .side-menu {
+        position: static;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
