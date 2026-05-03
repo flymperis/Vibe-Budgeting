@@ -1,6 +1,7 @@
 from flask import Flask, flash, g, redirect, render_template, request, send_file, session, url_for
 import calendar
 import os
+import sys
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -803,6 +804,7 @@ def migrate_expenses_signed_amounts(conn):
 
 
 def init_db():
+    print(f"[budget-app] SQLite database path: {DB_PATH!r}", file=sys.stderr)
     conn = get_connection()
     conn.executescript(
         """

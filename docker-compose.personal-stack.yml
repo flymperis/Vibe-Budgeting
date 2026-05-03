@@ -172,6 +172,7 @@ services:
     depends_on:
       - tailscale-personal
     environment:
+      # Χωρίς αυτό το SQLite πάει στο /app/database.db (μέσα στο container) και χάνεται σε κάθε recreate.
       - DATABASE_PATH=/app/data/database.db
       # Προαιρετικά: FLASK_SECRET_KEY=...  ALLOW_REGISTRATION=false
     volumes:

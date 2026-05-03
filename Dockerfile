@@ -2,6 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Default matches docker-compose volume ./budget-data:/app/data — avoids writing SQLite under /app/database.db
+# (container layer) where data is lost on recreate. Override if you bind-mount a single file elsewhere.
+ENV DATABASE_PATH=/app/data/database.db
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
