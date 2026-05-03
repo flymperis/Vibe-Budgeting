@@ -15,12 +15,6 @@
         <div class="app-layout">
             <div class="panel-shell">
                 <section class="panel active" id="panel-expenses">
-                    <h2>Add Category</h2>
-                    <form action="/categories/add" method="post">
-                        <input name="name" placeholder="Category name" required>
-                        <button type="submit">Add Category</button>
-                    </form>
-
                     <h2>Add Expense</h2>
                     <form action="/expenses/add" method="post">
                         <input name="item" placeholder="Expense item" required>
@@ -53,13 +47,6 @@
                 </section>
 
                 <section class="panel" id="panel-income">
-                    <h2>Add Account</h2>
-                    <form action="/accounts/add" method="post">
-                        <input name="name" placeholder="Account name" required>
-                        <input min="0" name="opening_balance" placeholder="Opening balance" required step="0.01" type="number">
-                        <button type="submit">Add Account</button>
-                    </form>
-
                     <h2>Add Income Entry</h2>
                     <form action="/income/add" method="post">
                         <input name="source" placeholder="Income source" required>
@@ -130,6 +117,12 @@
                     <h2>Theme</h2>
                     <button class="theme-toggle" id="theme-toggle" type="button">Light Mode</button>
 
+                    <h2>Add Category</h2>
+                    <form action="/categories/add" method="post">
+                        <input name="name" placeholder="Category name" required>
+                        <button type="submit">Add Category</button>
+                    </form>
+
                     <h2>Edit Categories</h2>
                     <div class="list-stack">
                         {% for category in categories %}
@@ -141,6 +134,13 @@
                             <p class="muted">No categories yet.</p>
                         {% endfor %}
                     </div>
+
+                    <h2>Add Account</h2>
+                    <form action="/accounts/add" method="post">
+                        <input name="name" placeholder="Account name" required>
+                        <input min="0" name="opening_balance" placeholder="Opening balance" required step="0.01" type="number">
+                        <button type="submit">Add Account</button>
+                    </form>
 
                     <h2>Edit Accounts</h2>
                     <div class="list-stack">

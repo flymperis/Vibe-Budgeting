@@ -42,7 +42,7 @@ docker compose build --no-cache $ServiceName
 Write-Host "==> Restarting only $ServiceName..."
 docker compose up -d $ServiceName
 
-Write-Host "==> Last logs for $ServiceName:"
+Write-Host "==> Last logs for ${ServiceName}:"
 docker compose logs --tail=50 $ServiceName
 
 Write-Host "==> Done."
