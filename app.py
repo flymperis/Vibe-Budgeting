@@ -267,13 +267,17 @@ def balance_line_chart_spec(rows: list, *, width: float = 720, height: float = 3
             "y_ticks": [],
             "month_label_y": month_label_y,
         }
-    y_min = min(0.0, min(vals))
-    y_max = max(vals)
-    if y_max <= y_min:
-        y_max = y_min + 1.0
-    pad = (y_max - y_min) * 0.08 or 1.0
-    y_min -= pad
-    y_max += pad
+    y_lo = min(vals)
+    y_hi = max(vals)
+    span = y_hi - y_lo
+    if span <= 0:
+        eps = max(abs(y_lo) * 0.02, 1.0) if y_lo != 0 else 1.0
+        y_min = y_lo - eps
+        y_max = y_hi + eps
+    else:
+        pad = span * 0.05
+        y_min = y_lo - pad
+        y_max = y_hi + pad
     y_rng = y_max - y_min or 1.0
     y_mid = y_min + y_rng / 2
     n = len(vals)

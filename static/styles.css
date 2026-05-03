@@ -379,31 +379,46 @@ table.yearly-table {
 .reports-balance-chart {
     display: block;
     width: 100%;
-    max-height: 340px;
+    max-height: 400px;
 }
 
 .reports-chart-plot-bg {
     fill: var(--surface-alt);
-    stroke: var(--border);
-    stroke-width: 1;
+    stroke: var(--accent);
+    stroke-opacity: 0.35;
+    stroke-width: 1.5;
 }
 
 .reports-chart-y-tick {
-    fill: var(--muted);
+    fill: var(--text);
+    opacity: 0.72;
+    font-weight: 600;
 }
 
 .reports-chart-line {
     stroke: var(--accent);
+    stroke-width: 3.25;
+    filter: drop-shadow(0 1px 2px rgba(91, 33, 182, 0.25));
+}
+
+:root[data-theme="dark"] .reports-chart-line {
+    filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.35));
 }
 
 .reports-chart-dot {
     fill: var(--accent);
     stroke: var(--surface);
-    stroke-width: 1.5;
+    stroke-width: 2;
+    filter: drop-shadow(0 1px 2px rgba(91, 33, 182, 0.35));
+}
+
+:root[data-theme="dark"] .reports-chart-dot {
+    stroke: var(--surface-alt);
 }
 
 .reports-chart-month {
     fill: var(--muted);
+    font-weight: 600;
 }
 
 :root[data-theme="dark"] .yearly-table .delta-positive {

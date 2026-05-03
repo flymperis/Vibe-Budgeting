@@ -661,14 +661,14 @@
                             <svg class="reports-balance-chart" viewBox="0 0 {{ report_chart_spec.w }} {{ report_chart_spec.h }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Total bank balance by month for {{ report_year }}">
                                 <rect class="reports-chart-plot-bg" x="{{ report_chart_spec.plot_ml }}" y="{{ report_chart_spec.plot_mt }}" width="{{ report_chart_spec.plot_pw }}" height="{{ report_chart_spec.plot_ph }}" rx="4" />
                                 {% for t in report_chart_spec.y_ticks %}
-                                <text class="reports-chart-y-tick" x="{{ t.x }}" y="{{ t.y }}" dominant-baseline="middle" font-size="11">{{ t.text }}</text>
+                                <text class="reports-chart-y-tick" x="{{ t.x }}" y="{{ t.y }}" dominant-baseline="middle" font-size="12">{{ t.text }}</text>
                                 {% endfor %}
                                 {% if report_chart_spec.points %}
-                                <polyline class="reports-chart-line" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="{{ report_chart_spec.points }}" />
+                                <polyline class="reports-chart-line" fill="none" stroke-linecap="round" stroke-linejoin="round" points="{{ report_chart_spec.points }}" />
                                 {% endif %}
                                 {% for d in report_chart_spec.dots %}
                                 <g class="reports-chart-dot-group">
-                                    <circle class="reports-chart-dot" cx="{{ d.cx }}" cy="{{ d.cy }}" r="5">
+                                    <circle class="reports-chart-dot" cx="{{ d.cx }}" cy="{{ d.cy }}" r="6">
                                         <title>{{ d.title }}</title>
                                     </circle>
                                     <text class="reports-chart-month" x="{{ d.lx }}" y="{{ report_chart_spec.month_label_y }}" dominant-baseline="middle" text-anchor="middle" font-size="11">{{ d.short }}</text>
