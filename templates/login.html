@@ -3,14 +3,14 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Log in — Vibe Budgeting</title>
+    <title>Log in — Vibe Budgeting.</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <main class="container auth-panel">
         <h1 class="brand-title">Log in</h1>
-        <p class="small-hint">Vibe Budgeting</p>
+        <p class="small-hint">Vibe Budgeting.</p>
 
         {% with flashes = get_flashed_messages(with_categories=true) %}
             {% if flashes %}
