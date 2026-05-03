@@ -21,7 +21,7 @@ SHEET_EXPENSE_CATEGORIES = "ExpenseCategories"
 SHEET_INCOME_CATEGORIES = "IncomeCategories"
 SHEET_EXPENSES = "Expenses"
 SHEET_INCOME = "Income"
-ALLOWED_PANELS = {"expenses", "income", "summary", "yearly", "settings"}
+ALLOWED_PANELS = {"home", "expenses", "income", "summary", "yearly", "settings"}
 SETTINGS_SECTIONS = {"general", "expenses", "income", "export", "migration"}
 
 
@@ -361,7 +361,7 @@ def resolve_active_panel():
             if path.startswith(prefix):
                 return mapped
 
-    return "expenses"
+    return "home"
 
 
 def redirect_home(panel=None, settings_section=None):
@@ -920,7 +920,7 @@ def index():
         active_panel = raw_panel
         section_from_legacy = None
     else:
-        active_panel = "expenses"
+        active_panel = "home"
         section_from_legacy = None
 
     month_filter = normalize_month(request.args.get("month"))
@@ -931,6 +931,7 @@ def index():
     month_end = month_end.replace(day=1)
     month_start_d = month_start.strftime("%Y-%m-%d")
     month_end_d = month_end.strftime("%Y-%m-%d")
+    month_heading = f"{calendar.month_name[int(month_str)]} {year_str}"
     settings_section = normalize_settings_section(
         section_from_legacy or request.args.get("settings_section")
     )
@@ -1159,6 +1160,7 @@ def index():
         list_page_size=LIST_PAGE_SIZE,
         expense_filter_month=expense_filter_month,
         income_filter_month=income_filter_month,
+        month_heading=month_heading,
     )
 
 
