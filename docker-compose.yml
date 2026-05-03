@@ -1,0 +1,9 @@
+services:
+  budget-app:
+    build: .
+    container_name: budget-app
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./database.db:/app/database.db
+    restart: unless-stopped

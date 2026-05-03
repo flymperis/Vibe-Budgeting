@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Budget App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <main class="container">
+        <h1>Budget App</h1>
+
+        <div class="tabs">
+            <input checked id="tab-expenses" name="tabs" type="radio">
+            <label for="tab-expenses">Expenses & Categories</label>
+
+            <input id="tab-income" name="tabs" type="radio">
+            <label for="tab-income">Income & Accounts</label>
+
+            <input id="tab-summary" name="tabs" type="radio">
+            <label for="tab-summary">Consolidated</label>
+
+            <section class="tab-content">
+                <h2>Add Category</h2>
+                <form action="/categories/add" method="post">
+                    <input name="name" placeholder="Category name" required>
+                    <button type="submit">Add Category</button>
+                </form>
+
+                <h2>Add Expense</h2>
+                <form action="/expenses/add" method="post">
+                    <input name="item" placeholder="Expense item" required>
+                    <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
+                    <select name="category_id" required>
+                        {% for category in categories %}
+                            <option value="{{ category.id }}">{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">Add Expense</button>
+                </form>
+
+                <h2>Expenses</h2>
+                <table>
+                    <thead>
+                        <tr><th>Item</th><th>Category</th><th>Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for expense in expenses %}
+                            <tr>
+                                <td>{{ expense.item }}</td>
+                                <td>{{ expense.category_name }}</td>
+                                <td>{{ "%.2f"|format(expense.amount) }}</td>
+                            </tr>
+                        {% else %}
+                            <tr><td colspan="3">No expenses yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="tab-content">
+                <h2>Add Account</h2>
+                <form action="/accounts/add" method="post">
+                    <input name="name" placeholder="Account name" required>
+                    <input min="0" name="opening_balance" placeholder="Opening balance" required step="0.01" type="number">
+                    <button type="submit">Add Account</button>
+                </form>
+
+                <h2>Add Income Entry</h2>
+                <form action="/income/add" method="post">
+                    <input name="source" placeholder="Income source" required>
+                    <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
+                    <select name="account_id" required>
+                        {% for account in accounts %}
+                            <option value="{{ account.id }}">{{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="submit">Add Income</button>
+                </form>
+
+                <h2>Income Entries</h2>
+                <table>
+                    <thead>
+                        <tr><th>Source</th><th>Account</th><th>Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in income_entries %}
+                            <tr>
+                                <td>{{ entry.source }}</td>
+                                <td>{{ entry.account_name }}</td>
+                                <td>{{ "%.2f"|format(entry.amount) }}</td>
+                            </tr>
+                        {% else %}
+                            <tr><td colspan="3">No income entries yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+
+            <section class="tab-content">
+                <h2>Consolidated</h2>
+                <div class="stats">
+                    <div class="card">
+                        <p>Total Income</p>
+                        <strong>{{ "%.2f"|format(total_income) }}</strong>
+                    </div>
+                    <div class="card">
+                        <p>Total Expenses</p>
+                        <strong>{{ "%.2f"|format(total_expenses) }}</strong>
+                    </div>
+                    <div class="card">
+                        <p>Net Balance</p>
+                        <strong>{{ "%.2f"|format(net_balance) }}</strong>
+                    </div>
+                </div>
+
+                <h2>Balances Per Account</h2>
+                <table>
+                    <thead>
+                        <tr><th>Account</th><th>Current Balance</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for account in account_balances %}
+                            <tr>
+                                <td>{{ account.name }}</td>
+                                <td>{{ "%.2f"|format(account.current_balance) }}</td>
+                            </tr>
+                        {% else %}
+                            <tr><td colspan="2">No accounts yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+        </div>
+    </main>
+</body>
+</html>
