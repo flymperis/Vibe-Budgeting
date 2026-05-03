@@ -670,6 +670,7 @@
                     <div class="settings-layout">
                         <nav aria-label="Settings sections" class="settings-nav">
                             <button class="settings-nav-item {% if settings_section == 'general' %}active{% endif %}" data-settings-target="settings-general" type="button">General</button>
+                            <button class="settings-nav-item {% if settings_section == 'banks' %}active{% endif %}" data-settings-target="settings-banks" type="button">Banks</button>
                             <button class="settings-nav-item {% if settings_section == 'expenses' %}active{% endif %}" data-settings-target="settings-expenses" type="button">Expenses</button>
                             <button class="settings-nav-item {% if settings_section == 'income' %}active{% endif %}" data-settings-target="settings-income" type="button">Income</button>
                             <button class="settings-nav-item {% if settings_section == 'export' %}active{% endif %}" data-settings-target="settings-export" type="button">Export</button>
@@ -685,14 +686,16 @@
                                         <span class="theme-switch-slider"></span>
                                     </label>
                                 </div>
+                            </div>
 
-                                <h2>Accounts</h2>
+                            <div class="settings-section {% if settings_section == 'banks' %}active{% endif %}" id="settings-banks">
+                                <h2>Banks</h2>
                                 <p class="muted small-hint">Accounts are shared between expenses and income.</p>
                                 <h3>Add Account</h3>
                                 <form action="/accounts/add" method="post">
                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                     <input name="next_panel" type="hidden" value="settings">
-                                    <input name="settings_section" type="hidden" value="general">
+                                    <input name="settings_section" type="hidden" value="banks">
                                     <input name="name" placeholder="Account name" required>
                                     <input min="0" name="opening_balance" placeholder="Opening balance" required step="0.01" type="number">
                                     <button type="submit">Add Account</button>
@@ -704,7 +707,7 @@
                                         <form action="/accounts/{{ account.id }}/edit" class="inline-form" method="post">
                                             <input name="month" type="hidden" value="{{ month_filter }}">
                                             <input name="next_panel" type="hidden" value="settings">
-                                            <input name="settings_section" type="hidden" value="general">
+                                            <input name="settings_section" type="hidden" value="banks">
                                             <input name="name" required type="text" value="{{ account.name }}">
                                             <input min="0" name="opening_balance" required step="0.01" type="number" value="{{ account.opening_balance }}">
                                             <button type="submit">Save</button>
@@ -896,6 +899,7 @@
             const settingsSections = document.querySelectorAll(".settings-section");
             const settingsSectionMap = {
                 "settings-general": "general",
+                "settings-banks": "banks",
                 "settings-expenses": "expenses",
                 "settings-income": "income",
                 "settings-export": "export",

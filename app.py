@@ -22,7 +22,7 @@ SHEET_INCOME_CATEGORIES = "IncomeCategories"
 SHEET_EXPENSES = "Expenses"
 SHEET_INCOME = "Income"
 ALLOWED_PANELS = {"home", "expenses", "income", "transfer", "summary", "yearly", "reports", "settings"}
-SETTINGS_SECTIONS = {"general", "expenses", "income", "export", "migration"}
+SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration"}
 
 
 def normalize_expense_amount(raw):
