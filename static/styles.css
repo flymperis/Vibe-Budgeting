@@ -55,34 +55,33 @@ h1 {
 
 .app-logo {
     flex-shrink: 0;
-    width: 4.25rem;
+    width: 3.5rem;
     height: auto;
     display: block;
-    filter: drop-shadow(0 2px 6px rgba(139, 92, 246, 0.28));
+    filter: drop-shadow(0 2px 8px rgba(91, 33, 182, 0.22));
 }
 
 :root[data-theme="dark"] .app-logo {
-    filter: drop-shadow(0 2px 10px rgba(139, 92, 246, 0.35));
+    filter: drop-shadow(0 2px 12px rgba(139, 92, 246, 0.35));
 }
 
-.app-logo-text {
-    font-family: Impact, "Arial Narrow", "Arial Black", "Segoe UI", sans-serif;
-    font-size: 44px;
-    font-weight: 900;
-    letter-spacing: -0.14em;
-    stroke: var(--text);
-    stroke-width: 1.35px;
-    paint-order: stroke fill;
-}
-
-.app-logo-squiggle {
+.app-logo-frame {
+    fill: var(--surface);
     stroke: var(--accent);
-    opacity: 0.9;
+    stroke-width: 2;
 }
 
-.app-logo-dot {
+:root[data-theme="dark"] .app-logo-frame {
+    fill: var(--surface-alt);
+    stroke: #a78bfa;
+}
+
+.app-logo-fill {
     fill: var(--accent);
-    opacity: 0.95;
+}
+
+:root[data-theme="dark"] .app-logo-fill {
+    fill: #c4b5fd;
 }
 
 .header-row {

@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vibe Budgeting</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="alternate icon" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
@@ -56,18 +58,13 @@
     <main class="container">
         <div class="header-row">
             <div class="brand-lockup">
-                <svg class="app-logo" viewBox="0 0 118 58" aria-hidden="true" focusable="false">
-                    <defs>
-                        <linearGradient id="vb-logo-grad" x1="0%" y1="100%" x2="100%" y2="0%">
-                            <stop offset="0%" stop-color="var(--accent-hover)"/>
-                            <stop offset="55%" stop-color="var(--accent)"/>
-                            <stop offset="100%" stop-color="var(--tab-text)"/>
-                        </linearGradient>
-                    </defs>
-                    <g transform="translate(2 2) rotate(-5 54 26)">
-                        <text class="app-logo-text" x="0" y="40" fill="url(#vb-logo-grad)">VB</text>
-                        <path class="app-logo-squiggle" d="M 2 46 Q 26 54 52 44 Q 76 36 102 46" fill="none" stroke-width="2.25" stroke-linecap="round"/>
-                        <circle class="app-logo-dot" cx="98" cy="10" r="4"/>
+                <svg class="app-logo" viewBox="0 0 56 52" aria-hidden="true" focusable="false">
+                    <rect class="app-logo-frame" x="1" y="1" width="54" height="50" rx="14" ry="14"/>
+                    <g class="app-logo-mark" transform="translate(11.2 9.6) scale(1.08)">
+                        <path class="app-logo-fill" d="M 5.5 8 L 10 22 L 12 22 L 16.5 8 H 13.9 L 11 18.4 L 8.1 8 Z"/>
+                        <path class="app-logo-fill" d="M 17 8 H 20 V 22 H 17 Z"/>
+                        <path class="app-logo-fill" d="M 20 8 H 21.8 Q 26.6 8 26.6 11.4 Q 26.6 14.4 21.6 14.4 H 20 V 8 Z"/>
+                        <path class="app-logo-fill" d="M 20 14.4 H 22.6 Q 27.6 14.4 27.6 18 Q 27.6 21.6 22.6 21.6 H 20 V 14.4 Z"/>
                     </g>
                 </svg>
                 <h1 class="brand-title">Vibe Budgeting</h1>
