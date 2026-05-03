@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Register — Vibe Budgeting</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <main class="container auth-panel">
+        <h1 class="brand-title">Create account</h1>
+        <p class="small-hint">Choose a username and password (min. 8 characters).</p>
+
+        {% with flashes = get_flashed_messages(with_categories=true) %}
+            {% if flashes %}
+                <div class="flash-stack" role="status">
+                    {% for category, message in flashes %}
+                        <p class="flash flash-{{ category }}">{{ message }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="post" action="{{ url_for('register') }}" class="auth-form">
+            <label>
+                Username
+                <input type="text" name="username" autocomplete="username" required autofocus maxlength="32">
+            </label>
+            <label>
+                Password
+                <input type="password" name="password" autocomplete="new-password" required minlength="8">
+            </label>
+            <label>
+                Confirm password
+                <input type="password" name="password2" autocomplete="new-password" required minlength="8">
+            </label>
+            <button type="submit">Register</button>
+        </form>
+
+        <p class="auth-footer"><a href="{{ url_for('login') }}">Back to log in</a></p>
+    </main>
+</body>
+</html>

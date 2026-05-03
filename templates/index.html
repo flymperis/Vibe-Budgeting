@@ -72,6 +72,14 @@
                 </svg>
                 <h1 class="brand-title">Vibe Budgeting</h1>
             </div>
+            {% if session_username %}
+            <div class="header-user">
+                <span class="header-user-name">{{ session_username }}</span>
+                <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+                    <button type="submit" class="btn-secondary">Log out</button>
+                </form>
+            </div>
+            {% endif %}
         </div>
 
         {% with flashes = get_flashed_messages(with_categories=true) %}

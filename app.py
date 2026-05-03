@@ -1,4 +1,4 @@
-from flask import Flask, flash, redirect, render_template, request, send_file, url_for
+from flask import Flask, flash, g, redirect, render_template, request, send_file, session, url_for
 import calendar
 import os
 import re
@@ -8,12 +8,13 @@ from io import BytesIO
 from urllib.parse import urlparse
 
 from openpyxl import Workbook, load_workbook
+from werkzeug.security import check_password_hash, generate_password_hash
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
 DB_PATH = "database.db"
 EXPORT_FORMAT_VERSION = 1
 LIST_PAGE_SIZE = 75
+ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "true").lower() in ("1", "true", "yes")
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
 
 SHEET_META = "_meta"
 SHEET_ACCOUNTS = "Accounts"
@@ -33,6 +34,26 @@ ALLOWED_PANELS = {
     "settings",
 }
 SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration"}
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
+
+
+@app.before_request
+def _require_login():
+    if request.endpoint in ("login", "register", "static", None):
+        return None
+    uid = session.get("user_id")
+    if not uid:
+        return redirect(url_for("login", next=request.path))
+    try:
+        g.user_id = int(uid)
+    except (TypeError, ValueError):
+        session.pop("user_id", None)
+        session.pop("username", None)
+        return redirect(url_for("login", next=request.path))
+    g.username = session.get("username") or ""
+    return None
 
 
 def normalize_expense_amount(raw):
@@ -97,12 +118,18 @@ def _month_iter(start_ym: str, end_ym: str):
             y += 1
 
 
-def apply_recurring_entries(conn):
+def apply_recurring_entries(conn, user_id):
     """Insert expense/income rows for due recurring rules (catch-up through current month)."""
+    uid = int(user_id)
     today = datetime.now().date()
     today_ym = f"{today.year:04d}-{today.month:02d}"
     rules = conn.execute(
-        "SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at FROM recurring_entries WHERE enabled = 1"
+        """
+        SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at
+        FROM recurring_entries
+        WHERE enabled = 1 AND user_id = ?
+        """,
+        (uid,),
     ).fetchall()
     posted = 0
     for rule in rules:
@@ -128,10 +155,11 @@ def apply_recurring_entries(conn):
             if et == "expense":
                 conn.execute(
                     """
-                    INSERT INTO expenses (notes, amount, category_id, account_id, spent_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO expenses (user_id, notes, amount, category_id, account_id, spent_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        uid,
                         full_notes,
                         -abs(float(rule["amount"])),
                         int(rule["category_id"]),
@@ -142,10 +170,11 @@ def apply_recurring_entries(conn):
             elif et == "income":
                 conn.execute(
                     """
-                    INSERT INTO income_entries (notes, amount, category_id, account_id, received_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO income_entries (user_id, notes, amount, category_id, account_id, received_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        uid,
                         full_notes,
                         abs(float(rule["amount"])),
                         int(rule["category_id"]),
@@ -300,8 +329,9 @@ def get_connection():
     return conn
 
 
-def fetch_account_balances_through(conn, balance_cutoff_d):
+def fetch_account_balances_through(conn, balance_cutoff_d, user_id):
     """Per-account balance with income, expenses, and transfers strictly before balance_cutoff_d (YYYY-MM-DD)."""
+    uid = int(user_id)
     return conn.execute(
         """
         SELECT
@@ -316,34 +346,45 @@ def fetch_account_balances_through(conn, balance_cutoff_d):
         LEFT JOIN (
             SELECT account_id, SUM(amount) AS total_income
             FROM income_entries
-            WHERE date(received_at) < date(?)
+            WHERE user_id = ? AND date(received_at) < date(?)
             GROUP BY account_id
         ) income_totals ON income_totals.account_id = a.id
         LEFT JOIN (
             SELECT account_id, SUM(amount) AS total_expenses
             FROM expenses
-            WHERE date(spent_at) < date(?)
+            WHERE user_id = ? AND date(spent_at) < date(?)
             GROUP BY account_id
         ) expense_totals ON expense_totals.account_id = a.id
         LEFT JOIN (
             SELECT to_account_id AS account_id, SUM(amount) AS t_in
             FROM account_transfers
-            WHERE date(transferred_at) < date(?)
+            WHERE user_id = ? AND date(transferred_at) < date(?)
             GROUP BY to_account_id
         ) transfer_in ON transfer_in.account_id = a.id
         LEFT JOIN (
             SELECT from_account_id AS account_id, SUM(amount) AS t_out
             FROM account_transfers
-            WHERE date(transferred_at) < date(?)
+            WHERE user_id = ? AND date(transferred_at) < date(?)
             GROUP BY from_account_id
         ) transfer_out ON transfer_out.account_id = a.id
+        WHERE a.user_id = ?
         ORDER BY a.name
         """,
-        (balance_cutoff_d, balance_cutoff_d, balance_cutoff_d, balance_cutoff_d),
+        (
+            uid,
+            balance_cutoff_d,
+            uid,
+            balance_cutoff_d,
+            uid,
+            balance_cutoff_d,
+            uid,
+            balance_cutoff_d,
+            uid,
+        ),
     ).fetchall()
 
 
-def monthly_total_balances_for_year(conn, year: int, today_d) -> list[float]:
+def monthly_total_balances_for_year(conn, year: int, today_d, user_id) -> list[float]:
     """Sum of all account balances after each calendar month (selected year's current month through today)."""
     balances = []
     for month_num in range(1, 13):
@@ -355,7 +396,7 @@ def monthly_total_balances_for_year(conn, year: int, today_d) -> list[float]:
             snap_cutoff = (today_d + timedelta(days=1)).isoformat()
         else:
             snap_cutoff = month_end_cutoff
-        rows_m = fetch_account_balances_through(conn, snap_cutoff)
+        rows_m = fetch_account_balances_through(conn, snap_cutoff, user_id)
         balances.append(sum(float(r["current_balance"]) for r in rows_m))
     return balances
 
@@ -504,6 +545,110 @@ def migrate_schema(conn):
     migrate_expenses_signed_amounts(conn)
     migrate_txn_dates_to_day(conn)
     migrate_recurring_entries(conn)
+    migrate_users_multitenancy(conn)
+
+
+def migrate_users_multitenancy(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cat_cols = _column_names(conn, "categories") or []
+    if "user_id" in cat_cols:
+        return
+
+    uid_row = conn.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+    if uid_row:
+        uid = int(uid_row["id"])
+    else:
+        legacy_pw = os.environ.get("VB_LEGACY_ADMIN_PASSWORD", "changeme")
+        conn.execute(
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            ("admin", generate_password_hash(legacy_pw)),
+        )
+        uid = int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+
+    conn.execute(
+        """
+        CREATE TABLE categories_new (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            name TEXT NOT NULL,
+            UNIQUE(user_id, name)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO categories_new (id, user_id, name) SELECT id, ?, name FROM categories",
+        (uid,),
+    )
+    conn.execute("DROP TABLE categories")
+    conn.execute("ALTER TABLE categories_new RENAME TO categories")
+
+    conn.execute(
+        """
+        CREATE TABLE income_categories_new (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            name TEXT NOT NULL,
+            UNIQUE(user_id, name)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO income_categories_new (id, user_id, name) SELECT id, ?, name FROM income_categories",
+        (uid,),
+    )
+    conn.execute("DROP TABLE income_categories")
+    conn.execute("ALTER TABLE income_categories_new RENAME TO income_categories")
+
+    conn.execute(
+        """
+        CREATE TABLE accounts_new (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            name TEXT NOT NULL,
+            opening_balance REAL NOT NULL DEFAULT 0,
+            UNIQUE(user_id, name)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO accounts_new (id, user_id, name, opening_balance)
+        SELECT id, ?, name, opening_balance FROM accounts
+        """,
+        (uid,),
+    )
+    conn.execute("DROP TABLE accounts")
+    conn.execute("ALTER TABLE accounts_new RENAME TO accounts")
+
+    conn.execute(f"ALTER TABLE expenses ADD COLUMN user_id INTEGER NOT NULL DEFAULT {uid}")
+    conn.execute(f"ALTER TABLE income_entries ADD COLUMN user_id INTEGER NOT NULL DEFAULT {uid}")
+    conn.execute(f"ALTER TABLE account_transfers ADD COLUMN user_id INTEGER NOT NULL DEFAULT {uid}")
+    conn.execute(f"ALTER TABLE recurring_entries ADD COLUMN user_id INTEGER NOT NULL DEFAULT {uid}")
+
+
+def seed_user_defaults(conn, user_id):
+    uid = int(user_id)
+    conn.execute(
+        "INSERT OR IGNORE INTO categories (user_id, name) VALUES (?, ?)",
+        (uid, "General"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO income_categories (user_id, name) VALUES (?, ?)",
+        (uid, "General"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO accounts (user_id, name, opening_balance) VALUES (?, ?, ?)",
+        (uid, "Main", 0.0),
+    )
 
 
 def migrate_recurring_entries(conn):
@@ -580,25 +725,49 @@ def migrate_expenses_signed_amounts(conn):
     create_sql = row["sql"]
     if not re.search(r"CHECK\s*\(\s*amount\s*>=\s*0\s*\)", create_sql, re.I):
         return
-    conn.executescript(
-        """
-        CREATE TABLE expenses_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            notes TEXT NOT NULL DEFAULT '',
-            amount REAL NOT NULL,
-            category_id INTEGER NOT NULL,
-            account_id INTEGER NOT NULL,
-            spent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (category_id) REFERENCES categories(id),
-            FOREIGN KEY (account_id) REFERENCES accounts(id)
-        );
-        INSERT INTO expenses_new (id, notes, amount, category_id, account_id, spent_at, created_at)
-        SELECT id, notes, -ABS(amount), category_id, account_id, spent_at, created_at FROM expenses;
-        DROP TABLE expenses;
-        ALTER TABLE expenses_new RENAME TO expenses;
-        """
-    )
+    cols = _column_names(conn, "expenses") or []
+    has_uid = "user_id" in cols
+    if has_uid:
+        conn.executescript(
+            """
+            CREATE TABLE expenses_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                amount REAL NOT NULL,
+                category_id INTEGER NOT NULL,
+                account_id INTEGER NOT NULL,
+                spent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES categories(id),
+                FOREIGN KEY (account_id) REFERENCES accounts(id)
+            );
+            INSERT INTO expenses_new (id, user_id, notes, amount, category_id, account_id, spent_at, created_at)
+            SELECT id, user_id, notes, -ABS(amount), category_id, account_id, spent_at, created_at FROM expenses;
+            DROP TABLE expenses;
+            ALTER TABLE expenses_new RENAME TO expenses;
+            """
+        )
+    else:
+        conn.executescript(
+            """
+            CREATE TABLE expenses_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notes TEXT NOT NULL DEFAULT '',
+                amount REAL NOT NULL,
+                category_id INTEGER NOT NULL,
+                account_id INTEGER NOT NULL,
+                spent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES categories(id),
+                FOREIGN KEY (account_id) REFERENCES accounts(id)
+            );
+            INSERT INTO expenses_new (id, notes, amount, category_id, account_id, spent_at, created_at)
+            SELECT id, notes, -ABS(amount), category_id, account_id, spent_at, created_at FROM expenses;
+            DROP TABLE expenses;
+            ALTER TABLE expenses_new RENAME TO expenses;
+            """
+        )
 
 
 def init_db():
@@ -818,7 +987,8 @@ def _optional_created_at(value, sheet, row_num):
     return _parse_excel_timestamp(value, sheet, row_num, "created_at")
 
 
-def _build_export_workbook(conn):
+def _build_export_workbook(conn, user_id):
+    uid = int(user_id)
     wb = Workbook()
     ws_meta = wb.active
     ws_meta.title = SHEET_META
@@ -828,17 +998,26 @@ def _build_export_workbook(conn):
 
     ws_accounts = wb.create_sheet(SHEET_ACCOUNTS)
     ws_accounts.append(["name", "opening_balance"])
-    for row in conn.execute("SELECT name, opening_balance FROM accounts ORDER BY name"):
+    for row in conn.execute(
+        "SELECT name, opening_balance FROM accounts WHERE user_id = ? ORDER BY name",
+        (uid,),
+    ):
         ws_accounts.append([row["name"], row["opening_balance"]])
 
     ws_ec = wb.create_sheet(SHEET_EXPENSE_CATEGORIES)
     ws_ec.append(["name"])
-    for row in conn.execute("SELECT name FROM categories ORDER BY name"):
+    for row in conn.execute(
+        "SELECT name FROM categories WHERE user_id = ? ORDER BY name",
+        (uid,),
+    ):
         ws_ec.append([row["name"]])
 
     ws_ic = wb.create_sheet(SHEET_INCOME_CATEGORIES)
     ws_ic.append(["name"])
-    for row in conn.execute("SELECT name FROM income_categories ORDER BY name"):
+    for row in conn.execute(
+        "SELECT name FROM income_categories WHERE user_id = ? ORDER BY name",
+        (uid,),
+    ):
         ws_ic.append([row["name"]])
 
     ws_exp = wb.create_sheet(SHEET_EXPENSES)
@@ -849,8 +1028,10 @@ def _build_export_workbook(conn):
         FROM expenses e
         JOIN categories c ON c.id = e.category_id
         JOIN accounts a ON a.id = e.account_id
+        WHERE e.user_id = ?
         ORDER BY e.spent_at ASC, e.id ASC
-        """
+        """,
+        (uid,),
     ):
         ws_exp.append(
             [
@@ -871,8 +1052,10 @@ def _build_export_workbook(conn):
         FROM income_entries i
         JOIN income_categories c ON c.id = i.category_id
         JOIN accounts a ON a.id = i.account_id
+        WHERE i.user_id = ?
         ORDER BY i.received_at ASC, i.id ASC
-        """
+        """,
+        (uid,),
     ):
         ws_inc.append(
             [
@@ -917,9 +1100,32 @@ def _build_migration_template_workbook():
     return wb
 
 
-def _lookup_id(conn, sql, name):
-    row = conn.execute(sql, (name.strip(),)).fetchone()
+def _lookup_category_id(conn, name, user_id, expense=True):
+    uid = int(user_id)
+    table = "categories" if expense else "income_categories"
+    row = conn.execute(
+        f"SELECT id FROM {table} WHERE user_id = ? AND name = ?",
+        (uid, name.strip()),
+    ).fetchone()
     return row["id"] if row else None
+
+
+def _lookup_account_id(conn, name, user_id):
+    uid = int(user_id)
+    row = conn.execute(
+        "SELECT id FROM accounts WHERE user_id = ? AND name = ?",
+        (uid, name.strip()),
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def _safe_next_url(raw):
+    if not raw or not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text.startswith("/") or text.startswith("//"):
+        return None
+    return text
 
 
 def _collect_import_movements(expense_rows, income_rows):
@@ -995,7 +1201,7 @@ def _collect_import_movements(expense_rows, income_rows):
     return insert_expenses, insert_income, errors
 
 
-def _run_import_workbook(wb, replace_movements, sync_opening_balances):
+def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
     errors = []
     required_sheets = {
         SHEET_ACCOUNTS,
@@ -1027,6 +1233,7 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
     }
 
     conn = get_connection()
+    uid = int(user_id)
     try:
         conn.execute("BEGIN")
 
@@ -1046,13 +1253,13 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
                     errors.append(f"{SHEET_ACCOUNTS} row {idx}: invalid opening_balance")
                     continue
             conn.execute(
-                "INSERT OR IGNORE INTO accounts(name, opening_balance) VALUES (?, ?)",
-                (name, opening_balance),
+                "INSERT OR IGNORE INTO accounts(user_id, name, opening_balance) VALUES (?, ?, ?)",
+                (uid, name, opening_balance),
             )
             if sync_opening_balances:
                 conn.execute(
-                    "UPDATE accounts SET opening_balance = ? WHERE name = ?",
-                    (opening_balance, name),
+                    "UPDATE accounts SET opening_balance = ? WHERE user_id = ? AND name = ?",
+                    (opening_balance, uid, name),
                 )
 
         if errors:
@@ -1064,46 +1271,52 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
             if name is None or not str(name).strip():
                 continue
             conn.execute(
-                "INSERT OR IGNORE INTO categories(name) VALUES (?)",
-                (str(name).strip(),),
+                "INSERT OR IGNORE INTO categories(user_id, name) VALUES (?, ?)",
+                (uid, str(name).strip()),
             )
 
         for name in sorted(expense_cats_from_movements):
-            conn.execute("INSERT OR IGNORE INTO categories(name) VALUES (?)", (name,))
+            conn.execute(
+                "INSERT OR IGNORE INTO categories(user_id, name) VALUES (?, ?)",
+                (uid, name),
+            )
 
         for idx, row in enumerate(income_cat_rows, start=2):
             name = row.get("name")
             if name is None or not str(name).strip():
                 continue
             conn.execute(
-                "INSERT OR IGNORE INTO income_categories(name) VALUES (?)",
-                (str(name).strip(),),
+                "INSERT OR IGNORE INTO income_categories(user_id, name) VALUES (?, ?)",
+                (uid, str(name).strip()),
             )
 
         for name in sorted(income_cats_from_movements):
-            conn.execute("INSERT OR IGNORE INTO income_categories(name) VALUES (?)", (name,))
+            conn.execute(
+                "INSERT OR IGNORE INTO income_categories(user_id, name) VALUES (?, ?)",
+                (uid, name),
+            )
 
         for acc_name in sorted(accounts_from_movements):
             conn.execute(
-                "INSERT OR IGNORE INTO accounts(name, opening_balance) VALUES (?, ?)",
-                (acc_name, 0.0),
+                "INSERT OR IGNORE INTO accounts(user_id, name, opening_balance) VALUES (?, ?, ?)",
+                (uid, acc_name, 0.0),
             )
 
         if replace_movements:
-            conn.execute("DELETE FROM expenses")
-            conn.execute("DELETE FROM income_entries")
+            conn.execute("DELETE FROM expenses WHERE user_id = ?", (uid,))
+            conn.execute("DELETE FROM income_entries WHERE user_id = ?", (uid,))
 
         for notes, amount, cat_name, acc_name, spent_at, created_at in insert_expenses:
-            category_id = _lookup_id(conn, "SELECT id FROM categories WHERE name = ?", cat_name)
-            account_id = _lookup_id(conn, "SELECT id FROM accounts WHERE name = ?", acc_name)
+            category_id = _lookup_category_id(conn, cat_name, uid, expense=True)
+            account_id = _lookup_account_id(conn, acc_name, uid)
             if category_id is None:
                 errors.append(f"{SHEET_EXPENSES}: unknown expense category {cat_name!r}")
             if account_id is None:
                 errors.append(f"{SHEET_EXPENSES}: unknown account {acc_name!r}")
 
         for notes, amount, cat_name, acc_name, received_at, created_at in insert_income:
-            category_id = _lookup_id(conn, "SELECT id FROM income_categories WHERE name = ?", cat_name)
-            account_id = _lookup_id(conn, "SELECT id FROM accounts WHERE name = ?", acc_name)
+            category_id = _lookup_category_id(conn, cat_name, uid, expense=False)
+            account_id = _lookup_account_id(conn, acc_name, uid)
             if category_id is None:
                 errors.append(f"{SHEET_INCOME}: unknown income category {cat_name!r}")
             if account_id is None:
@@ -1114,43 +1327,43 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
             return errors
 
         for notes, amount, cat_name, acc_name, spent_at, created_at in insert_expenses:
-            category_id = _lookup_id(conn, "SELECT id FROM categories WHERE name = ?", cat_name)
-            account_id = _lookup_id(conn, "SELECT id FROM accounts WHERE name = ?", acc_name)
+            category_id = _lookup_category_id(conn, cat_name, uid, expense=True)
+            account_id = _lookup_account_id(conn, acc_name, uid)
             if created_at:
                 conn.execute(
                     """
-                    INSERT INTO expenses (notes, amount, category_id, account_id, spent_at, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO expenses (user_id, notes, amount, category_id, account_id, spent_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (notes, amount, category_id, account_id, spent_at, created_at),
+                    (uid, notes, amount, category_id, account_id, spent_at, created_at),
                 )
             else:
                 conn.execute(
                     """
-                    INSERT INTO expenses (notes, amount, category_id, account_id, spent_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO expenses (user_id, notes, amount, category_id, account_id, spent_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (notes, amount, category_id, account_id, spent_at),
+                    (uid, notes, amount, category_id, account_id, spent_at),
                 )
 
         for notes, amount, cat_name, acc_name, received_at, created_at in insert_income:
-            category_id = _lookup_id(conn, "SELECT id FROM income_categories WHERE name = ?", cat_name)
-            account_id = _lookup_id(conn, "SELECT id FROM accounts WHERE name = ?", acc_name)
+            category_id = _lookup_category_id(conn, cat_name, uid, expense=False)
+            account_id = _lookup_account_id(conn, acc_name, uid)
             if created_at:
                 conn.execute(
                     """
-                    INSERT INTO income_entries (notes, amount, category_id, account_id, received_at, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO income_entries (user_id, notes, amount, category_id, account_id, received_at, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (notes, amount, category_id, account_id, received_at, created_at),
+                    (uid, notes, amount, category_id, account_id, received_at, created_at),
                 )
             else:
                 conn.execute(
                     """
-                    INSERT INTO income_entries (notes, amount, category_id, account_id, received_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO income_entries (user_id, notes, amount, category_id, account_id, received_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (notes, amount, category_id, account_id, received_at),
+                    (uid, notes, amount, category_id, account_id, received_at),
                 )
 
         conn.commit()
@@ -1162,11 +1375,85 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances):
         conn.close()
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("user_id"):
+        nxt = _safe_next_url(request.args.get("next"))
+        return redirect(nxt or url_for("index"))
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT id, password_hash FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row and check_password_hash(row["password_hash"], password):
+            session["user_id"] = row["id"]
+            session["username"] = username
+            nxt = _safe_next_url(request.form.get("next")) or _safe_next_url(request.args.get("next"))
+            return redirect(nxt or url_for("index"))
+        flash("Invalid username or password.", "error")
+    return render_template("login.html", next=request.args.get("next") or "", allow_registration=ALLOW_REGISTRATION)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if not ALLOW_REGISTRATION:
+        flash("Registration is disabled.", "error")
+        return redirect(url_for("login"))
+    if session.get("user_id"):
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        password2 = request.form.get("password2") or ""
+        if not _USERNAME_RE.fullmatch(username):
+            flash("Username must be 3–32 characters (letters, digits, . _ -).", "error")
+            return render_template("register.html")
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.", "error")
+            return render_template("register.html")
+        if password != password2:
+            flash("Passwords do not match.", "error")
+            return render_template("register.html")
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+                (username, generate_password_hash(password)),
+            )
+            uid = int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+            seed_user_defaults(conn, uid)
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            conn.close()
+            flash("That username is already taken.", "error")
+            return render_template("register.html")
+        conn.close()
+        session["user_id"] = uid
+        session["username"] = username
+        flash("Account created.", "success")
+        return redirect(url_for("index"))
+    return render_template("register.html")
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.pop("user_id", None)
+    session.pop("username", None)
+    return redirect(url_for("login"))
+
+
 @app.route("/export/excel")
 def export_excel():
     conn = get_connection()
     try:
-        wb = _build_export_workbook(conn)
+        wb = _build_export_workbook(conn, g.user_id)
     finally:
         conn.close()
 
@@ -1219,7 +1506,7 @@ def import_excel():
         flash(f"Could not read the Excel file: {exc}", "error")
         return redirect_home(panel="settings", settings_section="migration")
 
-    errors = _run_import_workbook(workbook, replace_movements, sync_opening_balances)
+    errors = _run_import_workbook(workbook, replace_movements, sync_opening_balances, g.user_id)
     if errors:
         preview = "; ".join(errors[:8])
         extra = f" (+{len(errors) - 8} more)" if len(errors) > 8 else ""
@@ -1241,8 +1528,9 @@ def import_excel():
 @app.route("/")
 def index():
     conn = get_connection()
+    uid = g.user_id
 
-    posted_recurring = apply_recurring_entries(conn)
+    posted_recurring = apply_recurring_entries(conn, uid)
     if posted_recurring > 0:
         conn.commit()
         flash(
@@ -1278,8 +1566,14 @@ def index():
         section_from_legacy or request.args.get("settings_section")
     )
 
-    categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
-    income_categories = conn.execute("SELECT id, name FROM income_categories ORDER BY name").fetchall()
+    categories = conn.execute(
+        "SELECT id, name FROM categories WHERE user_id = ? ORDER BY name",
+        (uid,),
+    ).fetchall()
+    income_categories = conn.execute(
+        "SELECT id, name FROM income_categories WHERE user_id = ? ORDER BY name",
+        (uid,),
+    ).fetchall()
 
     recurring_entries = conn.execute(
         """
@@ -1299,17 +1593,19 @@ def index():
         JOIN accounts a ON a.id = r.account_id
         LEFT JOIN categories c ON r.entry_type = 'expense' AND c.id = r.category_id
         LEFT JOIN income_categories ic ON r.entry_type = 'income' AND ic.id = r.category_id
+        WHERE r.user_id = ?
         ORDER BY r.day_of_month, r.id
-        """
+        """,
+        (uid,),
     ).fetchall()
 
     expense_filter_month = resolve_list_month_filter("exp_month", "exp_cal_year", "exp_cal_month")
-    expense_where = ""
-    expense_where_params = []
+    expense_where = "WHERE e.user_id = ?"
+    expense_where_params = [uid]
     if expense_filter_month:
         eb = month_bounds_dates(expense_filter_month)
-        expense_where = "WHERE date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)"
-        expense_where_params = [eb[0], eb[1]]
+        expense_where += " AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)"
+        expense_where_params.extend([eb[0], eb[1]])
 
     expense_total = conn.execute(
         f"SELECT COUNT(*) AS n FROM expenses e {expense_where}",
@@ -1340,15 +1636,18 @@ def index():
         (*expense_where_params, LIST_PAGE_SIZE, expense_offset),
     ).fetchall()
 
-    accounts = conn.execute("SELECT id, name, opening_balance FROM accounts ORDER BY name").fetchall()
+    accounts = conn.execute(
+        "SELECT id, name, opening_balance FROM accounts WHERE user_id = ? ORDER BY name",
+        (uid,),
+    ).fetchall()
 
     income_filter_month = resolve_list_month_filter("inc_month", "inc_cal_year", "inc_cal_month")
-    income_where = ""
-    income_where_params = []
+    income_where = "WHERE i.user_id = ?"
+    income_where_params = [uid]
     if income_filter_month:
         ib = month_bounds_dates(income_filter_month)
-        income_where = "WHERE date(i.received_at) >= date(?) AND date(i.received_at) < date(?)"
-        income_where_params = [ib[0], ib[1]]
+        income_where += " AND date(i.received_at) >= date(?) AND date(i.received_at) < date(?)"
+        income_where_params.extend([ib[0], ib[1]])
 
     income_total = conn.execute(
         f"SELECT COUNT(*) AS n FROM income_entries i {income_where}",
@@ -1383,17 +1682,17 @@ def index():
         """
         SELECT COALESCE(-SUM(amount), 0) AS total
         FROM expenses
-        WHERE date(spent_at) >= date(?) AND date(spent_at) < date(?)
+        WHERE user_id = ? AND date(spent_at) >= date(?) AND date(spent_at) < date(?)
         """,
-        (month_start_d, month_end_d),
+        (uid, month_start_d, month_end_d),
     ).fetchone()["total"]
     total_income = conn.execute(
         """
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM income_entries
-        WHERE date(received_at) >= date(?) AND date(received_at) < date(?)
+        WHERE user_id = ? AND date(received_at) >= date(?) AND date(received_at) < date(?)
         """,
-        (month_start_d, month_end_d),
+        (uid, month_start_d, month_end_d),
     ).fetchone()["total"]
 
     expense_breakdown = conn.execute(
@@ -1401,11 +1700,11 @@ def index():
         SELECT c.name AS category_name, COALESCE(-SUM(e.amount), 0) AS total_amount
         FROM expenses e
         JOIN categories c ON c.id = e.category_id
-        WHERE date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)
+        WHERE e.user_id = ? AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)
         GROUP BY c.name
         ORDER BY total_amount DESC
         """,
-        (month_start_d, month_end_d),
+        (uid, month_start_d, month_end_d),
     ).fetchall()
 
     income_breakdown = conn.execute(
@@ -1413,11 +1712,11 @@ def index():
         SELECT c.name AS category_name, SUM(i.amount) AS total_amount
         FROM income_entries i
         JOIN income_categories c ON c.id = i.category_id
-        WHERE date(i.received_at) >= date(?) AND date(i.received_at) < date(?)
+        WHERE i.user_id = ? AND date(i.received_at) >= date(?) AND date(i.received_at) < date(?)
         GROUP BY c.name
         ORDER BY total_amount DESC
         """,
-        (month_start_d, month_end_d),
+        (uid, month_start_d, month_end_d),
     ).fetchall()
 
     today_d = datetime.now().date()
@@ -1435,7 +1734,7 @@ def index():
             "(opening balance plus movements up to then)."
         )
 
-    account_balances = fetch_account_balances_through(conn, balance_cutoff_d)
+    account_balances = fetch_account_balances_through(conn, balance_cutoff_d, uid)
     account_transfers = conn.execute(
         """
         SELECT
@@ -1448,9 +1747,11 @@ def index():
         FROM account_transfers t
         JOIN accounts fa ON fa.id = t.from_account_id
         JOIN accounts ta ON ta.id = t.to_account_id
+        WHERE t.user_id = ?
         ORDER BY date(t.transferred_at) DESC, t.id DESC
         LIMIT 150
-        """
+        """,
+        (uid,),
     ).fetchall()
     accounts_total_balance = sum(float(r["current_balance"]) for r in account_balances)
 
@@ -1463,10 +1764,10 @@ def index():
             SELECT CAST(strftime('%m', spent_at) AS INTEGER) AS m,
                    COALESCE(-SUM(amount), 0) AS total
             FROM expenses
-            WHERE date(spent_at) >= date(?) AND date(spent_at) < date(?)
+            WHERE user_id = ? AND date(spent_at) >= date(?) AND date(spent_at) < date(?)
             GROUP BY m
             """,
-            (year_start_d, year_end_d),
+            (uid, year_start_d, year_end_d),
         )
     }
     income_by_month = {
@@ -1476,15 +1777,15 @@ def index():
             SELECT CAST(strftime('%m', received_at) AS INTEGER) AS m,
                    COALESCE(SUM(amount), 0) AS total
             FROM income_entries
-            WHERE date(received_at) >= date(?) AND date(received_at) < date(?)
+            WHERE user_id = ? AND date(received_at) >= date(?) AND date(received_at) < date(?)
             GROUP BY m
             """,
-            (year_start_d, year_end_d),
+            (uid, year_start_d, year_end_d),
         )
     }
 
     month_names = calendar.month_name
-    yearly_month_balances = monthly_total_balances_for_year(conn, year_filter, today_d)
+    yearly_month_balances = monthly_total_balances_for_year(conn, year_filter, today_d, uid)
     yearly_rows = []
     yearly_total_income = 0.0
     yearly_total_expenses = 0.0
@@ -1507,9 +1808,9 @@ def index():
     transfer_default_date = datetime.now().date().isoformat()
 
     jan1_this_year = f"{report_year:04d}-01-01"
-    rows_before_jan = fetch_account_balances_through(conn, jan1_this_year)
+    rows_before_jan = fetch_account_balances_through(conn, jan1_this_year, uid)
     prev_balance_total = sum(float(r["current_balance"]) for r in rows_before_jan)
-    report_balances_list = monthly_total_balances_for_year(conn, report_year, today_d)
+    report_balances_list = monthly_total_balances_for_year(conn, report_year, today_d, uid)
     report_balance_rows = []
     for month_num in range(1, 13):
         total_bal = report_balances_list[month_num - 1]
@@ -1529,6 +1830,7 @@ def index():
 
     return render_template(
         "index.html",
+        session_username=g.username,
         categories=categories,
         income_categories=income_categories,
         expenses=expenses,
@@ -1585,16 +1887,24 @@ def _parse_category_choice(raw):
     return None, None
 
 
-def _recurring_category_ok(conn, entry_type, category_id):
+def _recurring_category_ok(conn, entry_type, category_id, user_id):
+    uid = int(user_id)
     if entry_type == "expense":
-        return conn.execute("SELECT 1 FROM categories WHERE id = ?", (category_id,)).fetchone()
+        return conn.execute(
+            "SELECT 1 FROM categories WHERE id = ? AND user_id = ?",
+            (category_id, uid),
+        ).fetchone()
     if entry_type == "income":
-        return conn.execute("SELECT 1 FROM income_categories WHERE id = ?", (category_id,)).fetchone()
+        return conn.execute(
+            "SELECT 1 FROM income_categories WHERE id = ? AND user_id = ?",
+            (category_id, uid),
+        ).fetchone()
     return None
 
 
 @app.route("/recurring/add", methods=["POST"])
 def add_recurring():
+    uid = g.user_id
     entry_type, category_id = _parse_category_choice(request.form.get("category_choice"))
     amount_raw = request.form.get("amount", "").strip()
     account_raw = request.form.get("account_id", "").strip()
@@ -1606,14 +1916,17 @@ def add_recurring():
         return redirect_home(panel="recurring")
 
     conn = get_connection()
-    if not _recurring_category_ok(conn, entry_type, category_id):
+    if not _recurring_category_ok(conn, entry_type, category_id, uid):
         conn.close()
         flash("Invalid category for that type.", "error")
         return redirect_home(panel="recurring")
 
     try:
         account_id = int(account_raw)
-        if not conn.execute("SELECT 1 FROM accounts WHERE id = ?", (account_id,)).fetchone():
+        if not conn.execute(
+            "SELECT 1 FROM accounts WHERE id = ? AND user_id = ?",
+            (account_id, uid),
+        ).fetchone():
             conn.close()
             flash("Invalid account.", "error")
             return redirect_home(panel="recurring")
@@ -1631,10 +1944,10 @@ def add_recurring():
 
     conn.execute(
         """
-        INSERT INTO recurring_entries (entry_type, amount, category_id, account_id, day_of_month, notes, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, 1)
+        INSERT INTO recurring_entries (user_id, entry_type, amount, category_id, account_id, day_of_month, notes, enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
         """,
-        (entry_type, amt, category_id, account_id, dom, notes),
+        (uid, entry_type, amt, category_id, account_id, dom, notes),
     )
     conn.commit()
     conn.close()
@@ -1644,6 +1957,7 @@ def add_recurring():
 
 @app.route("/recurring/<int:recurring_id>/edit", methods=["POST"])
 def edit_recurring(recurring_id):
+    uid = g.user_id
     entry_type, category_id = _parse_category_choice(request.form.get("category_choice"))
     amount_raw = request.form.get("amount", "").strip()
     account_raw = request.form.get("account_id", "").strip()
@@ -1656,14 +1970,17 @@ def edit_recurring(recurring_id):
         return redirect_home(panel="recurring")
 
     conn = get_connection()
-    if not _recurring_category_ok(conn, entry_type, category_id):
+    if not _recurring_category_ok(conn, entry_type, category_id, uid):
         conn.close()
         flash("Invalid category for that type.", "error")
         return redirect_home(panel="recurring")
 
     try:
         account_id = int(account_raw)
-        if not conn.execute("SELECT 1 FROM accounts WHERE id = ?", (account_id,)).fetchone():
+        if not conn.execute(
+            "SELECT 1 FROM accounts WHERE id = ? AND user_id = ?",
+            (account_id, uid),
+        ).fetchone():
             conn.close()
             flash("Invalid account.", "error")
             return redirect_home(panel="recurring")
@@ -1680,8 +1997,12 @@ def edit_recurring(recurring_id):
         return redirect_home(panel="recurring")
 
     cur = conn.execute(
-        "UPDATE recurring_entries SET entry_type = ?, amount = ?, category_id = ?, account_id = ?, day_of_month = ?, notes = ?, enabled = ? WHERE id = ?",
-        (entry_type, amt, category_id, account_id, dom, notes, enabled, recurring_id),
+        """
+        UPDATE recurring_entries
+        SET entry_type = ?, amount = ?, category_id = ?, account_id = ?, day_of_month = ?, notes = ?, enabled = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (entry_type, amt, category_id, account_id, dom, notes, enabled, recurring_id, uid),
     )
     conn.commit()
     conn.close()
@@ -1695,7 +2016,10 @@ def edit_recurring(recurring_id):
 @app.route("/recurring/<int:recurring_id>/delete", methods=["POST"])
 def delete_recurring(recurring_id):
     conn = get_connection()
-    conn.execute("DELETE FROM recurring_entries WHERE id = ?", (recurring_id,))
+    conn.execute(
+        "DELETE FROM recurring_entries WHERE id = ? AND user_id = ?",
+        (recurring_id, g.user_id),
+    )
     conn.commit()
     conn.close()
     flash("Recurring rule removed.", "success")
@@ -1707,7 +2031,10 @@ def add_category():
     name = request.form.get("name", "").strip()
     if name:
         conn = get_connection()
-        conn.execute("INSERT OR IGNORE INTO categories(name) VALUES (?)", (name,))
+        conn.execute(
+            "INSERT OR IGNORE INTO categories(user_id, name) VALUES (?, ?)",
+            (g.user_id, name),
+        )
         conn.commit()
         conn.close()
     return redirect_home()
@@ -1718,7 +2045,10 @@ def edit_category(category_id):
     name = request.form.get("name", "").strip()
     if name:
         conn = get_connection()
-        conn.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
+        conn.execute(
+            "UPDATE categories SET name = ? WHERE id = ? AND user_id = ?",
+            (name, category_id, g.user_id),
+        )
         conn.commit()
         conn.close()
     return redirect_home()
@@ -1727,7 +2057,10 @@ def edit_category(category_id):
 @app.route("/categories/<int:category_id>/delete", methods=["POST"])
 def delete_category(category_id):
     conn = get_connection()
-    cursor = conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    cursor = conn.execute(
+        "DELETE FROM categories WHERE id = ? AND user_id = ?",
+        (category_id, g.user_id),
+    )
     conn.commit()
     conn.close()
     if cursor.rowcount == 0:
@@ -1740,7 +2073,10 @@ def add_income_category():
     name = request.form.get("name", "").strip()
     if name:
         conn = get_connection()
-        conn.execute("INSERT OR IGNORE INTO income_categories(name) VALUES (?)", (name,))
+        conn.execute(
+            "INSERT OR IGNORE INTO income_categories(user_id, name) VALUES (?, ?)",
+            (g.user_id, name),
+        )
         conn.commit()
         conn.close()
     return redirect_home()
@@ -1751,7 +2087,10 @@ def edit_income_category(category_id):
     name = request.form.get("name", "").strip()
     if name:
         conn = get_connection()
-        conn.execute("UPDATE income_categories SET name = ? WHERE id = ?", (name, category_id))
+        conn.execute(
+            "UPDATE income_categories SET name = ? WHERE id = ? AND user_id = ?",
+            (name, category_id, g.user_id),
+        )
         conn.commit()
         conn.close()
     return redirect_home()
@@ -1760,7 +2099,10 @@ def edit_income_category(category_id):
 @app.route("/income-categories/<int:category_id>/delete", methods=["POST"])
 def delete_income_category(category_id):
     conn = get_connection()
-    cursor = conn.execute("DELETE FROM income_categories WHERE id = ?", (category_id,))
+    cursor = conn.execute(
+        "DELETE FROM income_categories WHERE id = ? AND user_id = ?",
+        (category_id, g.user_id),
+    )
     conn.commit()
     conn.close()
     if cursor.rowcount == 0:
@@ -1779,8 +2121,18 @@ def add_expense():
         spent_at = datetime.now().date().isoformat()
         conn = get_connection()
         conn.execute(
-            "INSERT INTO expenses (notes, amount, category_id, account_id, spent_at) VALUES (?, ?, ?, ?, ?)",
-            (notes, normalize_expense_amount(amount), int(category_id), int(account_id), spent_at),
+            """
+            INSERT INTO expenses (user_id, notes, amount, category_id, account_id, spent_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                g.user_id,
+                notes,
+                normalize_expense_amount(amount),
+                int(category_id),
+                int(account_id),
+                spent_at,
+            ),
         )
         conn.commit()
         conn.close()
@@ -1803,9 +2155,17 @@ def edit_expense(expense_id):
             """
             UPDATE expenses
             SET notes = ?, amount = ?, category_id = ?, account_id = ?, spent_at = ?
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
             """,
-            (notes, normalize_expense_amount(amount), int(category_id), int(account_id), spent_at, expense_id),
+            (
+                notes,
+                normalize_expense_amount(amount),
+                int(category_id),
+                int(account_id),
+                spent_at,
+                expense_id,
+                g.user_id,
+            ),
         )
         conn.commit()
         conn.close()
@@ -1816,7 +2176,10 @@ def edit_expense(expense_id):
 @app.route("/expenses/<int:expense_id>/delete", methods=["POST"])
 def delete_expense(expense_id):
     conn = get_connection()
-    conn.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+    conn.execute(
+        "DELETE FROM expenses WHERE id = ? AND user_id = ?",
+        (expense_id, g.user_id),
+    )
     conn.commit()
     conn.close()
     return redirect_home()
@@ -1829,8 +2192,8 @@ def add_account():
     if name:
         conn = get_connection()
         conn.execute(
-            "INSERT OR IGNORE INTO accounts(name, opening_balance) VALUES (?, ?)",
-            (name, float(opening_balance)),
+            "INSERT OR IGNORE INTO accounts(user_id, name, opening_balance) VALUES (?, ?, ?)",
+            (g.user_id, name, float(opening_balance)),
         )
         conn.commit()
         conn.close()
@@ -1840,7 +2203,10 @@ def add_account():
 @app.route("/accounts/<int:account_id>/delete", methods=["POST"])
 def delete_account(account_id):
     conn = get_connection()
-    cursor = conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    cursor = conn.execute(
+        "DELETE FROM accounts WHERE id = ? AND user_id = ?",
+        (account_id, g.user_id),
+    )
     conn.commit()
     conn.close()
     if cursor.rowcount == 0:
@@ -1855,8 +2221,8 @@ def edit_account(account_id):
     if name:
         conn = get_connection()
         conn.execute(
-            "UPDATE accounts SET name = ?, opening_balance = ? WHERE id = ?",
-            (name, float(opening_balance), account_id),
+            "UPDATE accounts SET name = ?, opening_balance = ? WHERE id = ? AND user_id = ?",
+            (name, float(opening_balance), account_id, g.user_id),
         )
         conn.commit()
         conn.close()
@@ -1866,7 +2232,10 @@ def edit_account(account_id):
 @app.route("/income/<int:income_id>/delete", methods=["POST"])
 def delete_income(income_id):
     conn = get_connection()
-    conn.execute("DELETE FROM income_entries WHERE id = ?", (income_id,))
+    conn.execute(
+        "DELETE FROM income_entries WHERE id = ? AND user_id = ?",
+        (income_id, g.user_id),
+    )
     conn.commit()
     conn.close()
     return redirect_home()
@@ -1883,8 +2252,18 @@ def add_income():
         received_at = datetime.now().date().isoformat()
         conn = get_connection()
         conn.execute(
-            "INSERT INTO income_entries (notes, amount, category_id, account_id, received_at) VALUES (?, ?, ?, ?, ?)",
-            (notes, normalize_income_amount(amount), int(category_id), int(account_id), received_at),
+            """
+            INSERT INTO income_entries (user_id, notes, amount, category_id, account_id, received_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                g.user_id,
+                notes,
+                normalize_income_amount(amount),
+                int(category_id),
+                int(account_id),
+                received_at,
+            ),
         )
         conn.commit()
         conn.close()
@@ -1906,9 +2285,17 @@ def edit_income(income_id):
             """
             UPDATE income_entries
             SET notes = ?, amount = ?, category_id = ?, account_id = ?, received_at = ?
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
             """,
-            (notes, normalize_income_amount(amount), int(category_id), int(account_id), received_at, income_id),
+            (
+                notes,
+                normalize_income_amount(amount),
+                int(category_id),
+                int(account_id),
+                received_at,
+                income_id,
+                g.user_id,
+            ),
         )
         conn.commit()
         conn.close()
@@ -1948,12 +2335,24 @@ def add_transfer():
         return redirect_home()
 
     conn = get_connection()
+    uid = g.user_id
+    if not conn.execute(
+        "SELECT 1 FROM accounts WHERE id = ? AND user_id = ?",
+        (from_id, uid),
+    ).fetchone() or not conn.execute(
+        "SELECT 1 FROM accounts WHERE id = ? AND user_id = ?",
+        (to_id, uid),
+    ).fetchone():
+        conn.close()
+        flash("Invalid accounts.", "error")
+        return redirect_home()
+
     conn.execute(
         """
-        INSERT INTO account_transfers (from_account_id, to_account_id, amount, transferred_at, notes)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO account_transfers (user_id, from_account_id, to_account_id, amount, transferred_at, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (from_id, to_id, amt, transferred_at, notes),
+        (uid, from_id, to_id, amt, transferred_at, notes),
     )
     conn.commit()
     conn.close()
@@ -1964,7 +2363,10 @@ def add_transfer():
 @app.route("/transfers/<int:transfer_id>/delete", methods=["POST"])
 def delete_transfer(transfer_id):
     conn = get_connection()
-    cursor = conn.execute("DELETE FROM account_transfers WHERE id = ?", (transfer_id,))
+    cursor = conn.execute(
+        "DELETE FROM account_transfers WHERE id = ? AND user_id = ?",
+        (transfer_id, g.user_id),
+    )
     conn.commit()
     conn.close()
     if cursor.rowcount == 0:
