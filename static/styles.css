@@ -362,20 +362,67 @@ th, td {
     margin-bottom: 0;
 }
 
-.cell-actions button {
-    width: 100%;
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .action-stack {
-    display: grid;
-    gap: 0.45rem;
-    min-width: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: var(--tab-text);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-icon:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    background: var(--surface);
+}
+
+.btn-icon-edit[aria-expanded="true"],
+.edit-details[open] > .btn-icon-edit {
+    border-color: var(--accent);
+    color: #fff;
+    background: var(--accent);
+}
+
+.btn-icon-delete {
+    border-color: rgba(220, 38, 38, 0.55);
+    color: #fecaca;
+    background: rgba(220, 38, 38, 0.18);
+}
+
+.btn-icon-delete:hover {
+    border-color: #dc2626;
+    color: #fff;
+    background: #dc2626;
 }
 
 .edit-details summary {
-    cursor: pointer;
-    font-weight: 600;
-    color: var(--tab-text);
     list-style: none;
 }
 
@@ -396,6 +443,10 @@ th, td {
 .inline-edit-form textarea {
     min-width: 0;
     width: 100%;
+}
+
+.inline-edit-form button[type="submit"] {
+    width: auto;
 }
 
 .btn-danger {
