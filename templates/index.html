@@ -72,7 +72,7 @@
                                     <td>{{ expense.account_name }}</td>
                                     <td class="cell-amount">{{ "%.2f"|format(expense.amount) }}</td>
                                     <td class="cell-notes">{{ expense.notes }}</td>
-                                    <td class="cell-date">{{ expense.spent_at }}</td>
+                                    <td class="cell-date">{{ expense.spent_at|txn_day }}</td>
                                     <td class="cell-actions">
                                         <div class="action-stack">
                                             <details class="edit-details">
@@ -99,7 +99,7 @@
                                                             <option {% if account.id == expense.account_id %}selected{% endif %} value="{{ account.id }}">{{ account.name }}</option>
                                                         {% endfor %}
                                                     </select>
-                                                    <input name="spent_at" type="datetime-local" value="{{ expense.spent_at|dt_local }}">
+                                                    <input name="spent_at" type="date" value="{{ expense.spent_at|txn_day }}">
                                                     <button type="submit">Save</button>
                                                 </form>
                                             </details>
@@ -197,7 +197,7 @@
                                     <td>{{ entry.account_name }}</td>
                                     <td class="cell-amount">{{ "%.2f"|format(entry.amount) }}</td>
                                     <td class="cell-notes">{{ entry.notes }}</td>
-                                    <td class="cell-date">{{ entry.received_at }}</td>
+                                    <td class="cell-date">{{ entry.received_at|txn_day }}</td>
                                     <td class="cell-actions">
                                         <div class="action-stack">
                                             <details class="edit-details">
@@ -224,7 +224,7 @@
                                                             <option {% if account.id == entry.account_id %}selected{% endif %} value="{{ account.id }}">{{ account.name }}</option>
                                                         {% endfor %}
                                                     </select>
-                                                    <input name="received_at" type="datetime-local" value="{{ entry.received_at|dt_local }}">
+                                                    <input name="received_at" type="date" value="{{ entry.received_at|txn_day }}">
                                                     <button type="submit">Save</button>
                                                 </form>
                                             </details>

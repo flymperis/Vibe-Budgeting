@@ -80,16 +80,13 @@ def parse_optional_month(value):
         return None
 
 
-def month_bounds_iso(ym_str):
-    """Half-open [start, end) ISO timestamps for calendar month ym_str."""
+def month_bounds_dates(ym_str):
+    """Half-open calendar month as YYYY-MM-DD dates (start inclusive, end exclusive)."""
     ys, ms = ym_str.split("-", 1)
     month_start = datetime(int(ys), int(ms), 1)
     month_end = month_start + timedelta(days=32)
     month_end = month_end.replace(day=1)
-    return (
-        month_start.strftime("%Y-%m-%d %H:%M:%S"),
-        month_end.strftime("%Y-%m-%d %H:%M:%S"),
-    )
+    return (month_start.strftime("%Y-%m-%d"), month_end.strftime("%Y-%m-%d"))
 
 
 def normalize_month(value):
@@ -112,32 +109,43 @@ def normalize_settings_section(value):
     return section if section in SETTINGS_SECTIONS else "general"
 
 
-def to_datetime_local_value(raw):
+def coerce_txn_day(raw):
+    """Normalize stored/form raw values to YYYY-MM-DD, or '' if empty."""
     if raw is None:
         return ""
     text = str(raw).strip()
     if not text:
         return ""
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        head = text[:10]
+        try:
+            datetime.strptime(head, "%Y-%m-%d")
+            return head
+        except ValueError:
+            pass
     try:
         normalized = text.replace(" ", "T", 1)
         if len(normalized) == 10:
-            normalized = f"{normalized}T00:00"
+            normalized = f"{normalized}T00:00:00"
         parsed = datetime.fromisoformat(normalized)
+        return parsed.date().isoformat()
     except ValueError:
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
             try:
-                parsed = datetime.strptime(text, fmt)
-                break
+                return datetime.strptime(text, fmt).date().isoformat()
             except ValueError:
-                parsed = None
-        if parsed is None:
-            return ""
-    return parsed.replace(microsecond=0).isoformat(timespec="minutes")
+                continue
+    return text[:10] if len(text) >= 10 else ""
 
 
-@app.template_filter("dt_local")
-def dt_local_filter(raw):
-    return to_datetime_local_value(raw)
+def normalize_txn_day_from_form(raw):
+    """Form submission: blank date defaults to today (calendar day only)."""
+    return coerce_txn_day(raw) or datetime.now().date().isoformat()
+
+
+@app.template_filter("txn_day")
+def txn_day_filter(raw):
+    return coerce_txn_day(raw)
 
 
 def get_connection():
@@ -217,6 +225,25 @@ def migrate_schema(conn):
         conn.execute("UPDATE income_entries SET received_at = created_at WHERE received_at IS NULL")
 
     migrate_expenses_signed_amounts(conn)
+    migrate_txn_dates_to_day(conn)
+
+
+def migrate_txn_dates_to_day(conn):
+    """Store movement dates as calendar days only (YYYY-MM-DD)."""
+    conn.execute(
+        """
+        UPDATE expenses
+        SET spent_at = date(spent_at)
+        WHERE spent_at IS NOT NULL AND trim(spent_at) != '' AND date(spent_at) IS NOT NULL
+        """
+    )
+    conn.execute(
+        """
+        UPDATE income_entries
+        SET received_at = date(received_at)
+        WHERE received_at IS NOT NULL AND trim(received_at) != '' AND date(received_at) IS NOT NULL
+        """
+    )
 
 
 def migrate_expenses_signed_amounts(conn):
@@ -420,11 +447,11 @@ def _parse_excel_income_amount(value, sheet, row_num):
     return abs(amount)
 
 
-def _parse_excel_timestamp(value, sheet, row_num, column_label):
+def _parse_excel_datetime(value, sheet, row_num, column_label):
     if value is None or (isinstance(value, str) and not value.strip()):
         raise ValueError(f"{sheet} row {row_num}: missing {column_label}")
     if isinstance(value, datetime):
-        return value.replace(microsecond=0).isoformat(timespec="seconds")
+        return value.replace(microsecond=0)
     text = str(value).strip()
     try:
         normalized = text.replace(" ", "T", 1)
@@ -432,15 +459,24 @@ def _parse_excel_timestamp(value, sheet, row_num, column_label):
             normalized = f"{normalized}T00:00:00"
         parsed = datetime.fromisoformat(normalized)
     except ValueError:
+        parsed = None
         for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
             try:
                 parsed = datetime.strptime(text, fmt)
                 break
             except ValueError:
-                parsed = None
+                continue
         if parsed is None:
             raise ValueError(f"{sheet} row {row_num}: invalid {column_label}")
-    return parsed.replace(microsecond=0).isoformat(timespec="seconds")
+    return parsed.replace(microsecond=0)
+
+
+def _parse_excel_timestamp(value, sheet, row_num, column_label):
+    return _parse_excel_datetime(value, sheet, row_num, column_label).isoformat(timespec="seconds")
+
+
+def _parse_excel_movement_date(value, sheet, row_num, column_label):
+    return _parse_excel_datetime(value, sheet, row_num, column_label).date().isoformat()
 
 
 def _optional_created_at(value, sheet, row_num):
@@ -575,7 +611,7 @@ def _collect_import_movements(expense_rows, income_rows):
         cat_name = str(cat_name).strip()
         acc_name = str(acc_name).strip()
         try:
-            spent_at = _parse_excel_timestamp(row.get("spent_at"), SHEET_EXPENSES, idx, "spent_at")
+            spent_at = _parse_excel_movement_date(row.get("spent_at"), SHEET_EXPENSES, idx, "spent_at")
         except ValueError as exc:
             errors.append(str(exc))
             continue
@@ -608,7 +644,7 @@ def _collect_import_movements(expense_rows, income_rows):
         cat_name = str(cat_name).strip()
         acc_name = str(acc_name).strip()
         try:
-            received_at = _parse_excel_timestamp(
+            received_at = _parse_excel_movement_date(
                 row.get("received_at"), SHEET_INCOME, idx, "received_at"
             )
         except ValueError as exc:
@@ -893,8 +929,8 @@ def index():
     month_start = datetime(int(year_str), int(month_str), 1)
     month_end = month_start + timedelta(days=32)
     month_end = month_end.replace(day=1)
-    month_start_iso = month_start.strftime("%Y-%m-%d %H:%M:%S")
-    month_end_iso = month_end.strftime("%Y-%m-%d %H:%M:%S")
+    month_start_d = month_start.strftime("%Y-%m-%d")
+    month_end_d = month_end.strftime("%Y-%m-%d")
     settings_section = normalize_settings_section(
         section_from_legacy or request.args.get("settings_section")
     )
@@ -906,8 +942,8 @@ def index():
     expense_where = ""
     expense_where_params = []
     if expense_filter_month:
-        eb = month_bounds_iso(expense_filter_month)
-        expense_where = "WHERE e.spent_at >= ? AND e.spent_at < ?"
+        eb = month_bounds_dates(expense_filter_month)
+        expense_where = "WHERE date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)"
         expense_where_params = [eb[0], eb[1]]
 
     expense_total = conn.execute(
@@ -945,8 +981,8 @@ def index():
     income_where = ""
     income_where_params = []
     if income_filter_month:
-        ib = month_bounds_iso(income_filter_month)
-        income_where = "WHERE i.received_at >= ? AND i.received_at < ?"
+        ib = month_bounds_dates(income_filter_month)
+        income_where = "WHERE date(i.received_at) >= date(?) AND date(i.received_at) < date(?)"
         income_where_params = [ib[0], ib[1]]
 
     income_total = conn.execute(
@@ -982,17 +1018,17 @@ def index():
         """
         SELECT COALESCE(-SUM(amount), 0) AS total
         FROM expenses
-        WHERE spent_at >= ? AND spent_at < ?
+        WHERE date(spent_at) >= date(?) AND date(spent_at) < date(?)
         """,
-        (month_start_iso, month_end_iso),
+        (month_start_d, month_end_d),
     ).fetchone()["total"]
     total_income = conn.execute(
         """
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM income_entries
-        WHERE received_at >= ? AND received_at < ?
+        WHERE date(received_at) >= date(?) AND date(received_at) < date(?)
         """,
-        (month_start_iso, month_end_iso),
+        (month_start_d, month_end_d),
     ).fetchone()["total"]
 
     expense_breakdown = conn.execute(
@@ -1000,11 +1036,11 @@ def index():
         SELECT c.name AS category_name, COALESCE(-SUM(e.amount), 0) AS total_amount
         FROM expenses e
         JOIN categories c ON c.id = e.category_id
-        WHERE e.spent_at >= ? AND e.spent_at < ?
+        WHERE date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)
         GROUP BY c.name
         ORDER BY total_amount DESC
         """,
-        (month_start_iso, month_end_iso),
+        (month_start_d, month_end_d),
     ).fetchall()
 
     income_breakdown = conn.execute(
@@ -1012,11 +1048,11 @@ def index():
         SELECT c.name AS category_name, SUM(i.amount) AS total_amount
         FROM income_entries i
         JOIN income_categories c ON c.id = i.category_id
-        WHERE i.received_at >= ? AND i.received_at < ?
+        WHERE date(i.received_at) >= date(?) AND date(i.received_at) < date(?)
         GROUP BY c.name
         ORDER BY total_amount DESC
         """,
-        (month_start_iso, month_end_iso),
+        (month_start_d, month_end_d),
     ).fetchall()
 
     account_balances = conn.execute(
@@ -1042,8 +1078,8 @@ def index():
         """
     ).fetchall()
 
-    year_start_iso = f"{year_filter:04d}-01-01 00:00:00"
-    year_end_iso = f"{year_filter + 1:04d}-01-01 00:00:00"
+    year_start_d = f"{year_filter:04d}-01-01"
+    year_end_d = f"{year_filter + 1:04d}-01-01"
     expense_by_month = {
         row["m"]: float(row["total"])
         for row in conn.execute(
@@ -1051,10 +1087,10 @@ def index():
             SELECT CAST(strftime('%m', spent_at) AS INTEGER) AS m,
                    COALESCE(-SUM(amount), 0) AS total
             FROM expenses
-            WHERE spent_at >= ? AND spent_at < ?
+            WHERE date(spent_at) >= date(?) AND date(spent_at) < date(?)
             GROUP BY m
             """,
-            (year_start_iso, year_end_iso),
+            (year_start_d, year_end_d),
         )
     }
     income_by_month = {
@@ -1064,10 +1100,10 @@ def index():
             SELECT CAST(strftime('%m', received_at) AS INTEGER) AS m,
                    COALESCE(SUM(amount), 0) AS total
             FROM income_entries
-            WHERE received_at >= ? AND received_at < ?
+            WHERE date(received_at) >= date(?) AND date(received_at) < date(?)
             GROUP BY m
             """,
-            (year_start_iso, year_end_iso),
+            (year_start_d, year_end_d),
         )
     }
 
@@ -1200,7 +1236,7 @@ def add_expense():
     account_id = request.form.get("account_id", "").strip()
 
     if category_id and account_id:
-        spent_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
+        spent_at = datetime.now().date().isoformat()
         conn = get_connection()
         conn.execute(
             "INSERT INTO expenses (notes, amount, category_id, account_id, spent_at) VALUES (?, ?, ?, ?, ?)",
@@ -1221,12 +1257,7 @@ def edit_expense(expense_id):
     spent_at_raw = request.form.get("spent_at", "").strip()
 
     if category_id and account_id:
-        spent_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
-        if spent_at_raw:
-            try:
-                spent_at = datetime.fromisoformat(spent_at_raw).isoformat(timespec="seconds")
-            except ValueError:
-                spent_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
+        spent_at = normalize_txn_day_from_form(spent_at_raw)
         conn = get_connection()
         conn.execute(
             """
@@ -1309,7 +1340,7 @@ def add_income():
     category_id = request.form.get("category_id", "").strip()
 
     if category_id and account_id:
-        received_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
+        received_at = datetime.now().date().isoformat()
         conn = get_connection()
         conn.execute(
             "INSERT INTO income_entries (notes, amount, category_id, account_id, received_at) VALUES (?, ?, ?, ?, ?)",
@@ -1329,12 +1360,7 @@ def edit_income(income_id):
     received_at_raw = request.form.get("received_at", "").strip()
 
     if category_id and account_id:
-        received_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
-        if received_at_raw:
-            try:
-                received_at = datetime.fromisoformat(received_at_raw).isoformat(timespec="seconds")
-            except ValueError:
-                received_at = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
+        received_at = normalize_txn_day_from_form(received_at_raw)
         conn = get_connection()
         conn.execute(
             """

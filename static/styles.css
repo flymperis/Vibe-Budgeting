@@ -717,14 +717,72 @@ th, td {
 }
 
 @media (max-width: 900px) {
+    html {
+        overflow-x: hidden;
+    }
+
+    body {
+        overflow-x: hidden;
+    }
+
     main.container {
         overflow-x: clip;
         max-width: 100%;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .header-row {
+        flex-wrap: wrap;
+        min-width: 0;
+        gap: 0.5rem;
     }
 
     .container {
         margin: 1rem auto;
         padding: 0 0.65rem;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    form {
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    textarea {
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    #panel-summary .month-picker {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.45rem;
+    }
+
+    #panel-summary .month-picker input[type="month"],
+    #panel-summary .month-picker button[type="submit"] {
+        width: 100%;
+        max-width: none;
+        box-sizing: border-box;
+    }
+
+    .inline-form {
+        min-width: 0;
+    }
+
+    .edit-details {
+        max-width: 100%;
+    }
+
+    .inline-edit-form input:not([type="hidden"]),
+    .inline-edit-form select {
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
     }
 
     #panel-expenses .panel-add-form,
@@ -784,6 +842,10 @@ th, td {
         flex-direction: column-reverse;
         gap: 0.75rem;
         grid-template-columns: unset;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
     }
 
     .panel-shell {
@@ -791,6 +853,9 @@ th, td {
         grid-row: unset;
         padding: 0.75rem;
         min-width: 0;
+        max-width: 100%;
+        overflow-x: clip;
+        box-sizing: border-box;
     }
 
     .side-menu {
@@ -799,6 +864,9 @@ th, td {
         grid-row: unset;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         align-self: stretch;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
     }
 
     .settings-layout {
