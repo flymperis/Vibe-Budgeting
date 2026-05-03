@@ -1,4 +1,5 @@
 from flask import Flask, flash, redirect, render_template, request, send_file, url_for
+import calendar
 import os
 import re
 import sqlite3
@@ -19,8 +20,8 @@ SHEET_EXPENSE_CATEGORIES = "ExpenseCategories"
 SHEET_INCOME_CATEGORIES = "IncomeCategories"
 SHEET_EXPENSES = "Expenses"
 SHEET_INCOME = "Income"
-ALLOWED_PANELS = {"expenses", "income", "summary", "export", "migration", "settings"}
-SETTINGS_SECTIONS = {"general", "expenses", "income"}
+ALLOWED_PANELS = {"expenses", "income", "summary", "yearly", "settings"}
+SETTINGS_SECTIONS = {"general", "expenses", "income", "export", "migration"}
 
 
 def normalize_expense_amount(raw):
@@ -39,6 +40,19 @@ def normalize_income_amount(raw):
     except (TypeError, ValueError):
         value = 0.0
     return abs(value)
+
+
+def normalize_year(value):
+    raw = (value or "").strip()
+    if not raw:
+        return datetime.now().year
+    try:
+        year_num = int(raw)
+        if year_num < 2000 or year_num > 2100:
+            raise ValueError
+        return year_num
+    except ValueError:
+        return datetime.now().year
 
 
 def normalize_month(value):
@@ -268,7 +282,7 @@ def resolve_active_panel():
             "/categories/add": "settings",
             "/expenses/add": "expenses",
             "/income/add": "income",
-            "/import/excel": "migration",
+            "/import/excel": "settings",
         }
         if path in mapping:
             return mapping[path]
@@ -286,20 +300,22 @@ def resolve_active_panel():
     return "expenses"
 
 
-def redirect_home(panel=None):
+def redirect_home(panel=None, settings_section=None):
     target = panel if panel in ALLOWED_PANELS else resolve_active_panel()
     month = normalize_month(request.form.get("month") or request.args.get("month"))
-    settings_section = normalize_settings_section(
-        request.form.get("settings_section") or request.args.get("settings_section")
+    year_for_redirect = normalize_year(request.form.get("year") or request.args.get("year"))
+    raw_section = (
+        settings_section
+        if settings_section is not None
+        else (request.form.get("settings_section") or request.args.get("settings_section"))
     )
-    return redirect(
-        url_for(
-            "index",
-            panel=target,
-            month=month,
-            settings_section=settings_section if target == "settings" else None,
-        )
-    )
+    sec = normalize_settings_section(raw_section)
+    query = {"panel": target, "month": month}
+    if target == "settings":
+        query["settings_section"] = sec
+    if target == "yearly":
+        query["year"] = year_for_redirect
+    return redirect(url_for("index", **query))
 
 
 def _normalize_header_key(value):
@@ -768,7 +784,7 @@ def import_excel():
     upload = request.files.get("file")
     if not upload or upload.filename.strip() == "":
         flash("Choose an Excel file (.xlsx).", "error")
-        return redirect_home(panel="migration")
+        return redirect_home(panel="settings", settings_section="migration")
 
     replace_movements = request.form.get("replace_movements") == "1"
     sync_opening_balances = request.form.get("sync_opening_balances") == "1"
@@ -776,20 +792,20 @@ def import_excel():
     raw = upload.read()
     if not raw:
         flash("The uploaded file is empty.", "error")
-        return redirect_home(panel="migration")
+        return redirect_home(panel="settings", settings_section="migration")
 
     try:
         workbook = load_workbook(BytesIO(raw), data_only=True)
     except Exception as exc:
         flash(f"Could not read the Excel file: {exc}", "error")
-        return redirect_home(panel="migration")
+        return redirect_home(panel="settings", settings_section="migration")
 
     errors = _run_import_workbook(workbook, replace_movements, sync_opening_balances)
     if errors:
         preview = "; ".join(errors[:8])
         extra = f" (+{len(errors) - 8} more)" if len(errors) > 8 else ""
         flash(f"Import failed. {preview}{extra}", "error")
-        return redirect_home(panel="migration")
+        return redirect_home(panel="settings", settings_section="migration")
 
     flash(
         "Import completed. Accounts/categories from the file were merged (new names added)."
@@ -800,25 +816,38 @@ def import_excel():
         ),
         "success",
     )
-    return redirect_home(panel="migration")
+    return redirect_home(panel="settings", settings_section="migration")
 
 
 @app.route("/")
 def index():
     conn = get_connection()
 
-    active_panel = request.args.get("panel", "").strip()
-    if active_panel not in ALLOWED_PANELS:
+    raw_panel = request.args.get("panel", "").strip()
+    if raw_panel == "export":
+        active_panel = "settings"
+        section_from_legacy = "export"
+    elif raw_panel == "migration":
+        active_panel = "settings"
+        section_from_legacy = "migration"
+    elif raw_panel in ALLOWED_PANELS:
+        active_panel = raw_panel
+        section_from_legacy = None
+    else:
         active_panel = "expenses"
+        section_from_legacy = None
 
     month_filter = normalize_month(request.args.get("month"))
+    year_filter = normalize_year(request.args.get("year"))
     year_str, month_str = month_filter.split("-", 1)
     month_start = datetime(int(year_str), int(month_str), 1)
     month_end = month_start + timedelta(days=32)
     month_end = month_end.replace(day=1)
     month_start_iso = month_start.strftime("%Y-%m-%d %H:%M:%S")
     month_end_iso = month_end.strftime("%Y-%m-%d %H:%M:%S")
-    settings_section = normalize_settings_section(request.args.get("settings_section"))
+    settings_section = normalize_settings_section(
+        section_from_legacy or request.args.get("settings_section")
+    )
 
     categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     income_categories = conn.execute("SELECT id, name FROM income_categories ORDER BY name").fetchall()
@@ -925,6 +954,55 @@ def index():
         """
     ).fetchall()
 
+    year_start_iso = f"{year_filter:04d}-01-01 00:00:00"
+    year_end_iso = f"{year_filter + 1:04d}-01-01 00:00:00"
+    expense_by_month = {
+        row["m"]: float(row["total"])
+        for row in conn.execute(
+            """
+            SELECT CAST(strftime('%m', spent_at) AS INTEGER) AS m,
+                   COALESCE(-SUM(amount), 0) AS total
+            FROM expenses
+            WHERE spent_at >= ? AND spent_at < ?
+            GROUP BY m
+            """,
+            (year_start_iso, year_end_iso),
+        )
+    }
+    income_by_month = {
+        row["m"]: float(row["total"])
+        for row in conn.execute(
+            """
+            SELECT CAST(strftime('%m', received_at) AS INTEGER) AS m,
+                   COALESCE(SUM(amount), 0) AS total
+            FROM income_entries
+            WHERE received_at >= ? AND received_at < ?
+            GROUP BY m
+            """,
+            (year_start_iso, year_end_iso),
+        )
+    }
+
+    month_names = calendar.month_name
+    yearly_rows = []
+    yearly_total_income = 0.0
+    yearly_total_expenses = 0.0
+    for month_num in range(1, 13):
+        inc = income_by_month.get(month_num, 0.0)
+        exp = expense_by_month.get(month_num, 0.0)
+        delta = inc - exp
+        yearly_total_income += inc
+        yearly_total_expenses += exp
+        yearly_rows.append(
+            {
+                "month_label": month_names[month_num],
+                "income": inc,
+                "expenses": exp,
+                "delta": delta,
+            }
+        )
+    yearly_total_delta = yearly_total_income - yearly_total_expenses
+
     conn.close()
 
     return render_template(
@@ -936,6 +1014,7 @@ def index():
         income_entries=income_entries,
         active_panel=active_panel,
         month_filter=month_filter,
+        year_filter=year_filter,
         settings_section=settings_section,
         total_expenses=total_expenses,
         total_income=total_income,
@@ -943,6 +1022,10 @@ def index():
         expense_breakdown=expense_breakdown,
         income_breakdown=income_breakdown,
         account_balances=account_balances,
+        yearly_rows=yearly_rows,
+        yearly_total_income=yearly_total_income,
+        yearly_total_expenses=yearly_total_expenses,
+        yearly_total_delta=yearly_total_delta,
     )
 
 

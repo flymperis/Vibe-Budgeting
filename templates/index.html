@@ -262,47 +262,43 @@
                     </div>
                 </section>
 
-                <section class="panel {% if active_panel == 'export' %}active{% endif %}" id="panel-export">
-                    <h2>Export current data</h2>
-                    <p class="muted small-hint">
-                        Downloads one Excel file with accounts, expense/income categories, and every expense and income row.
-                        Use this for backups or as the starting point before editing offline.
-                    </p>
-                    <p class="migration-actions">
-                        <a class="btn-secondary" href="{{ url_for('export_excel') }}">Download full export (.xlsx)</a>
-                    </p>
-                </section>
-
-                <section class="panel {% if active_panel == 'migration' %}active{% endif %}" id="panel-migration">
-                    <h2>Migration</h2>
-                    <p class="muted small-hint">
-                        Download an empty workbook that matches the import layout (same sheet names and columns).
-                        Fill rows or paste data from another export, then import below. Matching uses category and account names, not IDs.
-                        Expense amounts may be positive or negative in the sheet; they are stored as negatives. Income amounts are stored positive.
-                        Category and account names used on movement rows are created automatically if missing (after applying the category and account sheets).
-                    </p>
-                    <p class="migration-actions">
-                        <a class="btn-secondary" href="{{ url_for('export_migration_template') }}">Download migration template (.xlsx)</a>
-                    </p>
-
-                    <h3>Import from Excel</h3>
-                    <form action="{{ url_for('import_excel') }}" class="migration-import-form" enctype="multipart/form-data" method="post">
+                <section class="panel {% if active_panel == 'yearly' %}active{% endif %}" id="panel-yearly">
+                    <h2>Yearly overview</h2>
+                    <form action="/" class="year-picker" method="get">
+                        <input name="panel" type="hidden" value="yearly">
                         <input name="month" type="hidden" value="{{ month_filter }}">
-                        <input name="next_panel" type="hidden" value="migration">
-                        <label class="file-upload-row">
-                            <span class="file-upload-label">File (.xlsx)</span>
-                            <input accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" name="file" required type="file">
-                        </label>
-                        <label class="checkbox-row">
-                            <input name="replace_movements" type="checkbox" value="1">
-                            Replace all movements (delete existing expenses &amp; income rows, then import sheet rows)
-                        </label>
-                        <label class="checkbox-row">
-                            <input name="sync_opening_balances" type="checkbox" value="1">
-                            Overwrite opening balances for accounts that already exist (from Accounts sheet)
-                        </label>
-                        <button type="submit">Import</button>
+                        <label class="month-label" for="yearly-year-input">Year</label>
+                        <input id="yearly-year-input" max="2100" min="2000" name="year" required type="number" value="{{ year_filter }}">
+                        <button type="submit">Apply</button>
                     </form>
+                    <div class="yearly-table-wrap">
+                        <table class="yearly-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Month</th>
+                                    <th scope="col">Income</th>
+                                    <th scope="col">Expenses</th>
+                                    <th scope="col">Delta</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in yearly_rows %}
+                                    <tr>
+                                        <th scope="row">{{ row.month_label }}</th>
+                                        <td>{{ "%.2f"|format(row.income) }}</td>
+                                        <td>{{ "%.2f"|format(row.expenses) }}</td>
+                                        <td class="{% if row.delta >= 0 %}delta-positive{% else %}delta-negative{% endif %}">{{ "%.2f"|format(row.delta) }}</td>
+                                    </tr>
+                                {% endfor %}
+                                <tr class="yearly-totals-row">
+                                    <th scope="row">Total</th>
+                                    <td>{{ "%.2f"|format(yearly_total_income) }}</td>
+                                    <td>{{ "%.2f"|format(yearly_total_expenses) }}</td>
+                                    <td class="{% if yearly_total_delta >= 0 %}delta-positive{% else %}delta-negative{% endif %}">{{ "%.2f"|format(yearly_total_delta) }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </section>
 
                 <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">
@@ -311,6 +307,8 @@
                             <button class="settings-nav-item {% if settings_section == 'general' %}active{% endif %}" data-settings-target="settings-general" type="button">General</button>
                             <button class="settings-nav-item {% if settings_section == 'expenses' %}active{% endif %}" data-settings-target="settings-expenses" type="button">Expenses</button>
                             <button class="settings-nav-item {% if settings_section == 'income' %}active{% endif %}" data-settings-target="settings-income" type="button">Income</button>
+                            <button class="settings-nav-item {% if settings_section == 'export' %}active{% endif %}" data-settings-target="settings-export" type="button">Export</button>
+                            <button class="settings-nav-item {% if settings_section == 'migration' %}active{% endif %}" data-settings-target="settings-migration" type="button">Migration</button>
                         </nav>
                         <div class="settings-body">
                             <div class="settings-section {% if settings_section == 'general' %}active{% endif %}" id="settings-general">
@@ -408,6 +406,50 @@
                                     {% endfor %}
                                 </div>
                             </div>
+
+                            <div class="settings-section {% if settings_section == 'export' %}active{% endif %}" id="settings-export">
+                                <h2>Export</h2>
+                                <p class="muted small-hint">
+                                    Download one Excel file with accounts, expense/income categories, and every expense and income row.
+                                    Use it for backups or before editing offline.
+                                </p>
+                                <p class="migration-actions">
+                                    <a class="btn-secondary" href="{{ url_for('export_excel') }}">Download full export (.xlsx)</a>
+                                </p>
+                            </div>
+
+                            <div class="settings-section {% if settings_section == 'migration' %}active{% endif %}" id="settings-migration">
+                                <h2>Migration</h2>
+                                <p class="muted small-hint">
+                                    Download an empty workbook that matches the import layout (same sheet names and columns).
+                                    Fill rows or paste data from another export, then import below. Matching uses category and account names, not IDs.
+                                    Expense amounts may be positive or negative in the sheet; they are stored as negatives. Income amounts are stored positive.
+                                    Category and account names used on movement rows are created automatically if missing (after applying the category and account sheets).
+                                </p>
+                                <p class="migration-actions">
+                                    <a class="btn-secondary" href="{{ url_for('export_migration_template') }}">Download migration template (.xlsx)</a>
+                                </p>
+
+                                <h3>Import from Excel</h3>
+                                <form action="{{ url_for('import_excel') }}" class="migration-import-form" enctype="multipart/form-data" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <input name="next_panel" type="hidden" value="settings">
+                                    <input name="settings_section" type="hidden" value="migration">
+                                    <label class="file-upload-row">
+                                        <span class="file-upload-label">File (.xlsx)</span>
+                                        <input accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" name="file" required type="file">
+                                    </label>
+                                    <label class="checkbox-row">
+                                        <input name="replace_movements" type="checkbox" value="1">
+                                        Replace all movements (delete existing expenses &amp; income rows, then import sheet rows)
+                                    </label>
+                                    <label class="checkbox-row">
+                                        <input name="sync_opening_balances" type="checkbox" value="1">
+                                        Overwrite opening balances for accounts that already exist (from Accounts sheet)
+                                    </label>
+                                    <button type="submit">Import</button>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -417,8 +459,7 @@
                 <button class="menu-item {% if active_panel == 'expenses' %}active{% endif %}" data-target="panel-expenses" type="button">Expenses</button>
                 <button class="menu-item {% if active_panel == 'income' %}active{% endif %}" data-target="panel-income" type="button">Income</button>
                 <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">Consolidated</button>
-                <button class="menu-item {% if active_panel == 'export' %}active{% endif %}" data-target="panel-export" type="button">Export current data</button>
-                <button class="menu-item {% if active_panel == 'migration' %}active{% endif %}" data-target="panel-migration" type="button">Migration</button>
+                <button class="menu-item {% if active_panel == 'yearly' %}active{% endif %}" data-target="panel-yearly" type="button">Yearly</button>
                 <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">Settings</button>
             </aside>
         </div>
@@ -448,7 +489,9 @@
             const settingsSectionMap = {
                 "settings-general": "general",
                 "settings-expenses": "expenses",
-                "settings-income": "income"
+                "settings-income": "income",
+                "settings-export": "export",
+                "settings-migration": "migration"
             };
 
             function syncShellUrl(panelKey) {
@@ -469,6 +512,16 @@
                     params.set("settings_section", sectionKey);
                 } else {
                     params.delete("settings_section");
+                }
+                if (panelKey === "yearly") {
+                    const yearlyYear = document.getElementById("yearly-year-input");
+                    const fallbackYear = "{{ year_filter }}";
+                    const y = yearlyYear && yearlyYear.value ? yearlyYear.value : String(fallbackYear);
+                    if (y) {
+                        params.set("year", y);
+                    }
+                } else {
+                    params.delete("year");
                 }
                 const nextUrl = `${window.location.pathname}?${params.toString()}`;
                 window.history.replaceState({}, "", nextUrl);
@@ -501,8 +554,7 @@
                         "panel-expenses": "expenses",
                         "panel-income": "income",
                         "panel-summary": "summary",
-                        "panel-export": "export",
-                        "panel-migration": "migration",
+                        "panel-yearly": "yearly",
                         "panel-settings": "settings"
                     };
                     const panelValue = panelMap[target];
