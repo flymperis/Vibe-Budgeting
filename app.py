@@ -13,6 +13,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
 DB_PATH = "database.db"
 EXPORT_FORMAT_VERSION = 1
+LIST_PAGE_SIZE = 75
 
 SHEET_META = "_meta"
 SHEET_ACCOUNTS = "Accounts"
@@ -40,6 +41,13 @@ def normalize_income_amount(raw):
     except (TypeError, ValueError):
         value = 0.0
     return abs(value)
+
+
+def normalize_list_page(value):
+    try:
+        return max(1, int(str(value).strip()))
+    except (TypeError, ValueError):
+        return 1
 
 
 def normalize_year(value):
@@ -315,6 +323,12 @@ def redirect_home(panel=None, settings_section=None):
         query["settings_section"] = sec
     if target == "yearly":
         query["year"] = year_for_redirect
+    exp_pg = normalize_list_page(request.form.get("exp_page") or request.args.get("exp_page") or 1)
+    inc_pg = normalize_list_page(request.form.get("inc_page") or request.args.get("inc_page") or 1)
+    if target == "expenses" and exp_pg > 1:
+        query["exp_page"] = exp_pg
+    if target == "income" and inc_pg > 1:
+        query["inc_page"] = inc_pg
     return redirect(url_for("index", **query))
 
 
@@ -851,6 +865,11 @@ def index():
 
     categories = conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
     income_categories = conn.execute("SELECT id, name FROM income_categories ORDER BY name").fetchall()
+
+    expense_total = conn.execute("SELECT COUNT(*) AS n FROM expenses").fetchone()["n"]
+    expense_num_pages = max(1, (expense_total + LIST_PAGE_SIZE - 1) // LIST_PAGE_SIZE)
+    expense_page = min(normalize_list_page(request.args.get("exp_page")), expense_num_pages)
+    expense_offset = (expense_page - 1) * LIST_PAGE_SIZE
     expenses = conn.execute(
         """
         SELECT
@@ -867,10 +886,17 @@ def index():
         JOIN categories c ON c.id = e.category_id
         JOIN accounts a ON a.id = e.account_id
         ORDER BY e.spent_at DESC
-        """
+        LIMIT ? OFFSET ?
+        """,
+        (LIST_PAGE_SIZE, expense_offset),
     ).fetchall()
 
     accounts = conn.execute("SELECT id, name, opening_balance FROM accounts ORDER BY name").fetchall()
+
+    income_total = conn.execute("SELECT COUNT(*) AS n FROM income_entries").fetchone()["n"]
+    income_num_pages = max(1, (income_total + LIST_PAGE_SIZE - 1) // LIST_PAGE_SIZE)
+    income_page = min(normalize_list_page(request.args.get("inc_page")), income_num_pages)
+    income_offset = (income_page - 1) * LIST_PAGE_SIZE
     income_entries = conn.execute(
         """
         SELECT
@@ -887,7 +913,9 @@ def index():
         JOIN income_categories c ON c.id = i.category_id
         JOIN accounts a ON a.id = i.account_id
         ORDER BY i.received_at DESC
-        """
+        LIMIT ? OFFSET ?
+        """,
+        (LIST_PAGE_SIZE, income_offset),
     ).fetchall()
 
     total_expenses = conn.execute(
@@ -1026,6 +1054,13 @@ def index():
         yearly_total_income=yearly_total_income,
         yearly_total_expenses=yearly_total_expenses,
         yearly_total_delta=yearly_total_delta,
+        expense_page=expense_page,
+        expense_total=expense_total,
+        expense_num_pages=expense_num_pages,
+        income_page=income_page,
+        income_total=income_total,
+        income_num_pages=income_num_pages,
+        list_page_size=LIST_PAGE_SIZE,
     )
 
 
