@@ -600,6 +600,7 @@
                                     <th scope="col">Income</th>
                                     <th scope="col">Expenses</th>
                                     <th scope="col">Delta</th>
+                                    <th scope="col">Total bank balance</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -609,6 +610,7 @@
                                         <td>{{ "%.2f"|format(row.income) }}</td>
                                         <td>{{ "%.2f"|format(row.expenses) }}</td>
                                         <td class="{% if row.delta > 0 %}delta-positive{% elif row.delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ "%.2f"|format(row.delta) }}</td>
+                                        <td>{{ "%.2f"|format(row.total_balance) }}</td>
                                     </tr>
                                 {% endfor %}
                                 <tr class="yearly-totals-row">
@@ -616,6 +618,7 @@
                                     <td>{{ "%.2f"|format(yearly_total_income) }}</td>
                                     <td>{{ "%.2f"|format(yearly_total_expenses) }}</td>
                                     <td class="{% if yearly_total_delta > 0 %}delta-positive{% elif yearly_total_delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ "%.2f"|format(yearly_total_delta) }}</td>
+                                    <td class="muted">—</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -625,8 +628,8 @@
                 <section class="panel {% if active_panel == 'reports' %}active{% endif %}" id="panel-reports">
                     <h2>Reports</h2>
                     <p class="muted small-hint">
-                        Total bank balance = sum of all account balances. Each row is a snapshot after that month
-                        (for the current month in this year, through today). “Month Δ” is the change from the prior snapshot.
+                        Total bank balance (sum of accounts) at the end of each month; the current month uses movements through today.
+                        Hover a point for balance and month-to-month change (Δ).
                     </p>
                     <form action="/" class="year-picker reports-year-picker" method="get">
                         <input name="panel" type="hidden" value="reports">
@@ -639,25 +642,27 @@
                         </select>
                         <button type="submit">Apply</button>
                     </form>
-                    <div class="yearly-table-wrap reports-balance-wrap">
-                        <table class="yearly-table reports-balance-table">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Month</th>
-                                    <th scope="col">Total balance</th>
-                                    <th scope="col">Month Δ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in report_balance_rows %}
-                                    <tr>
-                                        <th scope="row">{{ row.month_label }}</th>
-                                        <td>{{ "%.2f"|format(row.total_balance) }}</td>
-                                        <td class="{% if row.change > 0 %}delta-positive{% elif row.change < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ "%.2f"|format(row.change) }}</td>
-                                    </tr>
+                    <div class="reports-chart-wrap">
+                        <figure class="reports-chart-figure">
+                            <figcaption class="sr-only">Total bank balance by month for {{ report_year }}</figcaption>
+                            <svg class="reports-balance-chart" viewBox="0 0 {{ report_chart_spec.w }} {{ report_chart_spec.h }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Total bank balance by month for {{ report_year }}">
+                                <rect class="reports-chart-plot-bg" x="{{ report_chart_spec.plot_ml }}" y="{{ report_chart_spec.plot_mt }}" width="{{ report_chart_spec.plot_pw }}" height="{{ report_chart_spec.plot_ph }}" rx="4" />
+                                {% for t in report_chart_spec.y_ticks %}
+                                <text class="reports-chart-y-tick" x="{{ t.x }}" y="{{ t.y }}" dominant-baseline="middle" font-size="11">{{ t.text }}</text>
                                 {% endfor %}
-                            </tbody>
-                        </table>
+                                {% if report_chart_spec.points %}
+                                <polyline class="reports-chart-line" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="{{ report_chart_spec.points }}" />
+                                {% endif %}
+                                {% for d in report_chart_spec.dots %}
+                                <g class="reports-chart-dot-group">
+                                    <circle class="reports-chart-dot" cx="{{ d.cx }}" cy="{{ d.cy }}" r="5">
+                                        <title>{{ d.title }}</title>
+                                    </circle>
+                                    <text class="reports-chart-month" x="{{ d.lx }}" y="{{ report_chart_spec.month_label_y }}" dominant-baseline="middle" text-anchor="middle" font-size="11">{{ d.short }}</text>
+                                </g>
+                                {% endfor %}
+                            </svg>
+                        </figure>
                     </div>
                 </section>
 

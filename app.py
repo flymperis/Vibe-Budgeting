@@ -230,6 +230,90 @@ def fetch_account_balances_through(conn, balance_cutoff_d):
     ).fetchall()
 
 
+def monthly_total_balances_for_year(conn, year: int, today_d) -> list[float]:
+    """Sum of all account balances after each calendar month (selected year's current month through today)."""
+    balances = []
+    for month_num in range(1, 13):
+        month_start = datetime(year, month_num, 1)
+        month_end_exclusive = month_start + timedelta(days=32)
+        month_end_exclusive = month_end_exclusive.replace(day=1)
+        month_end_cutoff = month_end_exclusive.strftime("%Y-%m-%d")
+        if year == today_d.year and month_num == today_d.month:
+            snap_cutoff = (today_d + timedelta(days=1)).isoformat()
+        else:
+            snap_cutoff = month_end_cutoff
+        rows_m = fetch_account_balances_through(conn, snap_cutoff)
+        balances.append(sum(float(r["current_balance"]) for r in rows_m))
+    return balances
+
+
+def balance_line_chart_spec(rows: list, *, width: float = 720, height: float = 300) -> dict:
+    """SVG line chart: rows need total_balance, month_label, change."""
+    ml, mr, mt, mb = 58.0, 18.0, 24.0, 46.0
+    pw = width - ml - mr
+    ph = height - mt - mb
+    vals = [float(r["total_balance"]) for r in rows]
+    month_label_y = height - 12.0
+    if not vals:
+        return {
+            "w": width,
+            "h": height,
+            "points": "",
+            "dots": [],
+            "plot_ml": ml,
+            "plot_mt": mt,
+            "plot_pw": pw,
+            "plot_ph": ph,
+            "y_ticks": [],
+            "month_label_y": month_label_y,
+        }
+    y_min = min(0.0, min(vals))
+    y_max = max(vals)
+    if y_max <= y_min:
+        y_max = y_min + 1.0
+    pad = (y_max - y_min) * 0.08 or 1.0
+    y_min -= pad
+    y_max += pad
+    y_rng = y_max - y_min or 1.0
+    y_mid = y_min + y_rng / 2
+    n = len(vals)
+    dots = []
+    pts = []
+    for i, r in enumerate(rows):
+        v = float(r["total_balance"])
+        ch = float(r.get("change", 0.0))
+        x = ml + (i / (n - 1)) * pw if n > 1 else ml + pw / 2
+        yi = mt + ph - ((v - y_min) / y_rng) * ph
+        pts.append(f"{x:.1f},{yi:.1f}")
+        label = r["month_label"]
+        dots.append(
+            {
+                "cx": round(x, 1),
+                "cy": round(yi, 1),
+                "lx": round(x, 1),
+                "short": label[:3],
+                "title": f"{label}: {v:.2f} (Δ {ch:+.2f})",
+            }
+        )
+    y_ticks = [
+        {"x": 4, "y": mt + 8, "text": f"{y_max:.2f}"},
+        {"x": 4, "y": mt + ph / 2, "text": f"{y_mid:.2f}"},
+        {"x": 4, "y": mt + ph - 4, "text": f"{y_min:.2f}"},
+    ]
+    return {
+        "w": width,
+        "h": height,
+        "points": " ".join(pts),
+        "dots": dots,
+        "plot_ml": ml,
+        "plot_mt": mt,
+        "plot_pw": pw,
+        "plot_ph": ph,
+        "y_ticks": y_ticks,
+        "month_label_y": month_label_y,
+    }
+
+
 def _column_names(conn, table):
     return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
 
@@ -1223,6 +1307,7 @@ def index():
     }
 
     month_names = calendar.month_name
+    yearly_month_balances = monthly_total_balances_for_year(conn, year_filter, today_d)
     yearly_rows = []
     yearly_total_income = 0.0
     yearly_total_expenses = 0.0
@@ -1238,6 +1323,7 @@ def index():
                 "income": inc,
                 "expenses": exp,
                 "delta": delta,
+                "total_balance": yearly_month_balances[month_num - 1],
             }
         )
     yearly_total_delta = yearly_total_income - yearly_total_expenses
@@ -1246,20 +1332,10 @@ def index():
     jan1_this_year = f"{report_year:04d}-01-01"
     rows_before_jan = fetch_account_balances_through(conn, jan1_this_year)
     prev_balance_total = sum(float(r["current_balance"]) for r in rows_before_jan)
+    report_balances_list = monthly_total_balances_for_year(conn, report_year, today_d)
     report_balance_rows = []
     for month_num in range(1, 13):
-        month_start = datetime(report_year, month_num, 1)
-        month_end_exclusive = month_start + timedelta(days=32)
-        month_end_exclusive = month_end_exclusive.replace(day=1)
-        month_end_cutoff = month_end_exclusive.strftime("%Y-%m-%d")
-
-        if report_year == today_d.year and month_num == today_d.month:
-            snap_cutoff = (today_d + timedelta(days=1)).isoformat()
-        else:
-            snap_cutoff = month_end_cutoff
-
-        rows_m = fetch_account_balances_through(conn, snap_cutoff)
-        total_bal = sum(float(r["current_balance"]) for r in rows_m)
+        total_bal = report_balances_list[month_num - 1]
         change = total_bal - prev_balance_total
         prev_balance_total = total_bal
         report_balance_rows.append(
@@ -1270,6 +1346,7 @@ def index():
                 "change": change,
             }
         )
+    report_chart_spec = balance_line_chart_spec(report_balance_rows)
 
     conn.close()
 
@@ -1310,7 +1387,7 @@ def index():
         cal=calendar,
         transfer_default_date=transfer_default_date,
         report_year=report_year,
-        report_balance_rows=report_balance_rows,
+        report_chart_spec=report_chart_spec,
     )
 
 
