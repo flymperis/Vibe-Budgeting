@@ -66,12 +66,13 @@ form {
 
 .app-layout {
     display: grid;
-    grid-template-columns: 1fr 230px;
+    grid-template-columns: 230px 1fr;
     gap: 1rem;
     align-items: start;
 }
 
 .panel-shell {
+    grid-column: 2;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -87,6 +88,7 @@ form {
 }
 
 .side-menu {
+    grid-column: 1;
     display: grid;
     gap: 0.5rem;
     background: var(--surface);
