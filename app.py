@@ -1769,6 +1769,9 @@ def index():
         )
 
     account_balances = fetch_account_balances_through(conn, balance_cutoff_d, uid)
+    account_balance_by_id = {
+        int(row["id"]): float(row["current_balance"]) for row in account_balances
+    }
     account_transfers = conn.execute(
         """
         SELECT
@@ -1881,6 +1884,7 @@ def index():
         expense_breakdown=expense_breakdown,
         income_breakdown=income_breakdown,
         account_balances=account_balances,
+        account_balance_by_id=account_balance_by_id,
         account_transfers=account_transfers,
         yearly_rows=yearly_rows,
         yearly_total_income=yearly_total_income,
