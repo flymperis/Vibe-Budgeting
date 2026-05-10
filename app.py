@@ -127,6 +127,30 @@ def _parse_row_created_date(row):
         return datetime.now().date()
 
 
+def _recurring_start_date(rule):
+    """First calendar day from which monthly recurring postings are allowed (inclusive)."""
+    try:
+        raw = rule["starts_on"]
+    except (KeyError, IndexError):
+        raw = None
+    if raw is not None:
+        s = str(raw).strip()
+        if s:
+            try:
+                return datetime.strptime(s[:10], "%Y-%m-%d").date()
+            except ValueError:
+                pass
+    return _parse_row_created_date(rule)
+
+
+def normalize_recurring_starts_on(raw):
+    """YYYY-MM-DD from form; blank or invalid defaults to today."""
+    day = coerce_txn_day((raw or "").strip())
+    if day:
+        return day
+    return datetime.now().date().isoformat()
+
+
 def _due_date_in_month(ym: str, day_of_month: int):
     y, m = map(int, ym.split("-", 1))
     last = calendar.monthrange(y, m)[1]
@@ -152,7 +176,7 @@ def apply_recurring_entries(conn, user_id):
     today_ym = f"{today.year:04d}-{today.month:02d}"
     rules = conn.execute(
         """
-        SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at
+        SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at, starts_on
         FROM recurring_entries
         WHERE enabled = 1 AND user_id = ?
         """,
@@ -160,8 +184,8 @@ def apply_recurring_entries(conn, user_id):
     ).fetchall()
     posted = 0
     for rule in rules:
-        created_d = _parse_row_created_date(rule)
-        start_ym = f"{created_d.year:04d}-{created_d.month:02d}"
+        start_d = _recurring_start_date(rule)
+        start_ym = f"{start_d.year:04d}-{start_d.month:02d}"
         note_text = (rule["notes"] or "").strip()
         prefix = "[Recurring] "
         full_notes = f"{prefix}{note_text}" if note_text else prefix.strip()
@@ -174,7 +198,7 @@ def apply_recurring_entries(conn, user_id):
             if exists:
                 continue
             due = _due_date_in_month(ym, rule["day_of_month"])
-            if due < created_d:
+            if due < start_d:
                 continue
             if today < due:
                 continue
@@ -579,6 +603,7 @@ def migrate_schema(conn):
     migrate_expenses_signed_amounts(conn)
     migrate_txn_dates_to_day(conn)
     migrate_recurring_entries(conn)
+    migrate_recurring_starts_on(conn)
     migrate_users_multitenancy(conn)
 
 
@@ -697,6 +722,7 @@ def migrate_recurring_entries(conn):
             day_of_month INTEGER NOT NULL CHECK (day_of_month >= 1 AND day_of_month <= 31),
             notes TEXT NOT NULL DEFAULT '',
             enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            starts_on TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -709,6 +735,21 @@ def migrate_recurring_entries(conn):
             PRIMARY KEY (recurring_id, ym),
             FOREIGN KEY (recurring_id) REFERENCES recurring_entries(id) ON DELETE CASCADE
         )
+        """
+    )
+
+
+def migrate_recurring_starts_on(conn):
+    cols = _column_names(conn, "recurring_entries") or []
+    if not cols:
+        return
+    if "starts_on" not in cols:
+        conn.execute("ALTER TABLE recurring_entries ADD COLUMN starts_on TEXT")
+    conn.execute(
+        """
+        UPDATE recurring_entries
+        SET starts_on = date(substr(created_at, 1, 10))
+        WHERE starts_on IS NULL OR trim(COALESCE(starts_on, '')) = ''
         """
     )
 
@@ -1622,6 +1663,7 @@ def index():
             r.notes,
             r.enabled,
             r.created_at,
+            r.starts_on,
             a.name AS account_name,
             COALESCE(c.name, ic.name) AS category_name
         FROM recurring_entries r
@@ -1949,6 +1991,7 @@ def add_recurring():
     amount_raw = request.form.get("amount", "").strip()
     account_raw = request.form.get("account_id", "").strip()
     day_raw = request.form.get("day_of_month", "1").strip()
+    starts_on = normalize_recurring_starts_on(request.form.get("starts_on", ""))
     notes = request.form.get("notes", "").strip()
 
     if not entry_type or category_id is None or not account_raw:
@@ -1984,10 +2027,10 @@ def add_recurring():
 
     conn.execute(
         """
-        INSERT INTO recurring_entries (user_id, entry_type, amount, category_id, account_id, day_of_month, notes, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        INSERT INTO recurring_entries (user_id, entry_type, amount, category_id, account_id, day_of_month, notes, enabled, starts_on)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
         """,
-        (uid, entry_type, amt, category_id, account_id, dom, notes),
+        (uid, entry_type, amt, category_id, account_id, dom, notes, starts_on),
     )
     conn.commit()
     conn.close()
@@ -2002,6 +2045,7 @@ def edit_recurring(recurring_id):
     amount_raw = request.form.get("amount", "").strip()
     account_raw = request.form.get("account_id", "").strip()
     day_raw = request.form.get("day_of_month", "1").strip()
+    starts_on = normalize_recurring_starts_on(request.form.get("starts_on", ""))
     notes = request.form.get("notes", "").strip()
     enabled = 1 if request.form.get("enabled") == "1" else 0
 
@@ -2039,10 +2083,10 @@ def edit_recurring(recurring_id):
     cur = conn.execute(
         """
         UPDATE recurring_entries
-        SET entry_type = ?, amount = ?, category_id = ?, account_id = ?, day_of_month = ?, notes = ?, enabled = ?
+        SET entry_type = ?, amount = ?, category_id = ?, account_id = ?, day_of_month = ?, notes = ?, enabled = ?, starts_on = ?
         WHERE id = ? AND user_id = ?
         """,
-        (entry_type, amt, category_id, account_id, dom, notes, enabled, recurring_id, uid),
+        (entry_type, amt, category_id, account_id, dom, notes, enabled, starts_on, recurring_id, uid),
     )
     conn.commit()
     conn.close()
