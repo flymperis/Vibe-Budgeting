@@ -466,9 +466,8 @@
                 <section class="panel {% if active_panel == 'recurring' %}active{% endif %}" id="panel-recurring">
                     <h2>Recurring Entries</h2>
                     <p class="muted small-hint">
-                        Each rule posts automatically once per calendar month on the day you choose (or the last day of the month if that day does not exist),
-                        starting from the <strong>start date</strong> you set (no postings before that day).
-                        Entries appear as normal expenses or income with a “[Recurring]” note when you open the app on or after each month’s due date.
+                        Each rule posts automatically once per calendar month on the day you choose (or the last day of the month if that day does not exist).
+                        Entries appear as normal expenses or income with a “[Recurring]” note when you open the app on or after that date.
                     </p>
 
                     <h3>Add rule</h3>
@@ -498,8 +497,6 @@
                         </select>
                         <label class="month-label" for="recurring-dom">Day of month</label>
                         <input id="recurring-dom" max="31" min="1" name="day_of_month" required type="number" value="1">
-                        <label class="month-label" for="recurring-starts-on">Start date</label>
-                        <input id="recurring-starts-on" name="starts_on" required type="date" value="{{ transfer_default_date }}">
                         <label class="month-label" for="recurring-notes">Notes (optional)</label>
                         <textarea id="recurring-notes" name="notes" placeholder="e.g. Rent, Salary, Subscription" rows="2"></textarea>
                         <button type="submit">Add recurring rule</button>
@@ -535,7 +532,6 @@
                                         {% endfor %}
                                     </select>
                                     <input max="31" min="1" name="day_of_month" required type="number" value="{{ rule.day_of_month }}" aria-label="Day of month">
-                                    <input name="starts_on" required type="date" value="{{ rule.starts_on or transfer_default_date }}" aria-label="Start date">
                                     <input name="notes" placeholder="Notes" type="text" value="{{ rule.notes }}">
                                     <label class="checkbox-inline recurring-enabled-label">
                                         <input name="enabled" type="checkbox" value="1" {% if rule.enabled %}checked{% endif %}> Active
