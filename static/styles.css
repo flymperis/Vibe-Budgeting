@@ -910,6 +910,11 @@ th, td {
     align-items: flex-start;
 }
 
+.transfer-panel-balances-wrap {
+    margin-bottom: 1rem;
+    max-width: 28rem;
+}
+
 .transfer-log-heading {
     margin: 1.15rem 0 0.45rem;
     font-size: 1rem;

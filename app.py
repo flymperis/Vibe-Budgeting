@@ -39,6 +39,7 @@ def _prepare_sqlite_storage():
 
 EXPORT_FORMAT_VERSION = 1
 LIST_PAGE_SIZE = 75
+TRANSFER_LOG_LIMIT = 10
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "true").lower() in ("1", "true", "yes")
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
 
@@ -83,12 +84,12 @@ def _require_login():
 
 
 def normalize_expense_amount(raw):
-    """Store expenses as negative; positive input is treated as magnitude spent."""
+    """Signed expense movements: negative = spending, positive = refund/credit."""
     try:
         value = float(str(raw).strip())
     except (TypeError, ValueError):
         value = 0.0
-    return -abs(value)
+    return value
 
 
 def normalize_income_amount(raw):
@@ -1786,9 +1787,9 @@ def index():
         JOIN accounts ta ON ta.id = t.to_account_id
         WHERE t.user_id = ?
         ORDER BY date(t.transferred_at) DESC, t.id DESC
-        LIMIT 150
+        LIMIT ?
         """,
-        (uid,),
+        (uid, TRANSFER_LOG_LIMIT),
     ).fetchall()
     accounts_total_balance = sum(float(r["current_balance"]) for r in account_balances)
 
@@ -1903,6 +1904,7 @@ def index():
         balance_scope_hint=balance_scope_hint,
         cal=calendar,
         transfer_default_date=transfer_default_date,
+        transfer_log_limit=TRANSFER_LOG_LIMIT,
         report_year=report_year,
         report_chart_spec=report_chart_spec,
         recurring_entries=recurring_entries,

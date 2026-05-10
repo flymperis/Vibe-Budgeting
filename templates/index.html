@@ -549,6 +549,31 @@
                 <section class="panel {% if active_panel == 'transfer' %}active{% endif %}" id="panel-transfer">
                     <h2>Bank Transfer</h2>
                     <p class="muted small-hint">Move money between your accounts (e.g. Piraeus → AlphaBank). Balances update from the transfer date.</p>
+                    {% if account_balances %}
+                        <h3 class="home-balances-heading">Account balances</h3>
+                        <p class="muted small-hint">{{ balance_scope_hint }}</p>
+                        <div class="home-balances-wrap transfer-panel-balances-wrap">
+                            <table class="home-balances-table">
+                                <thead>
+                                    <tr><th>Account</th><th>Balance</th></tr>
+                                </thead>
+                                <tbody>
+                                    {% for account in account_balances %}
+                                        <tr>
+                                            <td>{{ account.name }}</td>
+                                            <td>{{ "%.2f"|format(account.current_balance) }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="home-balances-total-row">
+                                        <th scope="row">Total (all accounts)</th>
+                                        <td>{{ "%.2f"|format(accounts_total_balance) }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    {% endif %}
                     {% if accounts %}
                         <form action="{{ url_for('add_transfer') }}" class="panel-add-form transfer-add-form" method="post">
                             <input name="month" type="hidden" value="{{ month_filter }}">
@@ -576,7 +601,7 @@
                         <p class="muted">Add at least two accounts in Settings to record transfers.</p>
                     {% endif %}
 
-                    <h3 class="transfer-log-heading">Recent transfers</h3>
+                    <h3 class="transfer-log-heading">Last {{ transfer_log_limit }} transfers</h3>
                     <div class="transfer-log-wrap">
                         <table class="transfer-log-table">
                             <thead>
