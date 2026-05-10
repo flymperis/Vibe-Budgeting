@@ -522,6 +522,98 @@ table.yearly-table {
     font-weight: 600;
 }
 
+.reports-expenses-table-title {
+    margin: 1.35rem 0 0.35rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.reports-expenses-table-wrap {
+    overflow-x: auto;
+    margin-top: 0.5rem;
+    margin-bottom: 0.25rem;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.reports-expenses-table {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.reports-expenses-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface-alt);
+    font-weight: 700;
+    color: var(--muted);
+}
+
+.reports-expenses-table th,
+.reports-expenses-table td {
+    padding: 0.45rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.reports-expenses-table tbody tr:last-child th,
+.reports-expenses-table tbody tr:last-child td {
+    border-bottom: 1px solid var(--border);
+}
+
+.reports-expenses-cat-col {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    text-align: left;
+    min-width: 7.5rem;
+    max-width: 12rem;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--border);
+}
+
+.reports-expenses-table thead .reports-expenses-cat-col {
+    z-index: 3;
+    background: var(--surface-alt);
+}
+
+.reports-expenses-num-col {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.reports-expenses-total-col {
+    font-weight: 700;
+    border-left: 1px solid var(--border);
+    background: var(--surface-alt);
+}
+
+.reports-expenses-table thead .reports-expenses-total-col {
+    background: var(--surface-alt);
+}
+
+.reports-expenses-grand-row th,
+.reports-expenses-grand-row td {
+    border-top: 2px solid var(--border);
+    background: var(--surface-alt);
+    font-weight: 700;
+}
+
+.reports-expenses-grand-row .reports-expenses-cat-col {
+    background: var(--surface-alt);
+}
+
+.reports-expenses-empty {
+    margin-top: 0.35rem;
+}
+
 :root[data-theme="dark"] .yearly-table .delta-positive {
     color: #4ade80;
 }

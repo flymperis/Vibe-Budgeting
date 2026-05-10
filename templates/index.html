@@ -804,6 +804,49 @@
                             </svg>
                         </figure>
                     </div>
+
+                    <h3 class="reports-expenses-table-title">Expenses table</h3>
+                    <p class="muted small-hint">
+                        Sum of recorded expense amounts by category and calendar month for {{ report_year }}
+                        (same signs as in your ledger; typically spending is negative).
+                    </p>
+                    {% if reports_expenses_table.rows %}
+                        <div class="reports-expenses-table-wrap">
+                            <table class="reports-expenses-table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col" class="reports-expenses-cat-col">Category</th>
+                                        {% for mh in reports_expenses_table.month_headers %}
+                                            <th scope="col" class="reports-expenses-num-col">{{ mh }}</th>
+                                        {% endfor %}
+                                        <th scope="col" class="reports-expenses-num-col reports-expenses-total-col">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for erow in reports_expenses_table.rows %}
+                                        <tr>
+                                            <th scope="row" class="reports-expenses-cat-col">{{ erow.name }}</th>
+                                            {% for v in erow.months %}
+                                                <td class="reports-expenses-num-col">{% if v != 0 %}{{ "%.2f"|format(v) }}{% endif %}</td>
+                                            {% endfor %}
+                                            <td class="reports-expenses-num-col reports-expenses-total-col">{{ "%.2f"|format(erow.total) }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="reports-expenses-grand-row">
+                                        <th scope="row" class="reports-expenses-cat-col">Grand Total</th>
+                                        {% for tv in reports_expenses_table.month_totals %}
+                                            <td class="reports-expenses-num-col">{{ "%.2f"|format(tv) }}</td>
+                                        {% endfor %}
+                                        <td class="reports-expenses-num-col reports-expenses-total-col">{{ "%.2f"|format(reports_expenses_table.grand_total) }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="muted reports-expenses-empty">No expenses recorded in {{ report_year }}.</p>
+                    {% endif %}
                 </section>
 
                 <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">

@@ -506,6 +506,51 @@ def balance_line_chart_spec(rows: list, *, width: float = 720, height: float = 3
     }
 
 
+def expense_pivot_for_report_year(conn, year: int, user_id: int) -> dict:
+    """Category × month sums of expense amounts for a calendar year (values as stored in DB)."""
+    uid = int(user_id)
+    y0 = f"{year:04d}-01-01"
+    y1 = f"{year + 1:04d}-01-01"
+    raw = conn.execute(
+        """
+        SELECT c.name AS category_name,
+               CAST(strftime('%m', e.spent_at) AS INTEGER) AS m,
+               SUM(e.amount) AS total
+        FROM expenses e
+        JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
+        WHERE e.user_id = ? AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)
+        GROUP BY c.name, m
+        """,
+        (uid, y0, y1),
+    ).fetchall()
+    pivot: dict[str, list[float]] = {}
+    for row in raw:
+        cat = row["category_name"]
+        m = int(row["m"])
+        if not 1 <= m <= 12:
+            continue
+        if cat not in pivot:
+            pivot[cat] = [0.0] * 12
+        pivot[cat][m - 1] = float(row["total"])
+    categories_sorted = sorted(pivot.keys())
+    rows_out = []
+    for cat in categories_sorted:
+        months = pivot[cat]
+        rows_out.append({"name": cat, "months": months, "total": sum(months)})
+    month_totals = [0.0] * 12
+    for cat in categories_sorted:
+        for i in range(12):
+            month_totals[i] += pivot[cat][i]
+    grand_total = sum(month_totals)
+    month_headers = [f"{m:02d}.{calendar.month_abbr[m]}" for m in range(1, 13)]
+    return {
+        "rows": rows_out,
+        "month_headers": month_headers,
+        "month_totals": month_totals,
+        "grand_total": grand_total,
+    }
+
+
 def _column_names(conn, table):
     return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
 
@@ -1863,6 +1908,7 @@ def index():
             }
         )
     report_chart_spec = balance_line_chart_spec(report_balance_rows)
+    reports_expenses_table = expense_pivot_for_report_year(conn, report_year, uid)
 
     conn.close()
 
@@ -1907,6 +1953,7 @@ def index():
         transfer_log_limit=TRANSFER_LOG_LIMIT,
         report_year=report_year,
         report_chart_spec=report_chart_spec,
+        reports_expenses_table=reports_expenses_table,
         recurring_entries=recurring_entries,
     )
 
