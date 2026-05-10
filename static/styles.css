@@ -392,8 +392,16 @@ form {
     gap: 0.65rem 1rem;
 }
 
+/* Override .cal-dropdown-field { min-width: 0 } so the category column cannot shrink to invisible in flex row layouts */
+.cal-dropdown-field.list-category-filter-field {
+    flex: 0 1 auto;
+    min-width: min(100%, 12rem);
+}
+
 .list-category-filter-field .list-category-filter-select {
     min-width: 12rem;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .cal-dropdown-row {
