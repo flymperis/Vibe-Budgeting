@@ -629,6 +629,27 @@ table.yearly-table {
     background: var(--surface-alt);
 }
 
+.reports-expenses-avg-row th,
+.reports-expenses-avg-row td {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.reports-expenses-avg-row .reports-expenses-total-col {
+    color: var(--text);
+    font-weight: 700;
+}
+
+.reports-expenses-avg-row .reports-expenses-cat-col {
+    background: var(--surface);
+}
+
+.reports-expenses-avg-empty {
+    padding: 0.35rem 0.5rem;
+}
+
 .reports-expenses-empty {
     margin-top: 0.35rem;
 }

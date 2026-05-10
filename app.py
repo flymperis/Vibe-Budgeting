@@ -555,11 +555,17 @@ def expense_pivot_for_report_year(conn, year: int, user_id: int) -> dict:
             month_totals[i] += pivot[cat][i]
     grand_total = sum(month_totals)
     month_headers = [f"{m:02d}.{calendar.month_abbr[m]}" for m in range(1, 13)]
+    active_month_count = sum(1 for t in month_totals if t != 0.0)
+    avg_monthly_total = (
+        (grand_total / active_month_count) if active_month_count else None
+    )
     return {
         "rows": rows_out,
         "month_headers": month_headers,
         "month_totals": month_totals,
         "grand_total": grand_total,
+        "active_month_count": active_month_count,
+        "avg_monthly_total": avg_monthly_total,
     }
 
 

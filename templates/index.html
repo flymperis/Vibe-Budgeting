@@ -875,6 +875,7 @@
                     <p class="muted small-hint">
                         Sum of recorded expense amounts by category and calendar month for {{ report_year }}
                         (same signs as in your ledger; typically spending is negative).
+                        Monthly average uses only months whose grand total is not zero.
                     </p>
                     {% if reports_expenses_table.rows %}
                         <div class="reports-expenses-table-wrap">
@@ -907,6 +908,15 @@
                                         {% endfor %}
                                         <td class="reports-expenses-num-col reports-expenses-total-col">{{ "%.2f"|format(reports_expenses_table.grand_total) }}</td>
                                     </tr>
+                                    {% if reports_expenses_table.avg_monthly_total is not none %}
+                                    <tr class="reports-expenses-avg-row">
+                                        <th scope="row" class="reports-expenses-cat-col">Avg / active month</th>
+                                        {% for _ in reports_expenses_table.month_headers %}
+                                            <td class="reports-expenses-num-col reports-expenses-avg-empty"></td>
+                                        {% endfor %}
+                                        <td class="reports-expenses-num-col reports-expenses-total-col" title="Grand total divided by {{ reports_expenses_table.active_month_count }} month{% if reports_expenses_table.active_month_count != 1 %}s{% endif %} with non-zero column total">{{ "%.2f"|format(reports_expenses_table.avg_monthly_total) }}</td>
+                                    </tr>
+                                    {% endif %}
                                 </tfoot>
                             </table>
                         </div>
