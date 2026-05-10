@@ -108,6 +108,18 @@ def normalize_list_page(value):
         return 1
 
 
+def normalize_optional_category_id(raw):
+    """Positive category id from query/form string, or None."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        n = int(s)
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def normalize_day_of_month(value):
     try:
         d = int(str(value).strip())
@@ -973,6 +985,16 @@ def redirect_home(panel=None, settings_section=None):
         query["exp_month"] = exp_fm
     if target == "income" and inc_fm:
         query["inc_month"] = inc_fm
+    exp_cat_id = normalize_optional_category_id(
+        request.form.get("exp_category") or request.args.get("exp_category")
+    )
+    if target == "expenses" and exp_cat_id is not None:
+        query["exp_category"] = exp_cat_id
+    inc_cat_id = normalize_optional_category_id(
+        request.form.get("inc_category") or request.args.get("inc_category")
+    )
+    if target == "income" and inc_cat_id is not None:
+        query["inc_category"] = inc_cat_id
     return redirect(url_for("index", **query))
 
 
@@ -1686,6 +1708,18 @@ def index():
         eb = month_bounds_dates(expense_filter_month)
         expense_where += " AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)"
         expense_where_params.extend([eb[0], eb[1]])
+    expense_filter_category_id = normalize_optional_category_id(
+        request.args.get("exp_category") or request.form.get("exp_category")
+    )
+    if expense_filter_category_id is not None:
+        if not conn.execute(
+            "SELECT 1 FROM categories WHERE id = ? AND user_id = ?",
+            (expense_filter_category_id, uid),
+        ).fetchone():
+            expense_filter_category_id = None
+        else:
+            expense_where += " AND e.category_id = ?"
+            expense_where_params.append(expense_filter_category_id)
 
     expense_total = conn.execute(
         f"SELECT COUNT(*) AS n FROM expenses e {expense_where}",
@@ -1728,6 +1762,18 @@ def index():
         ib = month_bounds_dates(income_filter_month)
         income_where += " AND date(i.received_at) >= date(?) AND date(i.received_at) < date(?)"
         income_where_params.extend([ib[0], ib[1]])
+    income_filter_category_id = normalize_optional_category_id(
+        request.args.get("inc_category") or request.form.get("inc_category")
+    )
+    if income_filter_category_id is not None:
+        if not conn.execute(
+            "SELECT 1 FROM income_categories WHERE id = ? AND user_id = ?",
+            (income_filter_category_id, uid),
+        ).fetchone():
+            income_filter_category_id = None
+        else:
+            income_where += " AND i.category_id = ?"
+            income_where_params.append(income_filter_category_id)
 
     income_total = conn.execute(
         f"SELECT COUNT(*) AS n FROM income_entries i {income_where}",
@@ -1945,7 +1991,9 @@ def index():
         income_num_pages=income_num_pages,
         list_page_size=LIST_PAGE_SIZE,
         expense_filter_month=expense_filter_month,
+        expense_filter_category_id=expense_filter_category_id,
         income_filter_month=income_filter_month,
+        income_filter_category_id=income_filter_category_id,
         month_heading=month_heading,
         balance_scope_hint=balance_scope_hint,
         cal=calendar,

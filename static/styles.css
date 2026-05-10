@@ -385,6 +385,17 @@ form {
     margin-bottom: 1rem;
 }
 
+.list-entries-filter-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.65rem 1rem;
+}
+
+.list-category-filter-field .list-category-filter-select {
+    min-width: 12rem;
+}
+
 .cal-dropdown-row {
     display: flex;
     flex-wrap: wrap;
@@ -1460,6 +1471,7 @@ th, td {
 
     .list-month-filter .list-cal-month,
     .list-month-filter .list-cal-year,
+    .list-month-filter .list-category-filter-select,
     .list-month-filter button[type="submit"],
     .list-month-filter .btn-secondary {
         width: 100%;
