@@ -560,7 +560,7 @@ table.yearly-table {
 
 .reports-expenses-table {
     width: 100%;
-    min-width: 720px;
+    min-width: 800px;
     border-collapse: collapse;
     font-size: 0.82rem;
     font-variant-numeric: tabular-nums;
@@ -614,8 +614,21 @@ table.yearly-table {
     background: var(--surface-alt);
 }
 
-.reports-expenses-table thead .reports-expenses-total-col {
+.reports-expenses-avg-col {
+    font-weight: 700;
+    border-left: 1px solid var(--border);
     background: var(--surface-alt);
+    white-space: nowrap;
+}
+
+.reports-expenses-table thead .reports-expenses-total-col,
+.reports-expenses-table thead .reports-expenses-avg-col {
+    background: var(--surface-alt);
+}
+
+.reports-expenses-table tbody .reports-expenses-avg-col {
+    font-weight: 600;
+    background: var(--surface);
 }
 
 .reports-expenses-grand-row th,
@@ -629,25 +642,8 @@ table.yearly-table {
     background: var(--surface-alt);
 }
 
-.reports-expenses-avg-row th,
-.reports-expenses-avg-row td {
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-    font-weight: 600;
-    color: var(--muted);
-}
-
-.reports-expenses-avg-row .reports-expenses-total-col {
-    color: var(--text);
-    font-weight: 700;
-}
-
-.reports-expenses-avg-row .reports-expenses-cat-col {
-    background: var(--surface);
-}
-
-.reports-expenses-avg-empty {
-    padding: 0.35rem 0.5rem;
+.reports-expenses-grand-row .reports-expenses-avg-col {
+    background: var(--surface-alt);
 }
 
 .reports-expenses-empty {

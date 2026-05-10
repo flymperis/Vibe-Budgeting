@@ -518,6 +518,14 @@ def balance_line_chart_spec(rows: list, *, width: float = 720, height: float = 3
     }
 
 
+def _avg_over_nonzero_month_cells(months: list[float]):
+    """Mean of monthly values counting only months where the cell is non-zero."""
+    active = sum(1 for v in months if v != 0.0)
+    if not active:
+        return None
+    return sum(months) / active
+
+
 def expense_pivot_for_report_year(conn, year: int, user_id: int) -> dict:
     """Category × month sums of expense amounts for a calendar year (values as stored in DB)."""
     uid = int(user_id)
@@ -548,7 +556,14 @@ def expense_pivot_for_report_year(conn, year: int, user_id: int) -> dict:
     rows_out = []
     for cat in categories_sorted:
         months = pivot[cat]
-        rows_out.append({"name": cat, "months": months, "total": sum(months)})
+        rows_out.append(
+            {
+                "name": cat,
+                "months": months,
+                "total": sum(months),
+                "avg": _avg_over_nonzero_month_cells(months),
+            }
+        )
     month_totals = [0.0] * 12
     for cat in categories_sorted:
         for i in range(12):
