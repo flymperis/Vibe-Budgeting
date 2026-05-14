@@ -1,12 +1,16 @@
 from flask import Flask, flash, g, redirect, render_template, request, send_file, session, url_for
 import calendar
+import json
 import os
 import sys
 import re
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from urllib.parse import urlparse
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
 
 from openpyxl import Workbook, load_workbook
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -58,9 +62,11 @@ ALLOWED_PANELS = {
     "summary",
     "yearly",
     "reports",
+    "investments",
     "settings",
 }
 SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration"}
+INVESTMENTS_SECTIONS = {"crypto"}
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
@@ -658,6 +664,7 @@ def migrate_schema(conn):
     migrate_txn_dates_to_day(conn)
     migrate_recurring_entries(conn)
     migrate_users_multitenancy(conn)
+    migrate_crypto_transactions(conn)
 
 
 def migrate_users_multitenancy(conn):
@@ -761,6 +768,97 @@ def seed_user_defaults(conn, user_id):
         "INSERT OR IGNORE INTO accounts (user_id, name, opening_balance) VALUES (?, ?, ?)",
         (uid, "Main", 0.0),
     )
+
+
+def migrate_crypto_transactions(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crypto_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            coin_id TEXT NOT NULL,
+            coin_symbol TEXT NOT NULL,
+            coin_name TEXT NOT NULL,
+            tx_type TEXT NOT NULL CHECK (tx_type IN ('buy', 'sell')),
+            quantity REAL NOT NULL CHECK (quantity > 0),
+            price_per_unit REAL NOT NULL CHECK (price_per_unit >= 0),
+            fee REAL NOT NULL DEFAULT 0 CHECK (fee >= 0),
+            exchange TEXT NOT NULL DEFAULT '',
+            transacted_at TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+_price_cache: dict = {"prices": {}, "fetched_at": 0.0}
+PRICE_CACHE_TTL = 300
+
+
+def fetch_coingecko_prices(coin_ids, force=False):
+    if not coin_ids:
+        return {}
+    now = time.time()
+    cached = _price_cache
+    if not force and cached["prices"] and (now - cached["fetched_at"]) < PRICE_CACHE_TTL:
+        if all(cid in cached["prices"] for cid in coin_ids):
+            return {cid: cached["prices"][cid] for cid in coin_ids}
+    ids_str = ",".join(sorted(set(coin_ids)))
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids_str}&vs_currencies=eur&include_24hr_change=true"
+    try:
+        req = Request(url, headers={"Accept": "application/json", "User-Agent": "VibeBudgeting/1.0"})
+        with urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        prices = {}
+        for cid in coin_ids:
+            if cid in data and "eur" in data[cid]:
+                prices[cid] = {
+                    "price": data[cid]["eur"],
+                    "change_24h": data[cid].get("eur_24h_change"),
+                }
+        cached["prices"].update(prices)
+        cached["fetched_at"] = time.time()
+        return prices
+    except (URLError, HTTPError, json.JSONDecodeError, OSError):
+        return {cid: cached["prices"][cid] for cid in coin_ids if cid in cached["prices"]}
+
+
+def compute_crypto_holdings(transactions):
+    holdings: dict = {}
+    for tx in transactions:
+        cid = tx["coin_id"]
+        if cid not in holdings:
+            holdings[cid] = {
+                "coin_id": cid,
+                "coin_symbol": tx["coin_symbol"],
+                "coin_name": tx["coin_name"],
+                "quantity": 0.0,
+                "total_cost": 0.0,
+            }
+        h = holdings[cid]
+        qty = float(tx["quantity"])
+        price = float(tx["price_per_unit"])
+        fee = float(tx["fee"])
+        if tx["tx_type"] == "buy":
+            h["total_cost"] += qty * price + fee
+            h["quantity"] += qty
+        else:
+            if h["quantity"] > 0:
+                avg_cost = h["total_cost"] / h["quantity"]
+                h["total_cost"] -= qty * avg_cost
+            h["quantity"] -= qty
+    result = []
+    for _cid, h in sorted(holdings.items(), key=lambda x: x[1]["coin_name"].lower()):
+        if abs(h["quantity"]) > 1e-9:
+            h["avg_buy_price"] = h["total_cost"] / h["quantity"] if h["quantity"] > 0 else 0
+            result.append(h)
+    return result
+
+
+def normalize_investments_section(value):
+    section = (value or "").strip().lower()
+    return section if section in INVESTMENTS_SECTIONS else "crypto"
 
 
 def migrate_recurring_entries(conn):
@@ -967,6 +1065,7 @@ def resolve_active_panel():
             ("/income/", "income"),
             ("/transfers/", "transfer"),
             ("/recurring/", "recurring"),
+            ("/crypto/", "investments"),
         ):
             if path.startswith(prefix):
                 return mapped
@@ -987,6 +1086,13 @@ def redirect_home(panel=None, settings_section=None):
     query = {"panel": target, "month": month}
     if target == "settings":
         query["settings_section"] = sec
+    if target == "investments":
+        raw_inv_sec = (
+            settings_section
+            if settings_section is not None
+            else (request.form.get("investments_section") or request.args.get("investments_section"))
+        )
+        query["investments_section"] = normalize_investments_section(raw_inv_sec)
     if target == "yearly":
         query["year"] = year_for_redirect
     report_year_redirect = normalize_year(
@@ -1957,6 +2063,56 @@ def index():
     yearly_total_delta = yearly_total_income - yearly_total_expenses
     transfer_default_date = datetime.now().date().isoformat()
 
+    investments_section = normalize_investments_section(request.args.get("investments_section"))
+
+    crypto_txs = conn.execute(
+        """
+        SELECT id, coin_id, coin_symbol, coin_name, tx_type, quantity,
+               price_per_unit, fee, exchange, transacted_at, notes
+        FROM crypto_transactions
+        WHERE user_id = ?
+        ORDER BY transacted_at DESC, id DESC
+        """,
+        (uid,),
+    ).fetchall()
+
+    crypto_holdings_raw = compute_crypto_holdings(crypto_txs)
+
+    force_refresh = request.args.get("refresh_prices") == "1"
+    coin_ids = [h["coin_id"] for h in crypto_holdings_raw]
+    crypto_prices = fetch_coingecko_prices(coin_ids, force=force_refresh) if coin_ids else {}
+
+    crypto_total_value = 0.0
+    crypto_total_invested = 0.0
+    for h in crypto_holdings_raw:
+        cid = h["coin_id"]
+        price_info = crypto_prices.get(cid)
+        if price_info:
+            h["current_price"] = price_info["price"]
+            h["change_24h"] = price_info.get("change_24h")
+            h["current_value"] = h["quantity"] * price_info["price"]
+            h["pnl"] = h["current_value"] - h["total_cost"]
+            h["pnl_pct"] = (h["pnl"] / h["total_cost"] * 100) if h["total_cost"] > 0 else 0
+            crypto_total_value += h["current_value"]
+        else:
+            h["current_price"] = None
+            h["change_24h"] = None
+            h["current_value"] = None
+            h["pnl"] = None
+            h["pnl_pct"] = 0
+        crypto_total_invested += h["total_cost"]
+
+    crypto_total_pnl = crypto_total_value - crypto_total_invested
+    crypto_total_pnl_pct = (crypto_total_pnl / crypto_total_invested * 100) if crypto_total_invested > 0 else 0
+
+    cache_age = time.time() - _price_cache["fetched_at"]
+    if _price_cache["fetched_at"] > 0 and cache_age < PRICE_CACHE_TTL:
+        mins = int(cache_age // 60)
+        secs = int(cache_age % 60)
+        crypto_prices_age = f"{mins}m {secs}s ago" if mins else f"{secs}s ago"
+    else:
+        crypto_prices_age = ""
+
     jan1_this_year = f"{report_year:04d}-01-01"
     rows_before_jan = fetch_account_balances_through(conn, jan1_this_year, uid)
     prev_balance_total = sum(float(r["current_balance"]) for r in rows_before_jan)
@@ -2024,6 +2180,14 @@ def index():
         report_chart_spec=report_chart_spec,
         reports_expenses_table=reports_expenses_table,
         recurring_entries=recurring_entries,
+        investments_section=investments_section,
+        crypto_holdings=crypto_holdings_raw,
+        crypto_transactions=crypto_txs,
+        crypto_total_value=crypto_total_value,
+        crypto_total_invested=crypto_total_invested,
+        crypto_total_pnl=crypto_total_pnl,
+        crypto_total_pnl_pct=crypto_total_pnl_pct,
+        crypto_prices_age=crypto_prices_age,
     )
 
 
@@ -2180,6 +2344,68 @@ def delete_recurring(recurring_id):
     conn.close()
     flash("Recurring rule removed.", "success")
     return redirect_home(panel="recurring")
+
+
+@app.route("/crypto/add", methods=["POST"])
+def add_crypto():
+    uid = g.user_id
+    coin_id = request.form.get("coin_id", "").strip().lower()
+    coin_symbol = request.form.get("coin_symbol", "").strip().upper()
+    coin_name = request.form.get("coin_name", "").strip()
+    tx_type = request.form.get("tx_type", "").strip().lower()
+    quantity_raw = request.form.get("quantity", "").strip()
+    price_raw = request.form.get("price_per_unit", "").strip()
+    fee_raw = request.form.get("fee", "0").strip()
+    exchange = request.form.get("exchange", "").strip()
+    transacted_at = normalize_txn_day_from_form(request.form.get("transacted_at", "").strip())
+    notes = request.form.get("notes", "").strip()
+
+    if not coin_id or not coin_symbol or not coin_name:
+        flash("Fill in Coin ID, Symbol, and Name.", "error")
+        return redirect_home(panel="investments", settings_section="crypto")
+
+    if tx_type not in ("buy", "sell"):
+        flash("Invalid transaction type.", "error")
+        return redirect_home(panel="investments", settings_section="crypto")
+
+    try:
+        quantity = float(quantity_raw)
+        price = float(price_raw)
+        fee = abs(float(fee_raw)) if fee_raw else 0.0
+    except (TypeError, ValueError):
+        flash("Invalid quantity, price, or fee.", "error")
+        return redirect_home(panel="investments", settings_section="crypto")
+
+    if quantity <= 0 or price < 0:
+        flash("Quantity must be positive and price non-negative.", "error")
+        return redirect_home(panel="investments", settings_section="crypto")
+
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO crypto_transactions
+            (user_id, coin_id, coin_symbol, coin_name, tx_type, quantity, price_per_unit, fee, exchange, transacted_at, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (uid, coin_id, coin_symbol, coin_name, tx_type, quantity, price, fee, exchange, transacted_at, notes),
+    )
+    conn.commit()
+    conn.close()
+    flash(f"Crypto {tx_type} recorded.", "success")
+    return redirect_home(panel="investments", settings_section="crypto")
+
+
+@app.route("/crypto/<int:tx_id>/delete", methods=["POST"])
+def delete_crypto(tx_id):
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM crypto_transactions WHERE id = ? AND user_id = ?",
+        (tx_id, g.user_id),
+    )
+    conn.commit()
+    conn.close()
+    flash("Transaction removed.", "success")
+    return redirect_home(panel="investments", settings_section="crypto")
 
 
 @app.route("/categories/add", methods=["POST"])

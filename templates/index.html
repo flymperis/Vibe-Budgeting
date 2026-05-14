@@ -920,6 +920,196 @@
                     {% endif %}
                 </section>
 
+                <section class="panel {% if active_panel == 'investments' %}active{% endif %}" id="panel-investments">
+                    <div class="investments-layout">
+                        <nav aria-label="Investments sections" class="investments-nav">
+                            <button class="investments-nav-item {% if investments_section == 'crypto' %}active{% endif %}" data-investments-target="investments-crypto" type="button">Crypto</button>
+                        </nav>
+                        <div class="investments-body">
+                            <div class="investments-section {% if investments_section == 'crypto' %}active{% endif %}" id="investments-crypto">
+                                <h2>Crypto Portfolio</h2>
+
+                                <div class="stats crypto-summary-cards">
+                                    <div class="card">
+                                        <p>Portfolio Value</p>
+                                        <strong>{{ "%.2f"|format(crypto_total_value) }} €</strong>
+                                    </div>
+                                    <div class="card">
+                                        <p>Total Invested</p>
+                                        <strong>{{ "%.2f"|format(crypto_total_invested) }} €</strong>
+                                    </div>
+                                    <div class="card">
+                                        <p>P&L</p>
+                                        <strong class="{% if crypto_total_pnl >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">
+                                            {{ "%+.2f"|format(crypto_total_pnl) }} €
+                                            {% if crypto_total_invested > 0 %}({{ "%+.1f"|format(crypto_total_pnl_pct) }}%){% endif %}
+                                        </strong>
+                                    </div>
+                                </div>
+
+                                <div class="crypto-refresh-row">
+                                    <a class="btn-secondary" href="{{ url_for('index', panel='investments', investments_section='crypto', refresh_prices=1, month=month_filter) }}">Refresh Prices</a>
+                                    {% if crypto_prices_age %}
+                                        <span class="muted crypto-prices-age">Updated {{ crypto_prices_age }}</span>
+                                    {% endif %}
+                                </div>
+
+                                <h3>Holdings</h3>
+                                {% if crypto_holdings %}
+                                <div class="crypto-table-wrap">
+                                    <table class="crypto-holdings-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Coin</th>
+                                                <th class="crypto-num-col">Quantity</th>
+                                                <th class="crypto-num-col">Avg Buy</th>
+                                                <th class="crypto-num-col">Price</th>
+                                                <th class="crypto-num-col">Value</th>
+                                                <th class="crypto-num-col">P&L</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for h in crypto_holdings %}
+                                            <tr>
+                                                <td>
+                                                    <strong>{{ h.coin_symbol }}</strong>
+                                                    <span class="muted crypto-coin-name">{{ h.coin_name }}</span>
+                                                </td>
+                                                <td class="crypto-num-col">{{ "%.6g"|format(h.quantity) }}</td>
+                                                <td class="crypto-num-col">{{ "%.2f"|format(h.avg_buy_price) }}</td>
+                                                <td class="crypto-num-col">
+                                                    {% if h.current_price is not none %}
+                                                        {{ "%.2f"|format(h.current_price) }}
+                                                        {% if h.change_24h is not none %}
+                                                            <span class="crypto-change {% if h.change_24h >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">{{ "%+.1f"|format(h.change_24h) }}%</span>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        <span class="muted">N/A</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="crypto-num-col">
+                                                    {% if h.current_value is not none %}{{ "%.2f"|format(h.current_value) }}{% else %}<span class="muted">N/A</span>{% endif %}
+                                                </td>
+                                                <td class="crypto-num-col {% if h.pnl is not none and h.pnl >= 0 %}crypto-pnl-positive{% elif h.pnl is not none %}crypto-pnl-negative{% endif %}">
+                                                    {% if h.pnl is not none %}
+                                                        {{ "%+.2f"|format(h.pnl) }}
+                                                        <span class="crypto-change">({{ "%+.1f"|format(h.pnl_pct) }}%)</span>
+                                                    {% else %}
+                                                        <span class="muted">N/A</span>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% else %}
+                                    <p class="muted">No crypto holdings yet. Add a transaction below.</p>
+                                {% endif %}
+
+                                <h3>Add Transaction</h3>
+                                <form action="/crypto/add" class="panel-add-form crypto-add-form" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <input name="next_panel" type="hidden" value="investments">
+                                    <input name="investments_section" type="hidden" value="crypto">
+                                    <div class="crypto-form-row">
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-tx-type">Type</label>
+                                            <select id="crypto-tx-type" name="tx_type" required>
+                                                <option value="buy">Buy</option>
+                                                <option value="sell">Sell</option>
+                                            </select>
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-coin-id">Coin ID</label>
+                                            <input id="crypto-coin-id" name="coin_id" placeholder="e.g. bitcoin" required type="text">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-symbol">Symbol</label>
+                                            <input id="crypto-symbol" name="coin_symbol" placeholder="e.g. BTC" required type="text">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-name">Name</label>
+                                            <input id="crypto-name" name="coin_name" placeholder="e.g. Bitcoin" required type="text">
+                                        </div>
+                                    </div>
+                                    <div class="crypto-form-row">
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-quantity">Quantity</label>
+                                            <input id="crypto-quantity" min="0" name="quantity" placeholder="0.00" required step="any" type="number">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-price">Price/unit (€)</label>
+                                            <input id="crypto-price" min="0" name="price_per_unit" placeholder="0.00" required step="any" type="number">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-fee">Fee (€)</label>
+                                            <input id="crypto-fee" min="0" name="fee" placeholder="0.00" step="any" type="number" value="0">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-exchange">Exchange</label>
+                                            <input id="crypto-exchange" name="exchange" placeholder="e.g. Binance" type="text">
+                                        </div>
+                                    </div>
+                                    <div class="crypto-form-row">
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="crypto-date">Date</label>
+                                            <input id="crypto-date" name="transacted_at" type="date" value="{{ transfer_default_date }}">
+                                        </div>
+                                    </div>
+                                    <textarea name="notes" placeholder="Notes (optional)" rows="2"></textarea>
+                                    <button type="submit">Add Transaction</button>
+                                </form>
+
+                                <h3>Transaction History</h3>
+                                <div class="crypto-table-wrap">
+                                    <table class="crypto-tx-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Type</th>
+                                                <th>Coin</th>
+                                                <th class="crypto-num-col">Qty</th>
+                                                <th class="crypto-num-col">Price</th>
+                                                <th class="crypto-num-col">Fee</th>
+                                                <th class="crypto-num-col">Total</th>
+                                                <th>Exchange</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for tx in crypto_transactions %}
+                                            <tr>
+                                                <td class="cell-date">{{ tx.transacted_at|txn_day }}</td>
+                                                <td><span class="crypto-tx-badge crypto-tx-{{ tx.tx_type }}">{{ tx.tx_type|upper }}</span></td>
+                                                <td><strong>{{ tx.coin_symbol|upper }}</strong></td>
+                                                <td class="crypto-num-col">{{ "%.6g"|format(tx.quantity) }}</td>
+                                                <td class="crypto-num-col">{{ "%.2f"|format(tx.price_per_unit) }}</td>
+                                                <td class="crypto-num-col">{{ "%.2f"|format(tx.fee) }}</td>
+                                                <td class="crypto-num-col">{{ "%.2f"|format(tx.quantity * tx.price_per_unit + tx.fee) }}</td>
+                                                <td>{{ tx.exchange }}</td>
+                                                <td class="cell-actions">
+                                                    <form action="/crypto/{{ tx.id }}/delete" method="post">
+                                                        <input name="month" type="hidden" value="{{ month_filter }}">
+                                                        <input name="next_panel" type="hidden" value="investments">
+                                                        <input name="investments_section" type="hidden" value="crypto">
+                                                        <button class="btn-icon btn-icon-delete" type="submit" title="Delete transaction" aria-label="Delete transaction">
+                                                            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                            {% else %}
+                                            <tr><td colspan="9">No transactions yet.</td></tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">
                     <div class="settings-layout">
                         <nav aria-label="Settings sections" class="settings-nav">
@@ -1127,6 +1317,12 @@
                         <span class="menu-item-text">Reports</span>
                     </span>
                 </button>
+                <button class="menu-item {% if active_panel == 'investments' %}active{% endif %}" data-target="panel-investments" type="button">
+                    <span class="menu-item-inner">
+                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                        <span class="menu-item-text">Investments</span>
+                    </span>
+                </button>
                 <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">
                     <span class="menu-item-inner">
                         <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
@@ -1210,6 +1406,16 @@
                 } else {
                     params.delete("settings_section");
                 }
+                if (panelKey === "investments") {
+                    const activeInvBtn = document.querySelector(".investments-nav-item.active");
+                    const activeInvTarget = activeInvBtn
+                        ? activeInvBtn.getAttribute("data-investments-target")
+                        : "investments-crypto";
+                    const invKey = investSectionMap[activeInvTarget] || "crypto";
+                    params.set("investments_section", invKey);
+                } else {
+                    params.delete("investments_section");
+                }
                 if (panelKey === "yearly") {
                     const yearlyYear = document.getElementById("yearly-year-input");
                     const fallbackYear = "{{ year_filter }}";
@@ -1285,6 +1491,25 @@
                 });
             });
 
+            const investNavButtons = document.querySelectorAll(".investments-nav-item");
+            const investSections = document.querySelectorAll(".investments-section");
+            const investSectionMap = {
+                "investments-crypto": "crypto"
+            };
+
+            investNavButtons.forEach(function (navBtn) {
+                navBtn.addEventListener("click", function () {
+                    const targetId = navBtn.getAttribute("data-investments-target");
+                    investNavButtons.forEach(function (b) {
+                        b.classList.toggle("active", b === navBtn);
+                    });
+                    investSections.forEach(function (section) {
+                        section.classList.toggle("active", section.id === targetId);
+                    });
+                    syncShellUrl("investments");
+                });
+            });
+
             menuButtons.forEach(function (menuButton) {
                 menuButton.addEventListener("click", function () {
                     const target = menuButton.getAttribute("data-target");
@@ -1304,6 +1529,7 @@
                         "panel-summary": "summary",
                         "panel-yearly": "yearly",
                         "panel-reports": "reports",
+                        "panel-investments": "investments",
                         "panel-settings": "settings"
                     };
                     const panelValue = panelMap[target];

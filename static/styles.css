@@ -1333,6 +1333,187 @@ th, td {
     margin-top: 0.2rem;
 }
 
+/* ── Investments / Crypto ─────────────────────────────── */
+
+.investments-layout {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+
+.investments-nav {
+    display: grid;
+    gap: 0.4rem;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.6rem;
+}
+
+.investments-nav-item {
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    color: var(--tab-text);
+    border: 1px solid transparent;
+    font-weight: 600;
+}
+
+.investments-nav-item.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent-hover);
+}
+
+.investments-body {
+    min-width: 0;
+}
+
+.investments-section {
+    display: none;
+}
+
+.investments-section.active {
+    display: block;
+}
+
+.crypto-summary-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 0.75rem;
+}
+
+.crypto-pnl-positive {
+    color: #15803d;
+    font-weight: 700;
+}
+
+.crypto-pnl-negative {
+    color: #dc2626;
+    font-weight: 700;
+}
+
+:root[data-theme="dark"] .crypto-pnl-positive {
+    color: #4ade80;
+}
+
+:root[data-theme="dark"] .crypto-pnl-negative {
+    color: #f87171;
+}
+
+.crypto-refresh-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.crypto-prices-age {
+    font-size: 0.85rem;
+}
+
+.crypto-table-wrap {
+    overflow-x: auto;
+    margin-top: 0.35rem;
+    margin-bottom: 1rem;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-gutter: stable;
+}
+
+.crypto-holdings-table,
+.crypto-tx-table {
+    width: 100%;
+    min-width: 32rem;
+    border-collapse: collapse;
+    background: var(--surface);
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+}
+
+.crypto-holdings-table th,
+.crypto-holdings-table td,
+.crypto-tx-table th,
+.crypto-tx-table td {
+    text-align: left;
+    padding: 0.55rem 0.65rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+.crypto-holdings-table tbody tr:last-child td,
+.crypto-tx-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.crypto-num-col {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.crypto-coin-name {
+    font-size: 0.82rem;
+}
+
+.crypto-change {
+    font-size: 0.78rem;
+    margin-left: 0.2rem;
+}
+
+.crypto-tx-badge {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.18rem 0.5rem;
+    border-radius: 6px;
+}
+
+.crypto-tx-buy {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.crypto-tx-sell {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+:root[data-theme="dark"] .crypto-tx-buy {
+    background: #14532d;
+    color: #86efac;
+}
+
+:root[data-theme="dark"] .crypto-tx-sell {
+    background: #3f1d1d;
+    color: #fca5a5;
+}
+
+.crypto-add-form {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.crypto-form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem 1rem;
+}
+
+.crypto-form-row .cal-dropdown-field {
+    flex: 1 1 8rem;
+    min-width: 6rem;
+}
+
+.crypto-add-form textarea {
+    min-width: 0;
+    width: 100%;
+    flex: 0 1 auto;
+    box-sizing: border-box;
+}
+
 @media (max-width: 900px) {
     html {
         overflow-x: hidden;
@@ -1542,6 +1723,22 @@ th, td {
 
     .settings-nav {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .investments-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .investments-nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .crypto-summary-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .crypto-form-row {
+        flex-direction: column;
     }
 
     .consolidated-summary-cards {
