@@ -921,11 +921,7 @@
                 </section>
 
                 <section class="panel {% if active_panel == 'investments' %}active{% endif %}" id="panel-investments">
-                    <div class="investments-layout">
-                        <nav aria-label="Investments sections" class="investments-nav">
-                            <button class="investments-nav-item {% if investments_section == 'crypto' %}active{% endif %}" data-investments-target="investments-crypto" type="button">Crypto</button>
-                        </nav>
-                        <div class="investments-body">
+                    <div class="investments-body">
                             <div class="investments-section {% if investments_section == 'crypto' %}active{% endif %}" id="investments-crypto">
                                 <h2>Crypto Portfolio</h2>
 
@@ -1171,20 +1167,10 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
                 </section>
 
                 <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">
-                    <div class="settings-layout">
-                        <nav aria-label="Settings sections" class="settings-nav">
-                            <button class="settings-nav-item {% if settings_section == 'general' %}active{% endif %}" data-settings-target="settings-general" type="button">General</button>
-                            <button class="settings-nav-item {% if settings_section == 'banks' %}active{% endif %}" data-settings-target="settings-banks" type="button">Banks</button>
-                            <button class="settings-nav-item {% if settings_section == 'expenses' %}active{% endif %}" data-settings-target="settings-expenses" type="button">Expenses</button>
-                            <button class="settings-nav-item {% if settings_section == 'income' %}active{% endif %}" data-settings-target="settings-income" type="button">Income</button>
-                            <button class="settings-nav-item {% if settings_section == 'export' %}active{% endif %}" data-settings-target="settings-export" type="button">Export</button>
-                            <button class="settings-nav-item {% if settings_section == 'migration' %}active{% endif %}" data-settings-target="settings-migration" type="button">Migration</button>
-                        </nav>
-                        <div class="settings-body">
+                    <div class="settings-body">
                             <div class="settings-section {% if settings_section == 'general' %}active{% endif %}" id="settings-general">
                                 <h2>Appearance</h2>
                                 <div class="theme-switch-row">
@@ -1328,7 +1314,6 @@
                                 </form>
                             </div>
                         </div>
-                    </div>
                 </section>
             </div>
 
@@ -1381,18 +1366,33 @@
                         <span class="menu-item-text">Reports</span>
                     </span>
                 </button>
-                <button class="menu-item {% if active_panel == 'investments' %}active{% endif %}" data-target="panel-investments" type="button">
-                    <span class="menu-item-inner">
-                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-                        <span class="menu-item-text">Investments</span>
-                    </span>
-                </button>
-                <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">
-                    <span class="menu-item-inner">
-                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-                        <span class="menu-item-text">Settings</span>
-                    </span>
-                </button>
+                <div class="menu-group">
+                    <button class="menu-item {% if active_panel == 'investments' %}active{% endif %}" data-target="panel-investments" type="button">
+                        <span class="menu-item-inner">
+                            <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                            <span class="menu-item-text">Investments</span>
+                        </span>
+                    </button>
+                    <div class="menu-sub-items {% if active_panel == 'investments' %}active{% endif %}">
+                        <button class="menu-sub-item {% if active_panel == 'investments' and investments_section == 'crypto' %}active{% endif %}" data-target="panel-investments" data-section="investments-crypto" data-section-key="crypto" data-section-param="investments_section" type="button">Crypto</button>
+                    </div>
+                </div>
+                <div class="menu-group">
+                    <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">
+                        <span class="menu-item-inner">
+                            <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                            <span class="menu-item-text">Settings</span>
+                        </span>
+                    </button>
+                    <div class="menu-sub-items {% if active_panel == 'settings' %}active{% endif %}">
+                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'general' %}active{% endif %}" data-target="panel-settings" data-section="settings-general" data-section-key="general" data-section-param="settings_section" type="button">General</button>
+                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'banks' %}active{% endif %}" data-target="panel-settings" data-section="settings-banks" data-section-key="banks" data-section-param="settings_section" type="button">Banks</button>
+                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'expenses' %}active{% endif %}" data-target="panel-settings" data-section="settings-expenses" data-section-key="expenses" data-section-param="settings_section" type="button">Expenses</button>
+                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'income' %}active{% endif %}" data-target="panel-settings" data-section="settings-income" data-section-key="income" data-section-param="settings_section" type="button">Income</button>
+                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'export' %}active{% endif %}" data-target="panel-settings" data-section="settings-export" data-section-key="export" data-section-param="settings_section" type="button">Export</button>
+                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'migration' %}active{% endif %}" data-target="panel-settings" data-section="settings-migration" data-section-key="migration" data-section-param="settings_section" type="button">Migration</button>
+                    </div>
+                </div>
             </aside>
         </div>
     </main>
@@ -1416,7 +1416,6 @@
                 });
             }
 
-            const settingsNavButtons = document.querySelectorAll(".settings-nav-item");
             const settingsSections = document.querySelectorAll(".settings-section");
             const settingsSectionMap = {
                 "settings-general": "general",
@@ -1461,21 +1460,15 @@
                     params.set("month", monthValue);
                 }
                 if (panelKey === "settings") {
-                    const activeSettingsBtn = document.querySelector(".settings-nav-item.active");
-                    const activeTarget = activeSettingsBtn
-                        ? activeSettingsBtn.getAttribute("data-settings-target")
-                        : "settings-general";
-                    const sectionKey = settingsSectionMap[activeTarget] || "general";
+                    const activeSubBtn = document.querySelector('.menu-sub-item.active[data-target="panel-settings"]');
+                    const sectionKey = activeSubBtn ? activeSubBtn.getAttribute("data-section-key") : "general";
                     params.set("settings_section", sectionKey);
                 } else {
                     params.delete("settings_section");
                 }
                 if (panelKey === "investments") {
-                    const activeInvBtn = document.querySelector(".investments-nav-item.active");
-                    const activeInvTarget = activeInvBtn
-                        ? activeInvBtn.getAttribute("data-investments-target")
-                        : "investments-crypto";
-                    const invKey = investSectionMap[activeInvTarget] || "crypto";
+                    const activeSubBtn = document.querySelector('.menu-sub-item.active[data-target="panel-investments"]');
+                    const invKey = activeSubBtn ? activeSubBtn.getAttribute("data-section-key") : "crypto";
                     params.set("investments_section", invKey);
                 } else {
                     params.delete("investments_section");
@@ -1542,35 +1535,51 @@
                 window.history.replaceState({}, "", nextUrl);
             }
 
-            settingsNavButtons.forEach(function (navBtn) {
-                navBtn.addEventListener("click", function () {
-                    const targetId = navBtn.getAttribute("data-settings-target");
-                    settingsNavButtons.forEach(function (b) {
-                        b.classList.toggle("active", b === navBtn);
-                    });
-                    settingsSections.forEach(function (section) {
-                        section.classList.toggle("active", section.id === targetId);
-                    });
-                    syncShellUrl("settings");
-                });
-            });
-
-            const investNavButtons = document.querySelectorAll(".investments-nav-item");
             const investSections = document.querySelectorAll(".investments-section");
             const investSectionMap = {
                 "investments-crypto": "crypto"
             };
 
-            investNavButtons.forEach(function (navBtn) {
-                navBtn.addEventListener("click", function () {
-                    const targetId = navBtn.getAttribute("data-investments-target");
-                    investNavButtons.forEach(function (b) {
-                        b.classList.toggle("active", b === navBtn);
+            const subMenuItems = document.querySelectorAll(".menu-sub-item");
+            const subMenuGroups = document.querySelectorAll(".menu-sub-items");
+
+            subMenuItems.forEach(function (subBtn) {
+                subBtn.addEventListener("click", function () {
+                    const panelTarget = subBtn.getAttribute("data-target");
+                    const sectionId = subBtn.getAttribute("data-section");
+
+                    menuButtons.forEach(function (item) {
+                        item.classList.toggle("active", item.getAttribute("data-target") === panelTarget);
                     });
-                    investSections.forEach(function (section) {
-                        section.classList.toggle("active", section.id === targetId);
+                    panels.forEach(function (panel) {
+                        panel.classList.toggle("active", panel.id === panelTarget);
                     });
-                    syncShellUrl("investments");
+
+                    subMenuGroups.forEach(function (group) {
+                        const parentBtn = group.previousElementSibling;
+                        group.classList.toggle("active", parentBtn && parentBtn.getAttribute("data-target") === panelTarget);
+                    });
+
+                    subMenuItems.forEach(function (s) {
+                        s.classList.toggle("active", s === subBtn);
+                    });
+
+                    if (panelTarget === "panel-settings") {
+                        settingsSections.forEach(function (section) {
+                            section.classList.toggle("active", section.id === sectionId);
+                        });
+                    }
+                    if (panelTarget === "panel-investments") {
+                        investSections.forEach(function (section) {
+                            section.classList.toggle("active", section.id === sectionId);
+                        });
+                    }
+
+                    const panelMap2 = {"panel-investments": "investments", "panel-settings": "settings"};
+                    var panelKey = panelMap2[panelTarget];
+                    if (panelKey) {
+                        syncShellUrl(panelKey);
+                    }
                 });
             });
 
@@ -1582,6 +1591,11 @@
                     });
                     panels.forEach(function (panel) {
                         panel.classList.toggle("active", panel.id === target);
+                    });
+
+                    subMenuGroups.forEach(function (group) {
+                        const parentBtn = group.previousElementSibling;
+                        group.classList.toggle("active", parentBtn && parentBtn === menuButton);
                     });
 
                     const panelMap = {

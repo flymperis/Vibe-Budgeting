@@ -749,6 +749,45 @@ table.yearly-table {
     color: #fff;
 }
 
+.menu-group {
+    display: contents;
+}
+
+.menu-sub-items {
+    display: none;
+    grid-column: 1 / -1;
+    padding: 0 0 0 0.35rem;
+}
+
+.menu-sub-items.active {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.menu-sub-item {
+    width: 100%;
+    text-align: left;
+    padding: 0.35rem 0.55rem 0.35rem 1.6rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.menu-sub-item:hover {
+    background: var(--surface-alt);
+    color: var(--text);
+}
+
+.menu-sub-item.active {
+    background: var(--surface-alt);
+    color: var(--accent);
+    border-color: var(--border);
+}
+
 .side-menu button.menu-item {
     display: flex;
     align-items: center;
@@ -1757,6 +1796,11 @@ th, td {
         word-break: normal;
         overflow-wrap: normal;
         hyphens: manual;
+    }
+
+    .menu-sub-item {
+        padding-left: 0.55rem;
+        font-size: 0.8rem;
     }
 
     .list-month-filter {
