@@ -2395,6 +2395,60 @@ def add_crypto():
     return redirect_home(panel="investments", settings_section="crypto")
 
 
+@app.route("/crypto/<int:tx_id>/edit", methods=["POST"])
+def edit_crypto(tx_id):
+    uid = g.user_id
+    coin_id = request.form.get("coin_id", "").strip().lower()
+    coin_symbol = request.form.get("coin_symbol", "").strip().upper()
+    coin_name = request.form.get("coin_name", "").strip()
+    tx_type = request.form.get("tx_type", "").strip().lower()
+    quantity_raw = request.form.get("quantity", "").strip()
+    price_raw = request.form.get("price_per_unit", "").strip()
+    fee_raw = request.form.get("fee", "0").strip()
+    exchange = request.form.get("exchange", "").strip()
+    transacted_at = normalize_txn_day_from_form(request.form.get("transacted_at", "").strip())
+    notes = request.form.get("notes", "").strip()
+
+    if not coin_id or not coin_symbol or not coin_name:
+        flash("Fill in Coin ID, Symbol, and Name.", "error")
+        return redirect_home(panel="investments", settings_section="crypto")
+
+    if tx_type not in ("buy", "sell"):
+        flash("Invalid transaction type.", "error")
+        return redirect_home(panel="investments", settings_section="crypto")
+
+    try:
+        quantity = float(quantity_raw)
+        price = float(price_raw)
+        fee = abs(float(fee_raw)) if fee_raw else 0.0
+    except (TypeError, ValueError):
+        flash("Invalid quantity, price, or fee.", "error")
+        return redirect_home(panel="investments", settings_section="crypto")
+
+    if quantity <= 0 or price < 0:
+        flash("Quantity must be positive and price non-negative.", "error")
+        return redirect_home(panel="investments", settings_section="crypto")
+
+    conn = get_connection()
+    cur = conn.execute(
+        """
+        UPDATE crypto_transactions
+        SET coin_id = ?, coin_symbol = ?, coin_name = ?, tx_type = ?,
+            quantity = ?, price_per_unit = ?, fee = ?, exchange = ?,
+            transacted_at = ?, notes = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (coin_id, coin_symbol, coin_name, tx_type, quantity, price, fee, exchange, transacted_at, notes, tx_id, uid),
+    )
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        flash("Transaction not found.", "error")
+    else:
+        flash("Transaction updated.", "success")
+    return redirect_home(panel="investments", settings_section="crypto")
+
+
 @app.route("/crypto/<int:tx_id>/delete", methods=["POST"])
 def delete_crypto(tx_id):
     conn = get_connection()
