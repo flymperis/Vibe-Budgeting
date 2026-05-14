@@ -1100,23 +1100,55 @@
                                                                 <span class="visually-hidden">Edit transaction</span>
                                                                 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z"/></svg>
                                                             </summary>
-                                                            <form action="/crypto/{{ tx.id }}/edit" class="inline-edit-form" method="post">
+                                                            <form action="/crypto/{{ tx.id }}/edit" class="inline-edit-form crypto-edit-form" method="post">
                                                                 <input name="month" type="hidden" value="{{ month_filter }}">
                                                                 <input name="next_panel" type="hidden" value="investments">
                                                                 <input name="investments_section" type="hidden" value="crypto">
-                                                                <select name="tx_type" required>
-                                                                    <option value="buy" {% if tx.tx_type == 'buy' %}selected{% endif %}>Buy</option>
-                                                                    <option value="sell" {% if tx.tx_type == 'sell' %}selected{% endif %}>Sell</option>
-                                                                </select>
-                                                                <input name="coin_id" required type="text" value="{{ tx.coin_id }}" autocomplete="off" placeholder="Coin ID">
-                                                                <input name="coin_symbol" required type="text" value="{{ tx.coin_symbol }}" autocomplete="off" placeholder="Symbol">
-                                                                <input name="coin_name" required type="text" value="{{ tx.coin_name }}" autocomplete="off" placeholder="Name">
-                                                                <input min="0" name="quantity" required step="any" type="number" value="{{ tx.quantity }}">
-                                                                <input min="0" name="price_per_unit" required step="any" type="number" value="{{ tx.price_per_unit }}">
-                                                                <input min="0" name="fee" step="any" type="number" value="{{ tx.fee }}">
-                                                                <input name="exchange" type="text" value="{{ tx.exchange }}" autocomplete="off" placeholder="Exchange">
-                                                                <input name="transacted_at" type="date" value="{{ tx.transacted_at|txn_day }}">
-                                                                <textarea name="notes" placeholder="Notes" rows="2">{{ tx.notes }}</textarea>
+                                                                <div class="crypto-edit-grid">
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Type</span>
+                                                                        <select name="tx_type" required>
+                                                                            <option value="buy" {% if tx.tx_type == 'buy' %}selected{% endif %}>Buy</option>
+                                                                            <option value="sell" {% if tx.tx_type == 'sell' %}selected{% endif %}>Sell</option>
+                                                                        </select>
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Coin ID</span>
+                                                                        <input name="coin_id" required type="text" value="{{ tx.coin_id }}" autocomplete="off">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Symbol</span>
+                                                                        <input name="coin_symbol" required type="text" value="{{ tx.coin_symbol }}" autocomplete="off">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Name</span>
+                                                                        <input name="coin_name" required type="text" value="{{ tx.coin_name }}" autocomplete="off">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Quantity</span>
+                                                                        <input min="0" name="quantity" required step="any" type="number" value="{{ tx.quantity }}">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Price/unit (€)</span>
+                                                                        <input min="0" name="price_per_unit" required step="any" type="number" value="{{ tx.price_per_unit }}">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Fee (€)</span>
+                                                                        <input min="0" name="fee" step="any" type="number" value="{{ tx.fee }}">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Exchange</span>
+                                                                        <input name="exchange" type="text" value="{{ tx.exchange }}" autocomplete="off">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Date</span>
+                                                                        <input name="transacted_at" type="date" value="{{ tx.transacted_at|txn_day }}">
+                                                                    </label>
+                                                                </div>
+                                                                <label class="crypto-edit-label">
+                                                                    <span class="month-label">Notes</span>
+                                                                    <textarea name="notes" placeholder="Notes" rows="2">{{ tx.notes }}</textarea>
+                                                                </label>
                                                                 <button type="submit">Save</button>
                                                             </form>
                                                         </details>
