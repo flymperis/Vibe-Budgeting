@@ -1020,6 +1020,11 @@
                                                 <option value="sell">Sell</option>
                                             </select>
                                         </div>
+                                        <div class="cal-dropdown-field crypto-search-field">
+                                            <label class="month-label" for="crypto-search-input">Search coin</label>
+                                            <input id="crypto-search-input" placeholder="Search (e.g. bitcoin, xrp, sol...)" type="text" autocomplete="off">
+                                            <div id="crypto-search-results" class="crypto-search-results" hidden></div>
+                                        </div>
                                         <div class="cal-dropdown-field">
                                             <label class="month-label" for="crypto-coin-id">Coin ID</label>
                                             <input id="crypto-coin-id" name="coin_id" placeholder="e.g. bitcoin" required type="text" autocomplete="off">
@@ -1565,6 +1570,64 @@
                     }
                 });
             });
+
+            (function setupCryptoSearch() {
+                const searchInput = document.getElementById("crypto-search-input");
+                const resultsBox = document.getElementById("crypto-search-results");
+                const coinIdInput = document.getElementById("crypto-coin-id");
+                const symbolInput = document.getElementById("crypto-symbol");
+                const nameInput = document.getElementById("crypto-name");
+                if (!searchInput || !resultsBox) return;
+
+                let debounceTimer = null;
+
+                searchInput.addEventListener("input", function () {
+                    clearTimeout(debounceTimer);
+                    const q = searchInput.value.trim();
+                    if (q.length < 2) {
+                        resultsBox.hidden = true;
+                        return;
+                    }
+                    debounceTimer = setTimeout(function () {
+                        fetch("/crypto/search?q=" + encodeURIComponent(q))
+                            .then(function (r) { return r.json(); })
+                            .then(function (coins) {
+                                if (!coins.length) {
+                                    resultsBox.hidden = true;
+                                    return;
+                                }
+                                resultsBox.innerHTML = "";
+                                coins.forEach(function (c) {
+                                    const item = document.createElement("button");
+                                    item.type = "button";
+                                    item.className = "crypto-search-item";
+                                    item.innerHTML =
+                                        (c.thumb ? '<img src="' + c.thumb + '" class="crypto-search-thumb" alt="">' : "") +
+                                        '<span class="crypto-search-item-name"><strong>' + c.symbol.toUpperCase() + "</strong> " + c.name + "</span>" +
+                                        '<span class="crypto-search-item-id muted">' + c.id + "</span>";
+                                    item.addEventListener("click", function () {
+                                        coinIdInput.value = c.id;
+                                        symbolInput.value = c.symbol.toUpperCase();
+                                        nameInput.value = c.name;
+                                        searchInput.value = "";
+                                        resultsBox.hidden = true;
+                                    });
+                                    resultsBox.appendChild(item);
+                                });
+                                resultsBox.hidden = false;
+                            })
+                            .catch(function () {
+                                resultsBox.hidden = true;
+                            });
+                    }, 300);
+                });
+
+                document.addEventListener("click", function (e) {
+                    if (!resultsBox.contains(e.target) && e.target !== searchInput) {
+                        resultsBox.hidden = true;
+                    }
+                });
+            })();
 
             (function setupHomeQuickDrawers() {
                 const sheetExp = document.getElementById("home-drawer-expense");

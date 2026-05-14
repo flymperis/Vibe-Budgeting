@@ -2346,6 +2346,33 @@ def delete_recurring(recurring_id):
     return redirect_home(panel="recurring")
 
 
+@app.route("/crypto/search")
+def search_crypto():
+    query = (request.args.get("q") or "").strip()
+    if len(query) < 2:
+        return app.response_class(
+            response=json.dumps([]),
+            status=200,
+            mimetype="application/json",
+        )
+    url = f"https://api.coingecko.com/api/v3/search?query={query}"
+    try:
+        req = Request(url, headers={"Accept": "application/json", "User-Agent": "VibeBudgeting/1.0"})
+        with urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        coins = [
+            {"id": c["id"], "symbol": c["symbol"], "name": c["name"], "thumb": c.get("thumb", "")}
+            for c in (data.get("coins") or [])[:10]
+        ]
+    except (URLError, HTTPError, json.JSONDecodeError, OSError):
+        coins = []
+    return app.response_class(
+        response=json.dumps(coins),
+        status=200,
+        mimetype="application/json",
+    )
+
+
 @app.route("/crypto/add", methods=["POST"])
 def add_crypto():
     uid = g.user_id
