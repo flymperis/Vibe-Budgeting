@@ -1172,7 +1172,7 @@
                                 {% if not finnhub_configured %}
                                     <p class="flash flash-error">Optional: set <code>FINNHUB_API_KEY</code> for symbol search. Live prices use Yahoo (yfinance) as fallback.</p>
                                 {% endif %}
-                                <p class="muted small-hint">Use the exchange symbol (e.g. <strong>VUAA.DE</strong> for XETRA). All amounts and live prices are in <strong>USD</strong> (European listings converted from EUR/GBP). Click <strong>Refresh Prices</strong> after adding a holding.</p>
+                                <p class="muted small-hint">Symbol: use what your broker shows (e.g. <strong>VUAA.EU</strong> on Freedom24). Live prices resolve via the underlying listing (e.g. VUAA.DE) and display in <strong>USD</strong>. Click <strong>Refresh Prices</strong> after adding a holding.</p>
 
                                 <div class="stats crypto-summary-cards">
                                     <div class="card">
@@ -1273,7 +1273,7 @@
                                         </div>
                                         <div class="cal-dropdown-field">
                                             <label class="month-label" for="stock-symbol">Symbol</label>
-                                            <input id="stock-symbol" name="symbol" placeholder="e.g. VUAA.DE" required type="text" autocomplete="off">
+                                            <input id="stock-symbol" name="symbol" placeholder="e.g. VUAA.EU or VUAA.DE" required type="text" autocomplete="off">
                                         </div>
                                         <div class="cal-dropdown-field">
                                             <label class="month-label" for="stock-ticker">Ticker</label>

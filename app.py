@@ -906,6 +906,16 @@ _EUR_LISTING_SUFFIXES = (
     ".WA",
 )
 _GBP_LISTING_SUFFIXES = (".L",)
+# Freedom24 uses .EU on USD-denominated UCITS listings (not a Yahoo/Finnhub symbol).
+_FREEDOM_EU_SUFFIX = ".EU"
+
+
+def _quote_lookup_symbol(symbol):
+    """Map broker symbols to a symbol Yahoo/Finnhub can quote."""
+    sym = (symbol or "").strip().upper()
+    if sym.endswith(_FREEDOM_EU_SUFFIX):
+        return f"{sym[: -len(_FREEDOM_EU_SUFFIX)]}.DE"
+    return sym
 
 
 def _finnhub_request(path):
@@ -989,17 +999,18 @@ def fetch_finnhub_quotes(symbols, force=False):
     for sym in sorted(set(symbols)):
         raw = None
         change_24h = None
-        data = _finnhub_request(f"/quote?symbol={sym}") if FINNHUB_API_KEY else None
+        lookup = _quote_lookup_symbol(sym)
+        data = _finnhub_request(f"/quote?symbol={lookup}") if FINNHUB_API_KEY else None
         if data and data.get("c") is not None and float(data["c"]) > 0:
             raw = float(data["c"])
             change_24h = float(data["dp"]) if data.get("dp") is not None else None
         if raw is None:
-            yf_raw = _yfinance_last_price(sym)
+            yf_raw = _yfinance_last_price(lookup)
             if yf_raw is not None and yf_raw > 0:
                 raw = yf_raw
         if raw is not None and raw > 0:
             prices[sym] = {
-                "price": _listing_price_to_usd(sym, raw),
+                "price": _listing_price_to_usd(lookup, raw),
                 "change_24h": change_24h,
                 "source": "finnhub" if data and data.get("c") else "yfinance",
             }
