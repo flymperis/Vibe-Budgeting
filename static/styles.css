@@ -670,6 +670,10 @@ table.yearly-table {
     min-width: 6rem;
 }
 
+#panel-reports .reports-year-picker select#reports-account-select {
+    min-width: 10rem;
+}
+
 .month-label {
     color: var(--muted);
     font-weight: 600;
@@ -1414,6 +1418,18 @@ th, td {
 }
 
 .investments-section.active {
+    display: block;
+}
+
+.reports-body {
+    min-width: 0;
+}
+
+.reports-section {
+    display: none;
+}
+
+.reports-section.active {
     display: block;
 }
 

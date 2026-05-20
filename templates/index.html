@@ -79,6 +79,31 @@
     {%- endif -%}
     {%- endmacro %}
 
+    {% macro reports_balance_chart(spec, fig_caption, aria_label) -%}
+    <div class="reports-chart-wrap">
+        <figure class="reports-chart-figure">
+            <figcaption class="sr-only">{{ fig_caption }}</figcaption>
+            <svg class="reports-balance-chart" viewBox="0 0 {{ spec.w }} {{ spec.h }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="{{ aria_label }}">
+                <rect class="reports-chart-plot-bg" x="{{ spec.plot_ml }}" y="{{ spec.plot_mt }}" width="{{ spec.plot_pw }}" height="{{ spec.plot_ph }}" rx="4" />
+                {% for t in spec.y_ticks %}
+                <text class="reports-chart-y-tick" x="{{ t.x }}" y="{{ t.y }}" dominant-baseline="middle" font-size="12">{{ t.text }}</text>
+                {% endfor %}
+                {% if spec.points %}
+                <polyline class="reports-chart-line" fill="none" stroke-linecap="round" stroke-linejoin="round" points="{{ spec.points }}" />
+                {% endif %}
+                {% for d in spec.dots %}
+                <g class="reports-chart-dot-group">
+                    <circle class="reports-chart-dot" cx="{{ d.cx }}" cy="{{ d.cy }}" r="6">
+                        <title>{{ d.title }}</title>
+                    </circle>
+                    <text class="reports-chart-month" x="{{ d.lx }}" y="{{ spec.month_label_y }}" dominant-baseline="middle" text-anchor="middle" font-size="11">{{ d.short }}</text>
+                </g>
+                {% endfor %}
+            </svg>
+        </figure>
+    </div>
+    {%- endmacro %}
+
     <main class="container">
         <div class="header-row">
             <div class="brand-lockup">
@@ -832,46 +857,39 @@
                 </section>
 
                 <section class="panel {% if active_panel == 'reports' %}active{% endif %}" id="panel-reports">
-                    <h2>Reports</h2>
-                    <p class="muted small-hint">
-                        Total bank balance (sum of accounts) at the end of each month; the current month uses movements through today.
-                        Hover a point for balance and month-to-month change (Δ).
-                    </p>
-                    <form action="/" class="year-picker reports-year-picker" method="get">
-                        <input name="panel" type="hidden" value="reports">
-                        <input name="month" type="hidden" value="{{ month_filter }}">
-                        <label class="month-label" for="reports-year-select">Year</label>
-                        <select id="reports-year-select" class="year-shell-select" name="report_year" required autocomplete="off">
-                            {% for yi in range(2000, 2101) %}
-                                <option value="{{ yi }}" {% if yi == report_year %}selected{% endif %}>{{ yi }}</option>
-                            {% endfor %}
-                        </select>
-                        <button type="submit">Apply</button>
-                    </form>
-                    <div class="reports-chart-wrap">
-                        <figure class="reports-chart-figure">
-                            <figcaption class="sr-only">Total bank balance by month for {{ report_year }}</figcaption>
-                            <svg class="reports-balance-chart" viewBox="0 0 {{ report_chart_spec.w }} {{ report_chart_spec.h }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Total bank balance by month for {{ report_year }}">
-                                <rect class="reports-chart-plot-bg" x="{{ report_chart_spec.plot_ml }}" y="{{ report_chart_spec.plot_mt }}" width="{{ report_chart_spec.plot_pw }}" height="{{ report_chart_spec.plot_ph }}" rx="4" />
-                                {% for t in report_chart_spec.y_ticks %}
-                                <text class="reports-chart-y-tick" x="{{ t.x }}" y="{{ t.y }}" dominant-baseline="middle" font-size="12">{{ t.text }}</text>
-                                {% endfor %}
-                                {% if report_chart_spec.points %}
-                                <polyline class="reports-chart-line" fill="none" stroke-linecap="round" stroke-linejoin="round" points="{{ report_chart_spec.points }}" />
-                                {% endif %}
-                                {% for d in report_chart_spec.dots %}
-                                <g class="reports-chart-dot-group">
-                                    <circle class="reports-chart-dot" cx="{{ d.cx }}" cy="{{ d.cy }}" r="6">
-                                        <title>{{ d.title }}</title>
-                                    </circle>
-                                    <text class="reports-chart-month" x="{{ d.lx }}" y="{{ report_chart_spec.month_label_y }}" dominant-baseline="middle" text-anchor="middle" font-size="11">{{ d.short }}</text>
-                                </g>
-                                {% endfor %}
-                            </svg>
-                        </figure>
-                    </div>
+                    <div class="reports-body">
+                        <div class="reports-section {% if reports_section == 'bank' %}active{% endif %}" id="reports-bank">
+                            <h2>Bank balance</h2>
+                            <p class="muted small-hint">
+                                Account balance at the end of each month (or all accounts combined); the current month uses movements through today.
+                                Hover a point for balance and month-to-month change (Δ).
+                            </p>
+                            <form action="/" class="year-picker reports-year-picker" method="get">
+                                <input name="panel" type="hidden" value="reports">
+                                <input name="reports_section" type="hidden" value="bank">
+                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                <label class="month-label" for="reports-year-select">Year</label>
+                                <select id="reports-year-select" class="year-shell-select" name="report_year" required autocomplete="off">
+                                    {% for yi in range(2000, 2101) %}
+                                        <option value="{{ yi }}" {% if yi == report_year %}selected{% endif %}>{{ yi }}</option>
+                                    {% endfor %}
+                                </select>
+                                <label class="month-label" for="reports-account-select">Account</label>
+                                <select id="reports-account-select" class="year-shell-select" name="report_account" autocomplete="off">
+                                    <option value="all" {% if report_account_id is none %}selected{% endif %}>All</option>
+                                    {% for acc in accounts %}
+                                        <option value="{{ acc.id }}" {% if report_account_id == acc.id %}selected{% endif %}>{{ acc.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Apply</button>
+                            </form>
+                            {{ reports_balance_chart(
+                                report_chart_spec,
+                                "Bank balance by month for " ~ report_year,
+                                "Bank balance by month for " ~ report_year
+                            ) }}
 
-                    <h3 class="reports-expenses-table-title">Expenses table</h3>
+                            <h3 class="reports-expenses-table-title">Expenses table</h3>
                     <p class="muted small-hint">
                         Sum of recorded expense amounts by category and calendar month for {{ report_year }}
                         (same signs as in your ledger; typically spending is negative).
@@ -918,6 +936,58 @@
                     {% else %}
                         <p class="muted reports-expenses-empty">No expenses recorded in {{ report_year }}.</p>
                     {% endif %}
+                        </div>
+
+                        <div class="reports-section {% if reports_section == 'crypto' %}active{% endif %}" id="reports-crypto">
+                            <h2>Crypto portfolio</h2>
+                            <p class="muted small-hint">
+                                Estimated portfolio value (EUR) at each month-end from your transactions.
+                                Uses current market prices for quantity held (not historical prices). Hover a point for value and Δ.
+                            </p>
+                            <form action="/" class="year-picker reports-year-picker" method="get">
+                                <input name="panel" type="hidden" value="reports">
+                                <input name="reports_section" type="hidden" value="crypto">
+                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                <label class="month-label" for="reports-crypto-year-select">Year</label>
+                                <select id="reports-crypto-year-select" class="year-shell-select" name="report_year" required autocomplete="off">
+                                    {% for yi in range(2000, 2101) %}
+                                        <option value="{{ yi }}" {% if yi == report_year %}selected{% endif %}>{{ yi }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Apply</button>
+                            </form>
+                            {{ reports_balance_chart(
+                                crypto_chart_spec,
+                                "Crypto portfolio value by month for " ~ report_year,
+                                "Crypto portfolio value by month for " ~ report_year
+                            ) }}
+                        </div>
+
+                        <div class="reports-section {% if reports_section == 'stocks' %}active{% endif %}" id="reports-stocks">
+                            <h2>Stocks portfolio</h2>
+                            <p class="muted small-hint">
+                                Estimated portfolio value (USD) at each month-end from your transactions.
+                                Uses current market prices for shares held (not historical prices). Hover a point for value and Δ.
+                            </p>
+                            <form action="/" class="year-picker reports-year-picker" method="get">
+                                <input name="panel" type="hidden" value="reports">
+                                <input name="reports_section" type="hidden" value="stocks">
+                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                <label class="month-label" for="reports-stocks-year-select">Year</label>
+                                <select id="reports-stocks-year-select" class="year-shell-select" name="report_year" required autocomplete="off">
+                                    {% for yi in range(2000, 2101) %}
+                                        <option value="{{ yi }}" {% if yi == report_year %}selected{% endif %}>{{ yi }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="submit">Apply</button>
+                            </form>
+                            {{ reports_balance_chart(
+                                stock_chart_spec,
+                                "Stocks portfolio value by month for " ~ report_year,
+                                "Stocks portfolio value by month for " ~ report_year
+                            ) }}
+                        </div>
+                    </div>
                 </section>
 
                 <section class="panel {% if active_panel == 'investments' %}active{% endif %}" id="panel-investments">
@@ -1610,12 +1680,19 @@
                         <span class="menu-item-text">Yearly</span>
                     </span>
                 </button>
-                <button class="menu-item {% if active_panel == 'reports' %}active{% endif %}" data-target="panel-reports" type="button">
-                    <span class="menu-item-inner">
-                        <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
-                        <span class="menu-item-text">Reports</span>
-                    </span>
-                </button>
+                <div class="menu-group">
+                    <button class="menu-item {% if active_panel == 'reports' %}active{% endif %}" data-target="panel-reports" type="button">
+                        <span class="menu-item-inner">
+                            <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+                            <span class="menu-item-text">Reports</span>
+                        </span>
+                    </button>
+                    <div class="menu-sub-items {% if active_panel == 'reports' %}active{% endif %}">
+                        <button class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'bank' %}active{% endif %}" data-target="panel-reports" data-section="reports-bank" data-section-key="bank" data-section-param="reports_section" type="button">Bank</button>
+                        <button class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'crypto' %}active{% endif %}" data-target="panel-reports" data-section="reports-crypto" data-section-key="crypto" data-section-param="reports_section" type="button">Crypto</button>
+                        <button class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'stocks' %}active{% endif %}" data-target="panel-reports" data-section="reports-stocks" data-section-key="stocks" data-section-param="reports_section" type="button">Stocks</button>
+                    </div>
+                </div>
                 <div class="menu-group">
                     <button class="menu-item {% if active_panel == 'investments' %}active{% endif %}" data-target="panel-investments" type="button">
                         <span class="menu-item-inner">
@@ -1735,14 +1812,28 @@
                     params.delete("year");
                 }
                 if (panelKey === "reports") {
-                    const reportsYear = document.getElementById("reports-year-select");
+                    const activeReportsSub = document.querySelector('.menu-sub-item.active[data-target="panel-reports"]');
+                    const reportsSecKey = activeReportsSub ? activeReportsSub.getAttribute("data-section-key") : "bank";
+                    params.set("reports_section", reportsSecKey);
+                    const reportsYear =
+                        document.getElementById("reports-year-select") ||
+                        document.getElementById("reports-crypto-year-select") ||
+                        document.getElementById("reports-stocks-year-select");
                     const fallbackReportYear = "{{ report_year }}";
                     const ry = reportsYear && reportsYear.value ? reportsYear.value : String(fallbackReportYear);
                     if (ry) {
                         params.set("report_year", ry);
                     }
+                    const reportAccount = document.getElementById("reports-account-select");
+                    if (reportAccount && reportAccount.value) {
+                        params.set("report_account", reportAccount.value);
+                    } else {
+                        params.delete("report_account");
+                    }
                 } else {
                     params.delete("report_year");
+                    params.delete("reports_section");
+                    params.delete("report_account");
                 }
                 if (panelKey === "expenses") {
                     const expM = document.getElementById("exp-cal-month");
@@ -1792,6 +1883,8 @@
                 "investments-stocks": "stocks"
             };
 
+            const reportsSections = document.querySelectorAll(".reports-section");
+
             const subMenuItems = document.querySelectorAll(".menu-sub-item");
             const subMenuGroups = document.querySelectorAll(".menu-sub-items");
 
@@ -1826,8 +1919,17 @@
                             section.classList.toggle("active", section.id === sectionId);
                         });
                     }
+                    if (panelTarget === "panel-reports") {
+                        reportsSections.forEach(function (section) {
+                            section.classList.toggle("active", section.id === sectionId);
+                        });
+                    }
 
-                    const panelMap2 = {"panel-investments": "investments", "panel-settings": "settings"};
+                    const panelMap2 = {
+                        "panel-investments": "investments",
+                        "panel-settings": "settings",
+                        "panel-reports": "reports"
+                    };
                     var panelKey = panelMap2[panelTarget];
                     if (panelKey) {
                         syncShellUrl(panelKey);

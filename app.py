@@ -67,6 +67,7 @@ ALLOWED_PANELS = {
 }
 SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration"}
 INVESTMENTS_SECTIONS = {"crypto", "stocks"}
+REPORTS_SECTIONS = {"bank", "crypto", "stocks"}
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "").strip()
 
 app = Flask(__name__)
@@ -437,21 +438,119 @@ def fetch_account_balances_through(conn, balance_cutoff_d, user_id):
     ).fetchall()
 
 
-def monthly_total_balances_for_year(conn, year: int, today_d, user_id) -> list[float]:
-    """Sum of all account balances after each calendar month (selected year's current month through today)."""
+def month_snap_cutoff(year: int, month_num: int, today_d) -> str:
+    """Exclusive date cutoff for balance/portfolio snapshots (matches bank balance chart)."""
+    month_start = datetime(year, month_num, 1)
+    month_end_exclusive = month_start + timedelta(days=32)
+    month_end_exclusive = month_end_exclusive.replace(day=1)
+    month_end_cutoff = month_end_exclusive.strftime("%Y-%m-%d")
+    if year == today_d.year and month_num == today_d.month:
+        return (today_d + timedelta(days=1)).isoformat()
+    return month_end_cutoff
+
+
+def monthly_total_balances_for_year(
+    conn, year: int, today_d, user_id, account_id: int | None = None
+) -> list[float]:
+    """Account balance(s) after each calendar month; optional single-account filter."""
     balances = []
     for month_num in range(1, 13):
-        month_start = datetime(year, month_num, 1)
-        month_end_exclusive = month_start + timedelta(days=32)
-        month_end_exclusive = month_end_exclusive.replace(day=1)
-        month_end_cutoff = month_end_exclusive.strftime("%Y-%m-%d")
-        if year == today_d.year and month_num == today_d.month:
-            snap_cutoff = (today_d + timedelta(days=1)).isoformat()
-        else:
-            snap_cutoff = month_end_cutoff
+        snap_cutoff = month_snap_cutoff(year, month_num, today_d)
         rows_m = fetch_account_balances_through(conn, snap_cutoff, user_id)
-        balances.append(sum(float(r["current_balance"]) for r in rows_m))
+        if account_id is not None:
+            total = 0.0
+            for r in rows_m:
+                if int(r["id"]) == account_id:
+                    total = float(r["current_balance"])
+                    break
+        else:
+            total = sum(float(r["current_balance"]) for r in rows_m)
+        balances.append(total)
     return balances
+
+
+def build_monthly_chart_rows(
+    monthly_values: list[float], year: int, *, baseline: float | None = None
+) -> list[dict]:
+    """Line chart rows with month labels and month-to-month change."""
+    report_rows = []
+    prev_balance_total = baseline if baseline is not None else 0.0
+    for month_num in range(1, 13):
+        total_bal = monthly_values[month_num - 1]
+        change = total_bal - prev_balance_total
+        prev_balance_total = total_bal
+        report_rows.append(
+            {
+                "month_label": calendar.month_name[month_num],
+                "month_num": month_num,
+                "total_balance": total_bal,
+                "change": change,
+            }
+        )
+    return report_rows
+
+
+def portfolio_value_from_holdings(holdings, price_by_key: dict, price_key: str) -> float:
+    total = 0.0
+    for h in holdings:
+        key = h[price_key]
+        pinfo = price_by_key.get(key)
+        if pinfo and pinfo.get("price") is not None:
+            total += float(h["quantity"]) * float(pinfo["price"])
+        else:
+            total += float(h["total_cost"])
+    return total
+
+
+def portfolio_baseline_before_year(
+    transactions, year: int, compute_holdings_fn, price_by_key: dict, price_key: str
+) -> float:
+    jan1 = f"{year:04d}-01-01"
+    subset = [t for t in transactions if str(t["transacted_at"])[:10] < jan1]
+    return portfolio_value_from_holdings(
+        compute_holdings_fn(subset), price_by_key, price_key
+    )
+
+
+def monthly_portfolio_values_for_year(
+    transactions,
+    year: int,
+    today_d,
+    compute_holdings_fn,
+    price_by_key: dict,
+    *,
+    price_key: str,
+) -> list[float]:
+    """Portfolio market value at each month-end (qty × price when known, else cost basis)."""
+    balances = []
+    for month_num in range(1, 13):
+        snap_cutoff = month_snap_cutoff(year, month_num, today_d)
+        subset = [t for t in transactions if str(t["transacted_at"])[:10] < snap_cutoff[:10]]
+        holdings = compute_holdings_fn(subset)
+        balances.append(
+            portfolio_value_from_holdings(holdings, price_by_key, price_key)
+        )
+    return balances
+
+
+def normalize_reports_section(value):
+    section = (value or "").strip().lower()
+    return section if section in REPORTS_SECTIONS else "bank"
+
+
+def normalize_report_account(value, conn, user_id):
+    raw = (value or "").strip().lower()
+    if not raw or raw == "all":
+        return None
+    try:
+        account_id = int(raw)
+    except ValueError:
+        return None
+    row = conn.execute(
+        "SELECT id FROM accounts WHERE id = ? AND user_id = ?",
+        (account_id, int(user_id)),
+    ).fetchone()
+    return int(row["id"]) if row else None
 
 
 def balance_line_chart_spec(rows: list, *, width: float = 720, height: float = 300) -> dict:
@@ -1291,6 +1390,12 @@ def redirect_home(panel=None, settings_section=None):
     )
     if target == "reports":
         query["report_year"] = report_year_redirect
+        raw_reports_sec = request.form.get("reports_section") or request.args.get("reports_section")
+        if raw_reports_sec:
+            query["reports_section"] = normalize_reports_section(raw_reports_sec)
+        raw_report_acct = request.form.get("report_account") or request.args.get("report_account")
+        if raw_report_acct is not None and str(raw_report_acct).strip():
+            query["report_account"] = str(raw_report_acct).strip()
     exp_pg = normalize_list_page(request.form.get("exp_page") or request.args.get("exp_page") or 1)
     inc_pg = normalize_list_page(request.form.get("inc_page") or request.args.get("inc_page") or 1)
     if target == "expenses" and exp_pg > 1:
@@ -2351,25 +2456,67 @@ def index():
     else:
         stock_prices_age = ""
 
+    reports_section = normalize_reports_section(request.args.get("reports_section"))
+    report_account_id = normalize_report_account(request.args.get("report_account"), conn, uid)
+
     jan1_this_year = f"{report_year:04d}-01-01"
     rows_before_jan = fetch_account_balances_through(conn, jan1_this_year, uid)
-    prev_balance_total = sum(float(r["current_balance"]) for r in rows_before_jan)
-    report_balances_list = monthly_total_balances_for_year(conn, report_year, today_d, uid)
-    report_balance_rows = []
-    for month_num in range(1, 13):
-        total_bal = report_balances_list[month_num - 1]
-        change = total_bal - prev_balance_total
-        prev_balance_total = total_bal
-        report_balance_rows.append(
-            {
-                "month_label": calendar.month_name[month_num],
-                "month_num": month_num,
-                "total_balance": total_bal,
-                "change": change,
-            }
-        )
+    if report_account_id is not None:
+        prev_balance_total = 0.0
+        for r in rows_before_jan:
+            if int(r["id"]) == report_account_id:
+                prev_balance_total = float(r["current_balance"])
+                break
+    else:
+        prev_balance_total = sum(float(r["current_balance"]) for r in rows_before_jan)
+    report_balances_list = monthly_total_balances_for_year(
+        conn, report_year, today_d, uid, report_account_id
+    )
+    report_balance_rows = build_monthly_chart_rows(
+        report_balances_list, report_year, baseline=prev_balance_total
+    )
     report_chart_spec = balance_line_chart_spec(report_balance_rows)
     reports_expenses_table = expense_pivot_for_report_year(conn, report_year, uid)
+
+    all_crypto_coin_ids = list({t["coin_id"] for t in crypto_txs})
+    report_crypto_prices = (
+        fetch_coingecko_prices(all_crypto_coin_ids, force=False) if all_crypto_coin_ids else {}
+    )
+    crypto_baseline = portfolio_baseline_before_year(
+        crypto_txs, report_year, compute_crypto_holdings, report_crypto_prices, "coin_id"
+    )
+    crypto_monthly = monthly_portfolio_values_for_year(
+        crypto_txs,
+        report_year,
+        today_d,
+        compute_crypto_holdings,
+        report_crypto_prices,
+        price_key="coin_id",
+    )
+    crypto_chart_rows = build_monthly_chart_rows(
+        crypto_monthly, report_year, baseline=crypto_baseline
+    )
+    crypto_chart_spec = balance_line_chart_spec(crypto_chart_rows)
+
+    all_stock_symbols = list({t["symbol"] for t in stock_txs})
+    report_stock_prices = (
+        fetch_finnhub_quotes(all_stock_symbols, force=False) if all_stock_symbols else {}
+    )
+    stock_baseline = portfolio_baseline_before_year(
+        stock_txs, report_year, compute_stock_holdings, report_stock_prices, "symbol"
+    )
+    stock_monthly = monthly_portfolio_values_for_year(
+        stock_txs,
+        report_year,
+        today_d,
+        compute_stock_holdings,
+        report_stock_prices,
+        price_key="symbol",
+    )
+    stock_chart_rows = build_monthly_chart_rows(
+        stock_monthly, report_year, baseline=stock_baseline
+    )
+    stock_chart_spec = balance_line_chart_spec(stock_chart_rows)
 
     conn.close()
 
@@ -2415,7 +2562,11 @@ def index():
         transfer_default_date=transfer_default_date,
         transfer_log_limit=TRANSFER_LOG_LIMIT,
         report_year=report_year,
+        reports_section=reports_section,
+        report_account_id=report_account_id,
         report_chart_spec=report_chart_spec,
+        crypto_chart_spec=crypto_chart_spec,
+        stock_chart_spec=stock_chart_spec,
         reports_expenses_table=reports_expenses_table,
         recurring_entries=recurring_entries,
         investments_section=investments_section,
