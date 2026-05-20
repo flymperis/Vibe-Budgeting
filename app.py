@@ -886,6 +886,26 @@ def migrate_stock_transactions(conn):
 
 
 _stock_price_cache: dict = {"prices": {}, "fetched_at": 0.0}
+_fx_usd_cache: dict = {"rates": {}, "fetched_at": 0.0}
+_EUR_LISTING_SUFFIXES = (
+    ".DE",
+    ".AS",
+    ".PA",
+    ".MI",
+    ".HE",
+    ".SW",
+    ".BR",
+    ".VI",
+    ".OL",
+    ".ST",
+    ".CO",
+    ".IR",
+    ".LS",
+    ".MC",
+    ".BE",
+    ".WA",
+)
+_GBP_LISTING_SUFFIXES = (".L",)
 
 
 def _finnhub_request(path):
@@ -902,6 +922,35 @@ def _finnhub_request(path):
         return None
 
 
+def _finnhub_fx_to_usd(pair):
+    """OANDA:EUR_USD / OANDA:GBP_USD → USD per 1 unit of base currency."""
+    now = time.time()
+    cached = _fx_usd_cache
+    if not cached["rates"] or (now - cached["fetched_at"]) >= PRICE_CACHE_TTL:
+        cached["rates"] = {}
+        cached["fetched_at"] = now
+    if pair in cached["rates"]:
+        return cached["rates"][pair]
+    data = _finnhub_request(f"/quote?symbol={pair}")
+    if data and data.get("c") is not None and float(data["c"]) > 0:
+        cached["rates"][pair] = float(data["c"])
+        return cached["rates"][pair]
+    return None
+
+
+def _listing_price_to_usd(symbol, price):
+    sym = symbol.upper()
+    if any(sym.endswith(suf) for suf in _GBP_LISTING_SUFFIXES):
+        rate = _finnhub_fx_to_usd("OANDA:GBP_USD")
+        if rate:
+            return price * rate
+    if any(sym.endswith(suf) for suf in _EUR_LISTING_SUFFIXES):
+        rate = _finnhub_fx_to_usd("OANDA:EUR_USD")
+        if rate:
+            return price * rate
+    return price
+
+
 def fetch_finnhub_quotes(symbols, force=False):
     if not symbols:
         return {}
@@ -910,12 +959,16 @@ def fetch_finnhub_quotes(symbols, force=False):
     if not force and cached["prices"] and (now - cached["fetched_at"]) < PRICE_CACHE_TTL:
         if all(sym in cached["prices"] for sym in symbols):
             return {sym: cached["prices"][sym] for sym in symbols}
+    if force:
+        _fx_usd_cache["rates"] = {}
+        _fx_usd_cache["fetched_at"] = 0.0
     prices = {}
     for sym in sorted(set(symbols)):
         data = _finnhub_request(f"/quote?symbol={sym}")
         if data and data.get("c") is not None and float(data["c"]) > 0:
+            raw = float(data["c"])
             prices[sym] = {
-                "price": float(data["c"]),
+                "price": _listing_price_to_usd(sym, raw),
                 "change_24h": float(data["dp"]) if data.get("dp") is not None else None,
             }
     cached["prices"].update(prices)

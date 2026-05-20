@@ -1172,21 +1172,21 @@
                                 {% if not finnhub_configured %}
                                     <p class="flash flash-error">Set <code>FINNHUB_API_KEY</code> in your environment to fetch live prices. You can still add transactions manually.</p>
                                 {% endif %}
-                                <p class="muted small-hint">Use the exchange symbol (e.g. <strong>VUAA.DE</strong> for XETRA). Prices are in the listing currency (EUR on .DE).</p>
+                                <p class="muted small-hint">Use the exchange symbol (e.g. <strong>VUAA.DE</strong> for XETRA). All amounts and live prices are in <strong>USD</strong> (European listings are converted from EUR/GBP).</p>
 
                                 <div class="stats crypto-summary-cards">
                                     <div class="card">
                                         <p>Portfolio Value</p>
-                                        <strong>{{ "%.2f"|format(stock_total_value) }} €</strong>
+                                        <strong>${{ "%.2f"|format(stock_total_value) }}</strong>
                                     </div>
                                     <div class="card">
                                         <p>Total Invested</p>
-                                        <strong>{{ "%.2f"|format(stock_total_invested) }} €</strong>
+                                        <strong>${{ "%.2f"|format(stock_total_invested) }}</strong>
                                     </div>
                                     <div class="card">
                                         <p>P&L</p>
                                         <strong class="{% if stock_total_pnl >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">
-                                            {{ "%+.2f"|format(stock_total_pnl) }} €
+                                            {{ "%+.2f"|format(stock_total_pnl) }} $
                                             {% if stock_total_invested > 0 %}({{ "%+.1f"|format(stock_total_pnl_pct) }}%){% endif %}
                                         </strong>
                                     </div>
@@ -1222,10 +1222,10 @@
                                                     <span class="muted crypto-coin-name">{{ h.symbol }}</span>
                                                 </td>
                                                 <td class="crypto-num-col">{{ "%.4g"|format(h.quantity) }}</td>
-                                                <td class="crypto-num-col">{{ "%.2f"|format(h.avg_buy_price) }}</td>
+                                                <td class="crypto-num-col">${{ "%.2f"|format(h.avg_buy_price) }}</td>
                                                 <td class="crypto-num-col">
                                                     {% if h.current_price is not none %}
-                                                        {{ "%.2f"|format(h.current_price) }}
+                                                        ${{ "%.2f"|format(h.current_price) }}
                                                         {% if h.change_24h is not none %}
                                                             <span class="crypto-change {% if h.change_24h >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">{{ "%+.1f"|format(h.change_24h) }}%</span>
                                                         {% endif %}
@@ -1234,11 +1234,11 @@
                                                     {% endif %}
                                                 </td>
                                                 <td class="crypto-num-col">
-                                                    {% if h.current_value is not none %}{{ "%.2f"|format(h.current_value) }}{% else %}<span class="muted">N/A</span>{% endif %}
+                                                    {% if h.current_value is not none %}${{ "%.2f"|format(h.current_value) }}{% else %}<span class="muted">N/A</span>{% endif %}
                                                 </td>
                                                 <td class="crypto-num-col {% if h.pnl is not none and h.pnl >= 0 %}crypto-pnl-positive{% elif h.pnl is not none %}crypto-pnl-negative{% endif %}">
                                                     {% if h.pnl is not none %}
-                                                        {{ "%+.2f"|format(h.pnl) }}
+                                                        {{ "%+.2f"|format(h.pnl) }} $
                                                         <span class="crypto-change">({{ "%+.1f"|format(h.pnl_pct) }}%)</span>
                                                     {% else %}
                                                         <span class="muted">N/A</span>
@@ -1290,11 +1290,11 @@
                                             <input id="stock-quantity" min="0" name="quantity" placeholder="0" required step="any" type="number">
                                         </div>
                                         <div class="cal-dropdown-field">
-                                            <label class="month-label" for="stock-price">Price/share (€)</label>
+                                            <label class="month-label" for="stock-price">Price/share ($)</label>
                                             <input id="stock-price" min="0" name="price_per_unit" placeholder="0.00" required step="any" type="number">
                                         </div>
                                         <div class="cal-dropdown-field">
-                                            <label class="month-label" for="stock-fee">Fee (€)</label>
+                                            <label class="month-label" for="stock-fee">Fee ($)</label>
                                             <input id="stock-fee" min="0" name="fee" placeholder="0.00" step="any" type="number" value="0">
                                         </div>
                                         <div class="cal-dropdown-field">
@@ -1375,11 +1375,11 @@
                                                                         <input min="0" name="quantity" required step="any" type="number" value="{{ tx.quantity }}">
                                                                     </label>
                                                                     <label class="crypto-edit-label">
-                                                                        <span class="month-label">Price/share (€)</span>
+                                                                        <span class="month-label">Price/share ($)</span>
                                                                         <input min="0" name="price_per_unit" required step="any" type="number" value="{{ tx.price_per_unit }}">
                                                                     </label>
                                                                     <label class="crypto-edit-label">
-                                                                        <span class="month-label">Fee (€)</span>
+                                                                        <span class="month-label">Fee ($)</span>
                                                                         <input min="0" name="fee" step="any" type="number" value="{{ tx.fee }}">
                                                                     </label>
                                                                     <label class="crypto-edit-label">
