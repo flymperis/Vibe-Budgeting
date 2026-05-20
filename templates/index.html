@@ -1875,48 +1875,85 @@
                 const symbolInput = document.getElementById("stock-symbol");
                 const tickerInput = document.getElementById("stock-ticker");
                 const nameInput = document.getElementById("stock-name");
-                if (!searchInput || !resultsBox) return;
+                if (!searchInput || !resultsBox || !symbolInput || !tickerInput || !nameInput) return;
 
                 let debounceTimer = null;
+                let lastItems = [];
 
-                searchInput.addEventListener("input", function () {
-                    clearTimeout(debounceTimer);
-                    const q = searchInput.value.trim();
+                function applyStockPick(c) {
+                    symbolInput.value = c.symbol;
+                    tickerInput.value = c.ticker;
+                    nameInput.value = c.name;
+                    searchInput.value = c.symbol + " — " + c.name;
+                    resultsBox.hidden = true;
+                }
+
+                function renderResults(items) {
+                    lastItems = items;
+                    if (!items.length) {
+                        resultsBox.hidden = true;
+                        return;
+                    }
+                    resultsBox.innerHTML = "";
+                    items.forEach(function (c) {
+                        const item = document.createElement("button");
+                        item.type = "button";
+                        item.className = "crypto-search-item";
+                        item.innerHTML =
+                            '<span class="crypto-search-item-name"><strong>' + c.ticker + "</strong> " + c.name + "</span>" +
+                            '<span class="crypto-search-item-id muted">' + c.symbol + (c.type ? " · " + c.type : "") + "</span>";
+                        item.addEventListener("mousedown", function (e) {
+                            e.preventDefault();
+                            applyStockPick(c);
+                        });
+                        item.addEventListener("click", function (e) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            applyStockPick(c);
+                        });
+                        resultsBox.appendChild(item);
+                    });
+                    resultsBox.hidden = false;
+                }
+
+                function fetchStockSearch(q, onDone) {
+                    fetch("/stocks/search?q=" + encodeURIComponent(q))
+                        .then(function (r) { return r.json(); })
+                        .then(function (items) { onDone(items || []); })
+                        .catch(function () { onDone([]); });
+                }
+
+                function runSearch(q) {
                     if (q.length < 1) {
                         resultsBox.hidden = true;
                         return;
                     }
+                    fetchStockSearch(q, renderResults);
+                }
+
+                searchInput.addEventListener("input", function () {
+                    clearTimeout(debounceTimer);
                     debounceTimer = setTimeout(function () {
-                        fetch("/stocks/search?q=" + encodeURIComponent(q))
-                            .then(function (r) { return r.json(); })
-                            .then(function (items) {
-                                if (!items.length) {
-                                    resultsBox.hidden = true;
-                                    return;
-                                }
-                                resultsBox.innerHTML = "";
-                                items.forEach(function (c) {
-                                    const item = document.createElement("button");
-                                    item.type = "button";
-                                    item.className = "crypto-search-item";
-                                    item.innerHTML =
-                                        '<span class="crypto-search-item-name"><strong>' + c.ticker + "</strong> " + c.name + "</span>" +
-                                        '<span class="crypto-search-item-id muted">' + c.symbol + (c.type ? " · " + c.type : "") + "</span>";
-                                    item.addEventListener("click", function () {
-                                        symbolInput.value = c.symbol;
-                                        tickerInput.value = c.ticker;
-                                        nameInput.value = c.name;
-                                        searchInput.value = "";
-                                        resultsBox.hidden = true;
-                                    });
-                                    resultsBox.appendChild(item);
-                                });
-                                resultsBox.hidden = false;
-                            })
-                            .catch(function () {
-                                resultsBox.hidden = true;
-                            });
+                        runSearch(searchInput.value.trim());
                     }, 350);
+                });
+
+                searchInput.addEventListener("keydown", function (e) {
+                    if (e.key === "Enter" && lastItems.length) {
+                        e.preventDefault();
+                        applyStockPick(lastItems[0]);
+                    }
+                });
+
+                symbolInput.addEventListener("blur", function () {
+                    const sym = symbolInput.value.trim().toUpperCase();
+                    if (sym.length < 3) return;
+                    if (tickerInput.value && nameInput.value && symbolInput.value.toUpperCase() === sym) return;
+                    fetchStockSearch(sym, function (items) {
+                        const exact = items.find(function (i) { return i.symbol.toUpperCase() === sym; });
+                        const pick = exact || (items.length === 1 ? items[0] : null);
+                        if (pick) applyStockPick(pick);
+                    });
                 });
 
                 document.addEventListener("click", function (e) {

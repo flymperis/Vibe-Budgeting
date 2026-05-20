@@ -2525,6 +2525,14 @@ def search_stocks():
         )
         if len(items) >= 12:
             break
+    q_upper = query.upper()
+    items.sort(
+        key=lambda x: (
+            0 if x["symbol"].upper() == q_upper else 1,
+            0 if x["symbol"].upper().startswith(q_upper) else 2,
+            x["symbol"],
+        )
+    )
     return app.response_class(response=json.dumps(items), status=200, mimetype="application/json")
 
 
