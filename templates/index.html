@@ -859,10 +859,15 @@
                 <section class="panel {% if active_panel == 'reports' %}active{% endif %}" id="panel-reports">
                     <div class="reports-body">
                         <div class="reports-section {% if reports_section == 'bank' %}active{% endif %}" id="reports-bank">
-                            <h2>Bank balance</h2>
+                            <h2>Bank balance — {{ report_account_label }}</h2>
                             <p class="muted small-hint">
-                                Account balance at the end of each month (or all accounts combined); the current month uses movements through today.
+                                Account balance at the end of each month{% if report_account_id is none %} (all accounts combined){% endif %};
+                                the current month uses movements through today.
                                 Hover a point for balance and month-to-month change (Δ).
+                            </p>
+                            <p class="muted small-hint reports-live-balance-hint">
+                                Balance through today (same rule as Home): <strong>{{ "%.2f"|format(report_live_balance) }}</strong>
+                                — when {{ report_year }} is the current year, the <strong>{{ report_today_month }}</strong> point should match this value.
                             </p>
                             <form action="/" class="year-picker reports-year-picker" method="get">
                                 <input name="panel" type="hidden" value="reports">
@@ -878,11 +883,22 @@
                                 <select id="reports-account-select" class="year-shell-select" name="report_account" autocomplete="off">
                                     <option value="all" {% if report_account_id is none %}selected{% endif %}>All</option>
                                     {% for acc in accounts %}
-                                        <option value="{{ acc.id }}" {% if report_account_id == acc.id %}selected{% endif %}>{{ acc.name }}</option>
+                                        <option value="{{ acc.id }}" {% if report_account_id is not none and report_account_id|int == acc.id|int %}selected{% endif %}>{{ acc.name }}</option>
                                     {% endfor %}
                                 </select>
                                 <button type="submit">Apply</button>
                             </form>
+                            <script>
+                                (function () {
+                                    const form = document.querySelector("#reports-bank .reports-year-picker");
+                                    if (!form) return;
+                                    const yearSel = document.getElementById("reports-year-select");
+                                    const acctSel = document.getElementById("reports-account-select");
+                                    function submitReportsBank() { form.requestSubmit(); }
+                                    if (yearSel) yearSel.addEventListener("change", submitReportsBank);
+                                    if (acctSel) acctSel.addEventListener("change", submitReportsBank);
+                                })();
+                            </script>
                             {{ reports_balance_chart(
                                 report_chart_spec,
                                 "Bank balance by month for " ~ report_year,

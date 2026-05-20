@@ -445,8 +445,28 @@ def month_snap_cutoff(year: int, month_num: int, today_d) -> str:
     month_end_exclusive = month_end_exclusive.replace(day=1)
     month_end_cutoff = month_end_exclusive.strftime("%Y-%m-%d")
     if year == today_d.year and month_num == today_d.month:
-        return (today_d + timedelta(days=1)).isoformat()
-    return month_end_cutoff
+        snap = (today_d + timedelta(days=1)).isoformat()
+    else:
+        snap = month_end_cutoff
+    # Never snapshot after today (future months in the selected year).
+    cap = (today_d + timedelta(days=1)).isoformat()
+    if snap > cap:
+        return cap
+    return snap
+
+
+def account_balance_at_cutoff(
+    conn, balance_cutoff_d: str, user_id, account_id: int | None = None
+) -> float:
+    """Single-account or all-accounts balance strictly before balance_cutoff_d."""
+    rows = fetch_account_balances_through(conn, balance_cutoff_d, user_id)
+    if account_id is None:
+        return sum(float(r["current_balance"]) for r in rows)
+    aid = int(account_id)
+    for r in rows:
+        if int(r["id"]) == aid:
+            return float(r["current_balance"])
+    return 0.0
 
 
 def monthly_total_balances_for_year(
@@ -456,16 +476,9 @@ def monthly_total_balances_for_year(
     balances = []
     for month_num in range(1, 13):
         snap_cutoff = month_snap_cutoff(year, month_num, today_d)
-        rows_m = fetch_account_balances_through(conn, snap_cutoff, user_id)
-        if account_id is not None:
-            total = 0.0
-            for r in rows_m:
-                if int(r["id"]) == account_id:
-                    total = float(r["current_balance"])
-                    break
-        else:
-            total = sum(float(r["current_balance"]) for r in rows_m)
-        balances.append(total)
+        balances.append(
+            account_balance_at_cutoff(conn, snap_cutoff, user_id, account_id)
+        )
     return balances
 
 
@@ -2677,17 +2690,21 @@ def index():
 
     reports_section = normalize_reports_section(request.args.get("reports_section"))
     report_account_id = normalize_report_account(request.args.get("report_account"), conn, uid)
+    report_account_label = "All accounts"
+    if report_account_id is not None:
+        for acc in accounts:
+            if int(acc["id"]) == int(report_account_id):
+                report_account_label = str(acc["name"])
+                break
 
     jan1_this_year = f"{report_year:04d}-01-01"
-    rows_before_jan = fetch_account_balances_through(conn, jan1_this_year, uid)
-    if report_account_id is not None:
-        prev_balance_total = 0.0
-        for r in rows_before_jan:
-            if int(r["id"]) == report_account_id:
-                prev_balance_total = float(r["current_balance"])
-                break
-    else:
-        prev_balance_total = sum(float(r["current_balance"]) for r in rows_before_jan)
+    prev_balance_total = account_balance_at_cutoff(
+        conn, jan1_this_year, uid, report_account_id
+    )
+    report_live_cutoff = (today_d + timedelta(days=1)).isoformat()
+    report_live_balance = account_balance_at_cutoff(
+        conn, report_live_cutoff, uid, report_account_id
+    )
     report_balances_list = monthly_total_balances_for_year(
         conn, report_year, today_d, uid, report_account_id
     )
@@ -2766,6 +2783,9 @@ def index():
         report_year=report_year,
         reports_section=reports_section,
         report_account_id=report_account_id,
+        report_account_label=report_account_label,
+        report_live_balance=report_live_balance,
+        report_today_month=calendar.month_name[today_d.month],
         report_chart_spec=report_chart_spec,
         crypto_chart_spec=crypto_chart_spec,
         stock_chart_spec=stock_chart_spec,
