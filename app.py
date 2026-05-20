@@ -922,6 +922,24 @@ def _finnhub_request(path):
         return None
 
 
+def _yfinance_last_price(symbol):
+    try:
+        import yfinance as yf
+
+        ticker = yf.Ticker(symbol)
+        price = getattr(ticker, "fast_info", {}).get("lastPrice")
+        if price is not None and float(price) > 0:
+            return float(price)
+        hist = ticker.history(period="5d")
+        if hist is not None and not hist.empty:
+            close = float(hist["Close"].iloc[-1])
+            if close > 0:
+                return close
+    except Exception:
+        return None
+    return None
+
+
 def _finnhub_fx_to_usd(pair):
     """OANDA:EUR_USD / OANDA:GBP_USD → USD per 1 unit of base currency."""
     now = time.time()
@@ -935,6 +953,11 @@ def _finnhub_fx_to_usd(pair):
     if data and data.get("c") is not None and float(data["c"]) > 0:
         cached["rates"][pair] = float(data["c"])
         return cached["rates"][pair]
+    yf_symbol = "EURUSD=X" if "EUR" in pair else "GBPUSD=X"
+    yf_rate = _yfinance_last_price(yf_symbol)
+    if yf_rate:
+        cached["rates"][pair] = yf_rate
+        return yf_rate
     return None
 
 
@@ -964,12 +987,21 @@ def fetch_finnhub_quotes(symbols, force=False):
         _fx_usd_cache["fetched_at"] = 0.0
     prices = {}
     for sym in sorted(set(symbols)):
-        data = _finnhub_request(f"/quote?symbol={sym}")
+        raw = None
+        change_24h = None
+        data = _finnhub_request(f"/quote?symbol={sym}") if FINNHUB_API_KEY else None
         if data and data.get("c") is not None and float(data["c"]) > 0:
             raw = float(data["c"])
+            change_24h = float(data["dp"]) if data.get("dp") is not None else None
+        if raw is None:
+            yf_raw = _yfinance_last_price(sym)
+            if yf_raw is not None and yf_raw > 0:
+                raw = yf_raw
+        if raw is not None and raw > 0:
             prices[sym] = {
                 "price": _listing_price_to_usd(sym, raw),
-                "change_24h": float(data["dp"]) if data.get("dp") is not None else None,
+                "change_24h": change_24h,
+                "source": "finnhub" if data and data.get("c") else "yfinance",
             }
     cached["prices"].update(prices)
     cached["fetched_at"] = time.time()

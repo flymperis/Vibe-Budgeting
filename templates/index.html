@@ -1170,9 +1170,9 @@
                             <div class="investments-section {% if investments_section == 'stocks' %}active{% endif %}" id="investments-stocks">
                                 <h2>Stocks Portfolio</h2>
                                 {% if not finnhub_configured %}
-                                    <p class="flash flash-error">Set <code>FINNHUB_API_KEY</code> in your environment to fetch live prices. You can still add transactions manually.</p>
+                                    <p class="flash flash-error">Optional: set <code>FINNHUB_API_KEY</code> for symbol search. Live prices use Yahoo (yfinance) as fallback.</p>
                                 {% endif %}
-                                <p class="muted small-hint">Use the exchange symbol (e.g. <strong>VUAA.DE</strong> for XETRA). All amounts and live prices are in <strong>USD</strong> (European listings are converted from EUR/GBP).</p>
+                                <p class="muted small-hint">Use the exchange symbol (e.g. <strong>VUAA.DE</strong> for XETRA). All amounts and live prices are in <strong>USD</strong> (European listings converted from EUR/GBP). Click <strong>Refresh Prices</strong> after adding a holding.</p>
 
                                 <div class="stats crypto-summary-cards">
                                     <div class="card">
