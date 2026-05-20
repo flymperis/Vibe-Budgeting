@@ -6,6 +6,7 @@ services:
       - "5000:5000"
     environment:
       - DATABASE_PATH=/app/data/database.db
+      # FINNHUB_API_KEY=your_key_here
     volumes:
       - ./budget-data:/app/data
     restart: unless-stopped

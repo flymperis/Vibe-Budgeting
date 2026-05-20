@@ -1166,6 +1166,256 @@
                                     </table>
                                 </div>
                             </div>
+
+                            <div class="investments-section {% if investments_section == 'stocks' %}active{% endif %}" id="investments-stocks">
+                                <h2>Stocks Portfolio</h2>
+                                {% if not finnhub_configured %}
+                                    <p class="flash flash-error">Set <code>FINNHUB_API_KEY</code> in your environment to fetch live prices. You can still add transactions manually.</p>
+                                {% endif %}
+                                <p class="muted small-hint">Use the exchange symbol (e.g. <strong>VUAA.DE</strong> for XETRA). Prices are in the listing currency (EUR on .DE).</p>
+
+                                <div class="stats crypto-summary-cards">
+                                    <div class="card">
+                                        <p>Portfolio Value</p>
+                                        <strong>{{ "%.2f"|format(stock_total_value) }} €</strong>
+                                    </div>
+                                    <div class="card">
+                                        <p>Total Invested</p>
+                                        <strong>{{ "%.2f"|format(stock_total_invested) }} €</strong>
+                                    </div>
+                                    <div class="card">
+                                        <p>P&L</p>
+                                        <strong class="{% if stock_total_pnl >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">
+                                            {{ "%+.2f"|format(stock_total_pnl) }} €
+                                            {% if stock_total_invested > 0 %}({{ "%+.1f"|format(stock_total_pnl_pct) }}%){% endif %}
+                                        </strong>
+                                    </div>
+                                </div>
+
+                                <div class="crypto-refresh-row">
+                                    <a class="btn-secondary" href="{{ url_for('index', panel='investments', investments_section='stocks', refresh_stock_prices=1, month=month_filter) }}">Refresh Prices</a>
+                                    {% if stock_prices_age %}
+                                        <span class="muted crypto-prices-age">Updated {{ stock_prices_age }}</span>
+                                    {% endif %}
+                                </div>
+
+                                <h3>Holdings</h3>
+                                {% if stock_holdings %}
+                                <div class="crypto-table-wrap">
+                                    <table class="crypto-holdings-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Instrument</th>
+                                                <th class="crypto-num-col">Shares</th>
+                                                <th class="crypto-num-col">Avg Buy</th>
+                                                <th class="crypto-num-col">Price</th>
+                                                <th class="crypto-num-col">Value</th>
+                                                <th class="crypto-num-col">P&L</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for h in stock_holdings %}
+                                            <tr>
+                                                <td>
+                                                    <strong>{{ h.ticker }}</strong>
+                                                    <span class="muted crypto-coin-name">{{ h.instrument_name }}</span>
+                                                    <span class="muted crypto-coin-name">{{ h.symbol }}</span>
+                                                </td>
+                                                <td class="crypto-num-col">{{ "%.4g"|format(h.quantity) }}</td>
+                                                <td class="crypto-num-col">{{ "%.2f"|format(h.avg_buy_price) }}</td>
+                                                <td class="crypto-num-col">
+                                                    {% if h.current_price is not none %}
+                                                        {{ "%.2f"|format(h.current_price) }}
+                                                        {% if h.change_24h is not none %}
+                                                            <span class="crypto-change {% if h.change_24h >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">{{ "%+.1f"|format(h.change_24h) }}%</span>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        <span class="muted">N/A</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="crypto-num-col">
+                                                    {% if h.current_value is not none %}{{ "%.2f"|format(h.current_value) }}{% else %}<span class="muted">N/A</span>{% endif %}
+                                                </td>
+                                                <td class="crypto-num-col {% if h.pnl is not none and h.pnl >= 0 %}crypto-pnl-positive{% elif h.pnl is not none %}crypto-pnl-negative{% endif %}">
+                                                    {% if h.pnl is not none %}
+                                                        {{ "%+.2f"|format(h.pnl) }}
+                                                        <span class="crypto-change">({{ "%+.1f"|format(h.pnl_pct) }}%)</span>
+                                                    {% else %}
+                                                        <span class="muted">N/A</span>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% else %}
+                                    <p class="muted">No stock holdings yet. Add a transaction below.</p>
+                                {% endif %}
+
+                                <h3>Add Transaction</h3>
+                                <form action="/stocks/add" class="panel-add-form crypto-add-form" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <input name="next_panel" type="hidden" value="investments">
+                                    <input name="investments_section" type="hidden" value="stocks">
+                                    <div class="crypto-form-row">
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-tx-type">Type</label>
+                                            <select id="stock-tx-type" name="tx_type" required>
+                                                <option value="buy">Buy</option>
+                                                <option value="sell">Sell</option>
+                                            </select>
+                                        </div>
+                                        <div class="cal-dropdown-field crypto-search-field">
+                                            <label class="month-label" for="stock-search-input">Search symbol</label>
+                                            <input id="stock-search-input" placeholder="Search (e.g. VUAA, AAPL...)" type="text" autocomplete="off">
+                                            <div id="stock-search-results" class="crypto-search-results" hidden></div>
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-symbol">Symbol</label>
+                                            <input id="stock-symbol" name="symbol" placeholder="e.g. VUAA.DE" required type="text" autocomplete="off">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-ticker">Ticker</label>
+                                            <input id="stock-ticker" name="ticker" placeholder="e.g. VUAA" required type="text" autocomplete="off">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-name">Name</label>
+                                            <input id="stock-name" name="instrument_name" placeholder="e.g. Vanguard S&P 500 UCITS ETF" required type="text" autocomplete="off">
+                                        </div>
+                                    </div>
+                                    <div class="crypto-form-row">
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-quantity">Shares</label>
+                                            <input id="stock-quantity" min="0" name="quantity" placeholder="0" required step="any" type="number">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-price">Price/share (€)</label>
+                                            <input id="stock-price" min="0" name="price_per_unit" placeholder="0.00" required step="any" type="number">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-fee">Fee (€)</label>
+                                            <input id="stock-fee" min="0" name="fee" placeholder="0.00" step="any" type="number" value="0">
+                                        </div>
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-broker">Broker</label>
+                                            <input id="stock-broker" name="broker" placeholder="e.g. Freedom24" type="text" value="Freedom24" autocomplete="off">
+                                        </div>
+                                    </div>
+                                    <div class="crypto-form-row">
+                                        <div class="cal-dropdown-field">
+                                            <label class="month-label" for="stock-date">Date</label>
+                                            <input id="stock-date" name="transacted_at" type="date" value="{{ transfer_default_date }}">
+                                        </div>
+                                    </div>
+                                    <textarea name="notes" placeholder="Notes (optional)" rows="2"></textarea>
+                                    <button type="submit">Add Transaction</button>
+                                </form>
+
+                                <h3>Transaction History</h3>
+                                <div class="crypto-table-wrap">
+                                    <table class="crypto-tx-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Type</th>
+                                                <th>Symbol</th>
+                                                <th class="crypto-num-col">Shares</th>
+                                                <th class="crypto-num-col">Price</th>
+                                                <th class="crypto-num-col">Fee</th>
+                                                <th class="crypto-num-col">Total</th>
+                                                <th>Broker</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for tx in stock_transactions %}
+                                            <tr>
+                                                <td class="cell-date">{{ tx.transacted_at|txn_day }}</td>
+                                                <td><span class="crypto-tx-badge crypto-tx-{{ tx.tx_type }}">{{ tx.tx_type|upper }}</span></td>
+                                                <td><strong>{{ tx.ticker }}</strong> <span class="muted">{{ tx.symbol }}</span></td>
+                                                <td class="crypto-num-col">{{ "%.4g"|format(tx.quantity) }}</td>
+                                                <td class="crypto-num-col">{{ "%.2f"|format(tx.price_per_unit) }}</td>
+                                                <td class="crypto-num-col">{{ "%.2f"|format(tx.fee) }}</td>
+                                                <td class="crypto-num-col">{{ "%.2f"|format(tx.quantity * tx.price_per_unit + tx.fee) }}</td>
+                                                <td>{{ tx.broker }}</td>
+                                                <td class="cell-actions">
+                                                    <div class="action-stack">
+                                                        <details class="edit-details">
+                                                            <summary class="btn-icon btn-icon-edit" title="Edit transaction">
+                                                                <span class="visually-hidden">Edit transaction</span>
+                                                                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z"/></svg>
+                                                            </summary>
+                                                            <form action="/stocks/{{ tx.id }}/edit" class="inline-edit-form crypto-edit-form" method="post">
+                                                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                                                <input name="next_panel" type="hidden" value="investments">
+                                                                <input name="investments_section" type="hidden" value="stocks">
+                                                                <div class="crypto-edit-grid">
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Type</span>
+                                                                        <select name="tx_type" required>
+                                                                            <option value="buy" {% if tx.tx_type == 'buy' %}selected{% endif %}>Buy</option>
+                                                                            <option value="sell" {% if tx.tx_type == 'sell' %}selected{% endif %}>Sell</option>
+                                                                        </select>
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Symbol</span>
+                                                                        <input name="symbol" required type="text" value="{{ tx.symbol }}" autocomplete="off">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Ticker</span>
+                                                                        <input name="ticker" required type="text" value="{{ tx.ticker }}" autocomplete="off">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Name</span>
+                                                                        <input name="instrument_name" required type="text" value="{{ tx.instrument_name }}" autocomplete="off">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Shares</span>
+                                                                        <input min="0" name="quantity" required step="any" type="number" value="{{ tx.quantity }}">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Price/share (€)</span>
+                                                                        <input min="0" name="price_per_unit" required step="any" type="number" value="{{ tx.price_per_unit }}">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Fee (€)</span>
+                                                                        <input min="0" name="fee" step="any" type="number" value="{{ tx.fee }}">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Broker</span>
+                                                                        <input name="broker" type="text" value="{{ tx.broker }}" autocomplete="off">
+                                                                    </label>
+                                                                    <label class="crypto-edit-label">
+                                                                        <span class="month-label">Date</span>
+                                                                        <input name="transacted_at" type="date" value="{{ tx.transacted_at|txn_day }}">
+                                                                    </label>
+                                                                </div>
+                                                                <label class="crypto-edit-label">
+                                                                    <span class="month-label">Notes</span>
+                                                                    <textarea name="notes" placeholder="Notes" rows="2">{{ tx.notes }}</textarea>
+                                                                </label>
+                                                                <button type="submit">Save</button>
+                                                            </form>
+                                                        </details>
+                                                        <form action="/stocks/{{ tx.id }}/delete" method="post">
+                                                            <input name="month" type="hidden" value="{{ month_filter }}">
+                                                            <input name="next_panel" type="hidden" value="investments">
+                                                            <input name="investments_section" type="hidden" value="stocks">
+                                                            <button class="btn-icon btn-icon-delete" type="submit" title="Delete transaction" aria-label="Delete transaction">
+                                                                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            {% else %}
+                                            <tr><td colspan="9">No transactions yet.</td></tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                 </section>
 
@@ -1375,6 +1625,7 @@
                     </button>
                     <div class="menu-sub-items {% if active_panel == 'investments' %}active{% endif %}">
                         <button class="menu-sub-item {% if active_panel == 'investments' and investments_section == 'crypto' %}active{% endif %}" data-target="panel-investments" data-section="investments-crypto" data-section-key="crypto" data-section-param="investments_section" type="button">Crypto</button>
+                        <button class="menu-sub-item {% if active_panel == 'investments' and investments_section == 'stocks' %}active{% endif %}" data-target="panel-investments" data-section="investments-stocks" data-section-key="stocks" data-section-param="investments_section" type="button">Stocks</button>
                     </div>
                 </div>
                 <div class="menu-group">
@@ -1537,7 +1788,8 @@
 
             const investSections = document.querySelectorAll(".investments-section");
             const investSectionMap = {
-                "investments-crypto": "crypto"
+                "investments-crypto": "crypto",
+                "investments-stocks": "stocks"
             };
 
             const subMenuItems = document.querySelectorAll(".menu-sub-item");
@@ -1616,6 +1868,63 @@
                     }
                 });
             });
+
+            (function setupStockSearch() {
+                const searchInput = document.getElementById("stock-search-input");
+                const resultsBox = document.getElementById("stock-search-results");
+                const symbolInput = document.getElementById("stock-symbol");
+                const tickerInput = document.getElementById("stock-ticker");
+                const nameInput = document.getElementById("stock-name");
+                if (!searchInput || !resultsBox) return;
+
+                let debounceTimer = null;
+
+                searchInput.addEventListener("input", function () {
+                    clearTimeout(debounceTimer);
+                    const q = searchInput.value.trim();
+                    if (q.length < 1) {
+                        resultsBox.hidden = true;
+                        return;
+                    }
+                    debounceTimer = setTimeout(function () {
+                        fetch("/stocks/search?q=" + encodeURIComponent(q))
+                            .then(function (r) { return r.json(); })
+                            .then(function (items) {
+                                if (!items.length) {
+                                    resultsBox.hidden = true;
+                                    return;
+                                }
+                                resultsBox.innerHTML = "";
+                                items.forEach(function (c) {
+                                    const item = document.createElement("button");
+                                    item.type = "button";
+                                    item.className = "crypto-search-item";
+                                    item.innerHTML =
+                                        '<span class="crypto-search-item-name"><strong>' + c.ticker + "</strong> " + c.name + "</span>" +
+                                        '<span class="crypto-search-item-id muted">' + c.symbol + (c.type ? " · " + c.type : "") + "</span>";
+                                    item.addEventListener("click", function () {
+                                        symbolInput.value = c.symbol;
+                                        tickerInput.value = c.ticker;
+                                        nameInput.value = c.name;
+                                        searchInput.value = "";
+                                        resultsBox.hidden = true;
+                                    });
+                                    resultsBox.appendChild(item);
+                                });
+                                resultsBox.hidden = false;
+                            })
+                            .catch(function () {
+                                resultsBox.hidden = true;
+                            });
+                    }, 350);
+                });
+
+                document.addEventListener("click", function (e) {
+                    if (!resultsBox.contains(e.target) && e.target !== searchInput) {
+                        resultsBox.hidden = true;
+                    }
+                });
+            })();
 
             (function setupCryptoSearch() {
                 const searchInput = document.getElementById("crypto-search-input");

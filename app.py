@@ -8,7 +8,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 
@@ -66,7 +66,8 @@ ALLOWED_PANELS = {
     "settings",
 }
 SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration"}
-INVESTMENTS_SECTIONS = {"crypto"}
+INVESTMENTS_SECTIONS = {"crypto", "stocks"}
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "").strip()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
@@ -665,6 +666,7 @@ def migrate_schema(conn):
     migrate_recurring_entries(conn)
     migrate_users_multitenancy(conn)
     migrate_crypto_transactions(conn)
+    migrate_stock_transactions(conn)
 
 
 def migrate_users_multitenancy(conn):
@@ -859,6 +861,98 @@ def compute_crypto_holdings(transactions):
 def normalize_investments_section(value):
     section = (value or "").strip().lower()
     return section if section in INVESTMENTS_SECTIONS else "crypto"
+
+
+def migrate_stock_transactions(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stock_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            symbol TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            instrument_name TEXT NOT NULL,
+            tx_type TEXT NOT NULL CHECK (tx_type IN ('buy', 'sell')),
+            quantity REAL NOT NULL CHECK (quantity > 0),
+            price_per_unit REAL NOT NULL CHECK (price_per_unit >= 0),
+            fee REAL NOT NULL DEFAULT 0 CHECK (fee >= 0),
+            broker TEXT NOT NULL DEFAULT '',
+            transacted_at TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+_stock_price_cache: dict = {"prices": {}, "fetched_at": 0.0}
+
+
+def _finnhub_request(path):
+    token = FINNHUB_API_KEY
+    if not token:
+        return None
+    sep = "&" if "?" in path else "?"
+    url = f"https://finnhub.io/api/v1{path}{sep}token={token}"
+    try:
+        req = Request(url, headers={"Accept": "application/json", "User-Agent": "VibeBudgeting/1.0"})
+        with urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode())
+    except (URLError, HTTPError, json.JSONDecodeError, OSError):
+        return None
+
+
+def fetch_finnhub_quotes(symbols, force=False):
+    if not symbols:
+        return {}
+    now = time.time()
+    cached = _stock_price_cache
+    if not force and cached["prices"] and (now - cached["fetched_at"]) < PRICE_CACHE_TTL:
+        if all(sym in cached["prices"] for sym in symbols):
+            return {sym: cached["prices"][sym] for sym in symbols}
+    prices = {}
+    for sym in sorted(set(symbols)):
+        data = _finnhub_request(f"/quote?symbol={sym}")
+        if data and data.get("c") is not None and float(data["c"]) > 0:
+            prices[sym] = {
+                "price": float(data["c"]),
+                "change_24h": float(data["dp"]) if data.get("dp") is not None else None,
+            }
+    cached["prices"].update(prices)
+    cached["fetched_at"] = time.time()
+    return prices
+
+
+def compute_stock_holdings(transactions):
+    holdings: dict = {}
+    for tx in transactions:
+        sym = tx["symbol"]
+        if sym not in holdings:
+            holdings[sym] = {
+                "symbol": sym,
+                "ticker": tx["ticker"],
+                "instrument_name": tx["instrument_name"],
+                "quantity": 0.0,
+                "total_cost": 0.0,
+            }
+        h = holdings[sym]
+        qty = float(tx["quantity"])
+        price = float(tx["price_per_unit"])
+        fee = float(tx["fee"])
+        if tx["tx_type"] == "buy":
+            h["total_cost"] += qty * price + fee
+            h["quantity"] += qty
+        else:
+            if h["quantity"] > 0:
+                avg_cost = h["total_cost"] / h["quantity"]
+                h["total_cost"] -= qty * avg_cost
+            h["quantity"] -= qty
+    result = []
+    for _sym, h in sorted(holdings.items(), key=lambda x: x[1]["instrument_name"].lower()):
+        if abs(h["quantity"]) > 1e-9:
+            h["avg_buy_price"] = h["total_cost"] / h["quantity"] if h["quantity"] > 0 else 0
+            result.append(h)
+    return result
 
 
 def migrate_recurring_entries(conn):
@@ -1066,6 +1160,7 @@ def resolve_active_panel():
             ("/transfers/", "transfer"),
             ("/recurring/", "recurring"),
             ("/crypto/", "investments"),
+            ("/stocks/", "investments"),
         ):
             if path.startswith(prefix):
                 return mapped
@@ -2113,6 +2208,53 @@ def index():
     else:
         crypto_prices_age = ""
 
+    stock_txs = conn.execute(
+        """
+        SELECT id, symbol, ticker, instrument_name, tx_type, quantity,
+               price_per_unit, fee, broker, transacted_at, notes
+        FROM stock_transactions
+        WHERE user_id = ?
+        ORDER BY transacted_at DESC, id DESC
+        """,
+        (uid,),
+    ).fetchall()
+
+    stock_holdings_raw = compute_stock_holdings(stock_txs)
+    stock_symbols = [h["symbol"] for h in stock_holdings_raw]
+    force_stock_refresh = request.args.get("refresh_stock_prices") == "1"
+    stock_prices = fetch_finnhub_quotes(stock_symbols, force=force_stock_refresh) if stock_symbols else {}
+
+    stock_total_value = 0.0
+    stock_total_invested = 0.0
+    for h in stock_holdings_raw:
+        sym = h["symbol"]
+        price_info = stock_prices.get(sym)
+        if price_info:
+            h["current_price"] = price_info["price"]
+            h["change_24h"] = price_info.get("change_24h")
+            h["current_value"] = h["quantity"] * price_info["price"]
+            h["pnl"] = h["current_value"] - h["total_cost"]
+            h["pnl_pct"] = (h["pnl"] / h["total_cost"] * 100) if h["total_cost"] > 0 else 0
+            stock_total_value += h["current_value"]
+        else:
+            h["current_price"] = None
+            h["change_24h"] = None
+            h["current_value"] = None
+            h["pnl"] = None
+            h["pnl_pct"] = 0
+        stock_total_invested += h["total_cost"]
+
+    stock_total_pnl = stock_total_value - stock_total_invested
+    stock_total_pnl_pct = (stock_total_pnl / stock_total_invested * 100) if stock_total_invested > 0 else 0
+
+    stock_cache_age = time.time() - _stock_price_cache["fetched_at"]
+    if _stock_price_cache["fetched_at"] > 0 and stock_cache_age < PRICE_CACHE_TTL:
+        mins = int(stock_cache_age // 60)
+        secs = int(stock_cache_age % 60)
+        stock_prices_age = f"{mins}m {secs}s ago" if mins else f"{secs}s ago"
+    else:
+        stock_prices_age = ""
+
     jan1_this_year = f"{report_year:04d}-01-01"
     rows_before_jan = fetch_account_balances_through(conn, jan1_this_year, uid)
     prev_balance_total = sum(float(r["current_balance"]) for r in rows_before_jan)
@@ -2188,6 +2330,14 @@ def index():
         crypto_total_pnl=crypto_total_pnl,
         crypto_total_pnl_pct=crypto_total_pnl_pct,
         crypto_prices_age=crypto_prices_age,
+        stock_holdings=stock_holdings_raw,
+        stock_transactions=stock_txs,
+        stock_total_value=stock_total_value,
+        stock_total_invested=stock_total_invested,
+        stock_total_pnl=stock_total_pnl,
+        stock_total_pnl_pct=stock_total_pnl_pct,
+        stock_prices_age=stock_prices_age,
+        finnhub_configured=bool(FINNHUB_API_KEY),
     )
 
 
@@ -2344,6 +2494,154 @@ def delete_recurring(recurring_id):
     conn.close()
     flash("Recurring rule removed.", "success")
     return redirect_home(panel="recurring")
+
+
+def _stock_redirect():
+    return redirect_home(panel="investments", settings_section="stocks")
+
+
+@app.route("/stocks/search")
+def search_stocks():
+    query = (request.args.get("q") or "").strip()
+    if len(query) < 1:
+        return app.response_class(response=json.dumps([]), status=200, mimetype="application/json")
+    if not FINNHUB_API_KEY:
+        return app.response_class(response=json.dumps([]), status=200, mimetype="application/json")
+    data = _finnhub_request(f"/search?q={quote(query)}")
+    items = []
+    for row in (data.get("result") if data else []) or []:
+        sym = (row.get("symbol") or "").strip()
+        if not sym:
+            continue
+        desc = (row.get("description") or "").strip()
+        typ = (row.get("type") or "").strip()
+        items.append(
+            {
+                "symbol": sym,
+                "ticker": sym.split(".")[0].upper(),
+                "name": desc or sym,
+                "type": typ,
+            }
+        )
+        if len(items) >= 12:
+            break
+    return app.response_class(response=json.dumps(items), status=200, mimetype="application/json")
+
+
+@app.route("/stocks/add", methods=["POST"])
+def add_stock():
+    uid = g.user_id
+    symbol = request.form.get("symbol", "").strip().upper()
+    ticker = request.form.get("ticker", "").strip().upper()
+    instrument_name = request.form.get("instrument_name", "").strip()
+    tx_type = request.form.get("tx_type", "").strip().lower()
+    quantity_raw = request.form.get("quantity", "").strip()
+    price_raw = request.form.get("price_per_unit", "").strip()
+    fee_raw = request.form.get("fee", "0").strip()
+    broker = request.form.get("broker", "").strip()
+    transacted_at = normalize_txn_day_from_form(request.form.get("transacted_at", "").strip())
+    notes = request.form.get("notes", "").strip()
+
+    if not symbol or not ticker or not instrument_name:
+        flash("Fill in symbol, ticker, and name.", "error")
+        return _stock_redirect()
+
+    if tx_type not in ("buy", "sell"):
+        flash("Invalid transaction type.", "error")
+        return _stock_redirect()
+
+    try:
+        quantity = float(quantity_raw)
+        price = float(price_raw)
+        fee = abs(float(fee_raw)) if fee_raw else 0.0
+    except (TypeError, ValueError):
+        flash("Invalid quantity, price, or fee.", "error")
+        return _stock_redirect()
+
+    if quantity <= 0 or price < 0:
+        flash("Quantity must be positive and price non-negative.", "error")
+        return _stock_redirect()
+
+    conn = get_connection()
+    conn.execute(
+        """
+        INSERT INTO stock_transactions
+            (user_id, symbol, ticker, instrument_name, tx_type, quantity, price_per_unit, fee, broker, transacted_at, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (uid, symbol, ticker, instrument_name, tx_type, quantity, price, fee, broker, transacted_at, notes),
+    )
+    conn.commit()
+    conn.close()
+    flash(f"Stock {tx_type} recorded.", "success")
+    return _stock_redirect()
+
+
+@app.route("/stocks/<int:tx_id>/edit", methods=["POST"])
+def edit_stock(tx_id):
+    uid = g.user_id
+    symbol = request.form.get("symbol", "").strip().upper()
+    ticker = request.form.get("ticker", "").strip().upper()
+    instrument_name = request.form.get("instrument_name", "").strip()
+    tx_type = request.form.get("tx_type", "").strip().lower()
+    quantity_raw = request.form.get("quantity", "").strip()
+    price_raw = request.form.get("price_per_unit", "").strip()
+    fee_raw = request.form.get("fee", "0").strip()
+    broker = request.form.get("broker", "").strip()
+    transacted_at = normalize_txn_day_from_form(request.form.get("transacted_at", "").strip())
+    notes = request.form.get("notes", "").strip()
+
+    if not symbol or not ticker or not instrument_name:
+        flash("Fill in symbol, ticker, and name.", "error")
+        return _stock_redirect()
+
+    if tx_type not in ("buy", "sell"):
+        flash("Invalid transaction type.", "error")
+        return _stock_redirect()
+
+    try:
+        quantity = float(quantity_raw)
+        price = float(price_raw)
+        fee = abs(float(fee_raw)) if fee_raw else 0.0
+    except (TypeError, ValueError):
+        flash("Invalid quantity, price, or fee.", "error")
+        return _stock_redirect()
+
+    if quantity <= 0 or price < 0:
+        flash("Quantity must be positive and price non-negative.", "error")
+        return _stock_redirect()
+
+    conn = get_connection()
+    cur = conn.execute(
+        """
+        UPDATE stock_transactions
+        SET symbol = ?, ticker = ?, instrument_name = ?, tx_type = ?,
+            quantity = ?, price_per_unit = ?, fee = ?, broker = ?,
+            transacted_at = ?, notes = ?
+        WHERE id = ? AND user_id = ?
+        """,
+        (symbol, ticker, instrument_name, tx_type, quantity, price, fee, broker, transacted_at, notes, tx_id, uid),
+    )
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        flash("Transaction not found.", "error")
+    else:
+        flash("Transaction updated.", "success")
+    return _stock_redirect()
+
+
+@app.route("/stocks/<int:tx_id>/delete", methods=["POST"])
+def delete_stock(tx_id):
+    conn = get_connection()
+    conn.execute(
+        "DELETE FROM stock_transactions WHERE id = ? AND user_id = ?",
+        (tx_id, g.user_id),
+    )
+    conn.commit()
+    conn.close()
+    flash("Transaction removed.", "success")
+    return _stock_redirect()
 
 
 @app.route("/crypto/search")

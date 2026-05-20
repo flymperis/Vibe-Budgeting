@@ -20,5 +20,6 @@ Optional environment variables (set under `environment:` in `docker-compose.yml`
 | `FLASK_SECRET_KEY` | Strong random string for sessions in production. |
 | `ALLOW_REGISTRATION` | `true` or `false` — allow `/register`. |
 | `DATABASE_PATH` | Default `/app/data/database.db` (see `Dockerfile`). |
+| `FINNHUB_API_KEY` | Free key from [finnhub.io](https://finnhub.io) — live stock/ETF prices in **Investments → Stocks**. |
 
 Stack: Flask app served by Gunicorn in the container; SQLite database file on the mounted volume.
