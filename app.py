@@ -502,34 +502,80 @@ def portfolio_value_from_holdings(holdings, price_by_key: dict, price_key: str) 
     return total
 
 
+def month_end_price_date_iso(year: int, month_num: int, today_d) -> str:
+    """Calendar date used for month-end price (today for the in-progress current month)."""
+    if year == today_d.year and month_num == today_d.month:
+        return today_d.isoformat()
+    if month_num == 12:
+        next_month = datetime(year + 1, 1, 1)
+    else:
+        next_month = datetime(year, month_num + 1, 1)
+    return (next_month - timedelta(days=1)).date().isoformat()
+
+
+def _coingecko_history_date_param(iso_date: str) -> str:
+    y, m, d = iso_date.split("-")
+    return f"{int(d):02d}-{int(m):02d}-{y}"
+
+
+_coingecko_history_last_at = 0.0
+COINGECKO_HISTORY_MIN_INTERVAL = 0.35
+
+
+def _throttle_coingecko_history():
+    global _coingecko_history_last_at
+    elapsed = time.time() - _coingecko_history_last_at
+    if elapsed < COINGECKO_HISTORY_MIN_INTERVAL:
+        time.sleep(COINGECKO_HISTORY_MIN_INTERVAL - elapsed)
+    _coingecko_history_last_at = time.time()
+
+
 def portfolio_baseline_before_year(
-    transactions, year: int, compute_holdings_fn, price_by_key: dict, price_key: str
-) -> float:
-    jan1 = f"{year:04d}-01-01"
-    subset = [t for t in transactions if str(t["transacted_at"])[:10] < jan1]
-    return portfolio_value_from_holdings(
-        compute_holdings_fn(subset), price_by_key, price_key
-    )
-
-
-def monthly_portfolio_values_for_year(
+    conn,
     transactions,
     year: int,
     today_d,
     compute_holdings_fn,
-    price_by_key: dict,
-    *,
     price_key: str,
-) -> list[float]:
-    """Portfolio market value at each month-end (qty × price when known, else cost basis)."""
+    asset_kind: str,
+) -> float:
+    jan1 = f"{year:04d}-01-01"
+    subset = [t for t in transactions if str(t["transacted_at"])[:10] < jan1]
+    holdings = compute_holdings_fn(subset)
+    if not holdings:
+        return 0.0
+    return portfolio_value_from_holdings(
+        holdings,
+        prices_for_holdings_at_month_end(
+            conn, holdings, year - 1, 12, today_d, price_key, asset_kind
+        ),
+        price_key,
+    )
+
+
+def monthly_crypto_portfolio_values_for_year(conn, transactions, year: int, today_d) -> list[float]:
     balances = []
     for month_num in range(1, 13):
         snap_cutoff = month_snap_cutoff(year, month_num, today_d)
         subset = [t for t in transactions if str(t["transacted_at"])[:10] < snap_cutoff[:10]]
-        holdings = compute_holdings_fn(subset)
-        balances.append(
-            portfolio_value_from_holdings(holdings, price_by_key, price_key)
+        holdings = compute_crypto_holdings(subset)
+        price_map = prices_for_holdings_at_month_end(
+            conn, holdings, year, month_num, today_d, "coin_id", "crypto"
         )
+        balances.append(portfolio_value_from_holdings(holdings, price_map, "coin_id"))
+    return balances
+
+
+def monthly_stock_portfolio_values_for_year(conn, transactions, year: int, today_d) -> list[float]:
+    balances = []
+    for month_num in range(1, 13):
+        snap_cutoff = month_snap_cutoff(year, month_num, today_d)
+        subset = [t for t in transactions if str(t["transacted_at"])[:10] < snap_cutoff[:10]]
+        holdings = compute_stock_holdings(subset)
+        price_map = prices_for_holdings_at_month_end(
+            conn, holdings, year, month_num, today_d, "symbol", "stock"
+        )
+        balances.append(portfolio_value_from_holdings(holdings, price_map, "symbol"))
     return balances
 
 
@@ -766,6 +812,8 @@ def migrate_schema(conn):
     migrate_users_multitenancy(conn)
     migrate_crypto_transactions(conn)
     migrate_stock_transactions(conn)
+    migrate_crypto_month_prices(conn)
+    migrate_stock_month_prices(conn)
 
 
 def migrate_users_multitenancy(conn):
@@ -923,6 +971,177 @@ def fetch_coingecko_prices(coin_ids, force=False):
         return prices
     except (URLError, HTTPError, json.JSONDecodeError, OSError):
         return {cid: cached["prices"][cid] for cid in coin_ids if cid in cached["prices"]}
+
+
+def migrate_crypto_month_prices(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS crypto_month_prices (
+            coin_id TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            price_eur REAL NOT NULL,
+            price_date TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'coingecko',
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (coin_id, year, month)
+        )
+        """
+    )
+
+
+def migrate_stock_month_prices(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS stock_month_prices (
+            symbol TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            price_usd REAL NOT NULL,
+            price_date TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'yfinance',
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (symbol, year, month)
+        )
+        """
+    )
+
+
+def fetch_coingecko_history_eur(coin_id: str, price_date_iso: str) -> float | None:
+    """CoinGecko daily snapshot for a calendar date (dd-mm-yyyy query param)."""
+    date_param = _coingecko_history_date_param(price_date_iso)
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/history?date={date_param}"
+    _throttle_coingecko_history()
+    try:
+        req = Request(url, headers={"Accept": "application/json", "User-Agent": "VibeBudgeting/1.0"})
+        with urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+        market = data.get("market_data") or {}
+        current = market.get("current_price") or {}
+        eur = current.get("eur")
+        if eur is not None and float(eur) > 0:
+            return float(eur)
+    except (URLError, HTTPError, json.JSONDecodeError, OSError, ValueError, TypeError):
+        return None
+    return None
+
+
+def fetch_stock_month_close_usd(symbol: str, price_date_iso: str) -> float | None:
+    """Last available close in the month window up to price_date_iso, in USD."""
+    lookup = _quote_lookup_symbol(symbol)
+    try:
+        import yfinance as yf
+
+        end_d = datetime.strptime(price_date_iso, "%Y-%m-%d").date()
+        start_d = end_d.replace(day=1)
+        hist = yf.Ticker(lookup).history(
+            start=start_d.isoformat(),
+            end=(end_d + timedelta(days=1)).isoformat(),
+            auto_adjust=True,
+        )
+        if hist is None or hist.empty:
+            return None
+        close = float(hist["Close"].iloc[-1])
+        if close <= 0:
+            return None
+        return _listing_price_to_usd(lookup, close)
+    except Exception:
+        return None
+
+
+def _is_current_report_month(year: int, month_num: int, today_d) -> bool:
+    return year == today_d.year and month_num == today_d.month
+
+
+def ensure_crypto_month_price(conn, coin_id: str, year: int, month_num: int, today_d):
+    if _is_current_report_month(year, month_num, today_d):
+        live = fetch_coingecko_prices([coin_id], force=False)
+        return live.get(coin_id)
+
+    row = conn.execute(
+        """
+        SELECT price_eur FROM crypto_month_prices
+        WHERE coin_id = ? AND year = ? AND month = ?
+        """,
+        (coin_id, year, month_num),
+    ).fetchone()
+    if row:
+        return {"price": float(row["price_eur"]), "source": "cache"}
+
+    price_date = month_end_price_date_iso(year, month_num, today_d)
+    price = fetch_coingecko_history_eur(coin_id, price_date)
+    source = "coingecko"
+    if price is None:
+        live = fetch_coingecko_prices([coin_id], force=False)
+        pinfo = live.get(coin_id)
+        if pinfo:
+            price = float(pinfo["price"])
+            source = "coingecko_live_fallback"
+    if price is None:
+        return None
+
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO crypto_month_prices
+            (coin_id, year, month, price_eur, price_date, source)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (coin_id, year, month_num, price, price_date, source),
+    )
+    return {"price": price, "source": source}
+
+
+def ensure_stock_month_price(conn, symbol: str, year: int, month_num: int, today_d):
+    if _is_current_report_month(year, month_num, today_d):
+        live = fetch_finnhub_quotes([symbol], force=False)
+        return live.get(symbol)
+
+    row = conn.execute(
+        """
+        SELECT price_usd FROM stock_month_prices
+        WHERE symbol = ? AND year = ? AND month = ?
+        """,
+        (symbol, year, month_num),
+    ).fetchone()
+    if row:
+        return {"price": float(row["price_usd"]), "source": "cache"}
+
+    price_date = month_end_price_date_iso(year, month_num, today_d)
+    price = fetch_stock_month_close_usd(symbol, price_date)
+    source = "yfinance"
+    if price is None:
+        live = fetch_finnhub_quotes([symbol], force=False)
+        pinfo = live.get(symbol)
+        if pinfo:
+            price = float(pinfo["price"])
+            source = "finnhub_live_fallback"
+    if price is None:
+        return None
+
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO stock_month_prices
+            (symbol, year, month, price_usd, price_date, source)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (symbol, year, month_num, price, price_date, source),
+    )
+    return {"price": price, "source": source}
+
+
+def prices_for_holdings_at_month_end(
+    conn, holdings, year: int, month_num: int, today_d, price_key: str, asset_kind: str
+) -> dict:
+    price_map = {}
+    for h in holdings:
+        key = h[price_key]
+        if asset_kind == "crypto":
+            pinfo = ensure_crypto_month_price(conn, key, year, month_num, today_d)
+        else:
+            pinfo = ensure_stock_month_price(conn, key, year, month_num, today_d)
+        if pinfo:
+            price_map[key] = pinfo
+    return price_map
 
 
 def compute_crypto_holdings(transactions):
@@ -2478,46 +2697,29 @@ def index():
     report_chart_spec = balance_line_chart_spec(report_balance_rows)
     reports_expenses_table = expense_pivot_for_report_year(conn, report_year, uid)
 
-    all_crypto_coin_ids = list({t["coin_id"] for t in crypto_txs})
-    report_crypto_prices = (
-        fetch_coingecko_prices(all_crypto_coin_ids, force=False) if all_crypto_coin_ids else {}
-    )
     crypto_baseline = portfolio_baseline_before_year(
-        crypto_txs, report_year, compute_crypto_holdings, report_crypto_prices, "coin_id"
+        conn, crypto_txs, report_year, today_d, compute_crypto_holdings, "coin_id", "crypto"
     )
-    crypto_monthly = monthly_portfolio_values_for_year(
-        crypto_txs,
-        report_year,
-        today_d,
-        compute_crypto_holdings,
-        report_crypto_prices,
-        price_key="coin_id",
+    crypto_monthly = monthly_crypto_portfolio_values_for_year(
+        conn, crypto_txs, report_year, today_d
     )
     crypto_chart_rows = build_monthly_chart_rows(
         crypto_monthly, report_year, baseline=crypto_baseline
     )
     crypto_chart_spec = balance_line_chart_spec(crypto_chart_rows)
 
-    all_stock_symbols = list({t["symbol"] for t in stock_txs})
-    report_stock_prices = (
-        fetch_finnhub_quotes(all_stock_symbols, force=False) if all_stock_symbols else {}
-    )
     stock_baseline = portfolio_baseline_before_year(
-        stock_txs, report_year, compute_stock_holdings, report_stock_prices, "symbol"
+        conn, stock_txs, report_year, today_d, compute_stock_holdings, "symbol", "stock"
     )
-    stock_monthly = monthly_portfolio_values_for_year(
-        stock_txs,
-        report_year,
-        today_d,
-        compute_stock_holdings,
-        report_stock_prices,
-        price_key="symbol",
+    stock_monthly = monthly_stock_portfolio_values_for_year(
+        conn, stock_txs, report_year, today_d
     )
     stock_chart_rows = build_monthly_chart_rows(
         stock_monthly, report_year, baseline=stock_baseline
     )
     stock_chart_spec = balance_line_chart_spec(stock_chart_rows)
 
+    conn.commit()
     conn.close()
 
     return render_template(

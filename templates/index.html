@@ -941,8 +941,9 @@
                         <div class="reports-section {% if reports_section == 'crypto' %}active{% endif %}" id="reports-crypto">
                             <h2>Crypto portfolio</h2>
                             <p class="muted small-hint">
-                                Estimated portfolio value (EUR) at each month-end from your transactions.
-                                Uses current market prices for quantity held (not historical prices). Hover a point for value and Δ.
+                                Portfolio value (EUR) at each month-end: holdings from your transactions ×
+                                <strong>month-end price</strong> (stored after first load; CoinGecko history for past months).
+                                The current month uses today’s price. Hover a point for value and Δ.
                             </p>
                             <form action="/" class="year-picker reports-year-picker" method="get">
                                 <input name="panel" type="hidden" value="reports">
@@ -966,8 +967,9 @@
                         <div class="reports-section {% if reports_section == 'stocks' %}active{% endif %}" id="reports-stocks">
                             <h2>Stocks portfolio</h2>
                             <p class="muted small-hint">
-                                Estimated portfolio value (USD) at each month-end from your transactions.
-                                Uses current market prices for shares held (not historical prices). Hover a point for value and Δ.
+                                Portfolio value (USD) at each month-end: shares from your transactions ×
+                                <strong>month-end close</strong> (stored after first load; Yahoo/yfinance for past months).
+                                The current month uses the latest quote. Hover a point for value and Δ.
                             </p>
                             <form action="/" class="year-picker reports-year-picker" method="get">
                                 <input name="panel" type="hidden" value="reports">
