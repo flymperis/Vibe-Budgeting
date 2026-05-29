@@ -26,31 +26,29 @@ Stack: Flask app served by Gunicorn in the container; SQLite database file on th
 
 ## Integrations (Ollama + Telegram)
 
-Per-user **Ollama** settings and **Telegram bot** settings are in **Settings → Integrations** (saved in the database).
+Per-user **Ollama** settings and **Telegram bot token** are in **Settings → Integrations** (saved in the database).
 
-Optional env vars (`TELEGRAM_BOT_TOKEN`, etc.) still work as a fallback if the DB fields are empty.
+Optional env var `TELEGRAM_BOT_TOKEN` works as a fallback if the DB field is empty.
 
 ### Ollama
 
-Run Ollama on your home server (default port **11434**). Set Base URL and model in **Integrations → Local AI**, then **Test connection**.
+Run Ollama on your home server (default port **11434**). In Docker with `network_mode: service:tailscale-personal`, use:
 
-### Telegram bot
+```
+http://127.0.0.1:11434
+```
+
+Set Base URL and model in **Integrations → Local AI**, then **Test connection**.
+
+### Telegram bot (polling — Tailscale-only)
+
+No public URL or Tailscale Funnel needed. The app **polls** Telegram outbound (`getUpdates`) — nothing is exposed to the internet.
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) → copy the token.
-2. Expose the app on **HTTPS** (Telegram requires it), e.g. [Tailscale Funnel](https://tailscale.com/kb/1223/tailscale-funnel/):
+2. **Settings → Integrations → Telegram bot** → paste token → **Test bot token** → **Save**.
+3. **Generate link code** → in Telegram: `/link YOURCODE` → send `supermarket 20`.
 
-   ```bash
-   tailscale funnel 5000
-   ```
-
-3. In the app: **Settings → Integrations → Telegram bot**
-   - **Bot token** — from BotFather
-   - **Webhook secret** — any random string (or leave blank to auto-generate)
-   - **Public HTTPS base URL** — e.g. `https://your-machine.tailXXXX.ts.net` (no path)
-
-4. Click **Save Telegram settings** — the app registers the webhook automatically and shows the full webhook URL.
-
-5. **Generate link code** → in Telegram: `/link YOURCODE` → send `supermarket 20`
+The budget app stays on Tailscale only (`http://personal-disk-share:5000`). Telegram works via outbound HTTPS to `api.telegram.org`.
 
 ### Telegram usage
 

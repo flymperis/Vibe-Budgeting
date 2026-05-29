@@ -1670,8 +1670,8 @@
 
                                 <h3>Telegram bot</h3>
                                 <p class="muted small-hint">
-                                    Server-wide settings (one bot for this app). Saved in the database — no docker-compose edits needed.
-                                    Use your public HTTPS URL (for example Tailscale Funnel). The webhook path is added automatically.
+                                    Private polling mode — works with Tailscale only, nothing exposed to the public internet.
+                                    The app checks Telegram for new messages every few seconds (outbound connection only).
                                 </p>
                                 <form action="{{ url_for('save_telegram_server') }}" class="integrations-form" method="post">
                                     <input name="month" type="hidden" value="{{ month_filter }}">
@@ -1688,38 +1688,9 @@
                                     >
                                     <p class="muted small-hint">From @BotFather. Never shared in the UI after save.</p>
 
-                                    <label class="field-label" for="telegram-webhook-secret">Webhook secret</label>
-                                    <input
-                                        id="telegram-webhook-secret"
-                                        name="webhook_secret"
-                                        placeholder="Leave blank to keep or auto-generate"
-                                        type="text"
-                                        value="{{ telegram_server.webhook_secret }}"
-                                        autocomplete="off"
-                                    >
-                                    <p class="muted small-hint">Random string. Used in the webhook URL path.</p>
-
-                                    <label class="field-label" for="telegram-public-base-url">Public HTTPS base URL</label>
-                                    <input
-                                        id="telegram-public-base-url"
-                                        name="public_base_url"
-                                        placeholder="https://personal-disk-share.tailXXXX.ts.net"
-                                        type="url"
-                                        value="{{ telegram_server.public_base_url }}"
-                                    >
-
-                                    {% if telegram_server.webhook_url %}
-                                        <p class="muted small-hint">
-                                            Webhook URL: <code>{{ telegram_server.webhook_url }}</code>
-                                        </p>
-                                    {% endif %}
-
                                     <div class="integrations-actions">
                                         <button type="submit">Save Telegram settings</button>
                                         <button class="btn-secondary" formaction="{{ url_for('test_telegram_server') }}" formmethod="post" type="submit">Test bot token</button>
-                                        {% if telegram_enabled %}
-                                            <button class="btn-secondary" formaction="{{ url_for('register_telegram_webhook') }}" formmethod="post" type="submit">Register webhook</button>
-                                        {% endif %}
                                     </div>
                                 </form>
 

@@ -5,6 +5,7 @@ import os
 import sys
 import re
 import sqlite3
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -79,7 +80,7 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
 
 @app.before_request
 def _require_login():
-    if request.endpoint in ("login", "register", "static", "telegram_webhook", None):
+    if request.endpoint in ("login", "register", "static", None):
         return None
     uid = session.get("user_id")
     if not uid:
@@ -3663,24 +3664,6 @@ def test_integrations():
     return redirect_home(panel="settings", settings_section="integrations")
 
 
-@app.route("/telegram/webhook/<secret>", methods=["POST"])
-def telegram_webhook(secret):
-    conn = get_connection()
-    config = telegram_bot.get_server_config(conn)
-    if not telegram_bot.is_configured(config) or secret != config["webhook_secret"]:
-        conn.close()
-        return ("", 404)
-    update = request.get_json(silent=True)
-    if not isinstance(update, dict):
-        conn.close()
-        return ("", 400)
-    try:
-        telegram_bot.handle_update(update, conn, fetch_account_balances_through, config)
-    finally:
-        conn.close()
-    return ("", 200)
-
-
 @app.route("/settings/telegram/server", methods=["POST"])
 def save_telegram_server():
     conn = get_connection()
@@ -3692,9 +3675,9 @@ def save_telegram_server():
         flash(str(exc), "error")
         return redirect_home(panel="settings", settings_section="integrations")
     telegram_bot.save_server_config(conn, settings)
-    ok, message = telegram_bot.register_webhook(settings)
+    ok, message = telegram_bot.clear_webhook(settings)
     conn.close()
-    flash("Telegram settings saved.", "success")
+    flash("Telegram settings saved. Polling mode — no public URL needed.", "success")
     flash(message, "success" if ok else "error")
     return redirect_home(panel="settings", settings_section="integrations")
 
@@ -3710,20 +3693,6 @@ def test_telegram_server():
         flash(str(exc), "error")
         return redirect_home(panel="settings", settings_section="integrations")
     ok, message = telegram_bot.test_telegram_connection(settings)
-    conn.close()
-    flash(message, "success" if ok else "error")
-    return redirect_home(panel="settings", settings_section="integrations")
-
-
-@app.route("/settings/telegram/register-webhook", methods=["POST"])
-def register_telegram_webhook():
-    conn = get_connection()
-    config = telegram_bot.get_server_config(conn)
-    if not telegram_bot.is_configured(config):
-        conn.close()
-        flash("Save bot token, webhook secret, and public URL first.", "error")
-        return redirect_home(panel="settings", settings_section="integrations")
-    ok, message = telegram_bot.register_webhook(config)
     conn.close()
     flash(message, "success" if ok else "error")
     return redirect_home(panel="settings", settings_section="integrations")
@@ -3766,18 +3735,31 @@ def telegram_default_account():
     return redirect_home(panel="settings", settings_section="integrations")
 
 
+def arm_telegram_poller() -> None:
+    global _telegram_poller_armed
+    if _telegram_poller_armed:
+        return
+    with _telegram_poller_guard:
+        if _telegram_poller_armed:
+            return
+        telegram_bot.start_poller(get_connection, fetch_account_balances_through, _poll_lock_path)
+        _telegram_poller_armed = True
+
+
 _prepare_sqlite_storage()
 init_db()
 
+_poll_lock_path = os.path.join(os.path.dirname(DB_PATH) or ".", "telegram_poll.lock")
+_telegram_poller_armed = False
+_telegram_poller_guard = threading.Lock()
+
 _conn_boot = get_connection()
 _boot_cfg = telegram_bot.get_server_config(_conn_boot)
-_conn_boot.close()
 if telegram_bot.is_configured(_boot_cfg):
-    ok, msg = telegram_bot.register_webhook(_boot_cfg)
-    if ok:
-        print(f"Telegram webhook: {msg}", file=sys.stderr)
-    else:
-        print(f"Telegram webhook failed: {msg}", file=sys.stderr)
+    ok, msg = telegram_bot.clear_webhook(_boot_cfg)
+    print(f"Telegram: {msg}", file=sys.stderr)
+_conn_boot.close()
 
 if __name__ == "__main__":
+    arm_telegram_poller()
     app.run(host="0.0.0.0", port=5000)

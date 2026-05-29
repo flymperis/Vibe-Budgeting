@@ -8,18 +8,26 @@ import re
 import secrets
 import sqlite3
 import string
+import threading
+import time
 from datetime import datetime, timedelta
+from typing import Callable
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import integrations
 
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
-TELEGRAM_WEBHOOK_URL = os.environ.get("TELEGRAM_WEBHOOK_URL", "").strip()
-TELEGRAM_PUBLIC_BASE_URL = os.environ.get("TELEGRAM_PUBLIC_BASE_URL", "").strip()
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
-_BASE_URL_RE = re.compile(r"^https://", re.I)
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+
+POLL_IDLE_SLEEP = 10
+POLL_ERROR_SLEEP = 5
+POLL_LONG_TIMEOUT = 30
 
 
 def migrate_telegram(conn: sqlite3.Connection) -> None:
@@ -77,16 +85,8 @@ AMOUNT_TEXT_RE = re.compile(
 
 def _env_server_config() -> dict:
     bot_token = TELEGRAM_BOT_TOKEN
-    webhook_secret = TELEGRAM_WEBHOOK_SECRET
-    public_base_url = TELEGRAM_PUBLIC_BASE_URL
-    if not public_base_url and TELEGRAM_WEBHOOK_URL and webhook_secret:
-        marker = f"/telegram/webhook/{webhook_secret}"
-        if TELEGRAM_WEBHOOK_URL.endswith(marker):
-            public_base_url = TELEGRAM_WEBHOOK_URL[: -len(marker)]
     return {
         "bot_token": bot_token,
-        "webhook_secret": webhook_secret,
-        "public_base_url": public_base_url.rstrip("/"),
         "has_bot_token": bool(bot_token),
     }
 
@@ -94,22 +94,14 @@ def _env_server_config() -> dict:
 def default_server_config() -> dict:
     return {
         "bot_token": "",
-        "webhook_secret": "",
-        "public_base_url": "",
         "has_bot_token": False,
     }
-
-
-def build_webhook_url(public_base_url: str, webhook_secret: str) -> str:
-    base = public_base_url.strip().rstrip("/")
-    secret = webhook_secret.strip()
-    return f"{base}/telegram/webhook/{secret}"
 
 
 def get_server_config(conn: sqlite3.Connection) -> dict:
     row = conn.execute(
         """
-        SELECT bot_token, webhook_secret, public_base_url
+        SELECT bot_token
         FROM telegram_server_config
         WHERE id = 1
         """
@@ -118,67 +110,31 @@ def get_server_config(conn: sqlite3.Connection) -> dict:
     if not row:
         return env_cfg
     bot_token = (row["bot_token"] or "").strip() or env_cfg["bot_token"]
-    webhook_secret = (row["webhook_secret"] or "").strip() or env_cfg["webhook_secret"]
-    public_base_url = (row["public_base_url"] or "").strip() or env_cfg["public_base_url"]
     return {
         "bot_token": bot_token,
-        "webhook_secret": webhook_secret,
-        "public_base_url": public_base_url.rstrip("/"),
         "has_bot_token": bool(bot_token),
     }
 
 
 def is_configured(config: dict) -> bool:
-    return bool(
-        config.get("bot_token")
-        and config.get("webhook_secret")
-        and config.get("public_base_url")
-    )
+    return bool(config.get("bot_token"))
 
 
 def server_config_for_form(conn: sqlite3.Connection) -> dict:
     cfg = get_server_config(conn)
     return {
         "bot_token_set": cfg["has_bot_token"],
-        "webhook_secret": cfg["webhook_secret"],
-        "public_base_url": cfg["public_base_url"],
-        "webhook_url": build_webhook_url(cfg["public_base_url"], cfg["webhook_secret"])
-        if cfg["public_base_url"] and cfg["webhook_secret"]
-        else "",
     }
-
-
-def _normalize_public_base_url(raw: str) -> str:
-    url = raw.strip().rstrip("/")
-    if not url:
-        return ""
-    if not _BASE_URL_RE.match(url):
-        raise ValueError("Public base URL must start with https://")
-    return url
 
 
 def parse_server_config_form(form, existing: dict) -> dict:
     bot_token = (form.get("bot_token") or "").strip()
     if not bot_token:
         bot_token = existing.get("bot_token") or ""
-
-    webhook_secret = (form.get("webhook_secret") or "").strip()
-    if not webhook_secret:
-        webhook_secret = existing.get("webhook_secret") or ""
-    if not webhook_secret:
-        webhook_secret = secrets.token_urlsafe(24)
-
-    public_base_url = _normalize_public_base_url(form.get("public_base_url", ""))
-
     if not bot_token:
         raise ValueError("Bot token is required")
-    if not public_base_url:
-        raise ValueError("Public HTTPS base URL is required")
-
     return {
         "bot_token": bot_token,
-        "webhook_secret": webhook_secret,
-        "public_base_url": public_base_url,
         "has_bot_token": True,
     }
 
@@ -187,16 +143,28 @@ def save_server_config(conn: sqlite3.Connection, settings: dict) -> None:
     conn.execute(
         """
         UPDATE telegram_server_config
-        SET bot_token = ?, webhook_secret = ?, public_base_url = ?, updated_at = CURRENT_TIMESTAMP
+        SET bot_token = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = 1
         """,
-        (
-            settings["bot_token"],
-            settings["webhook_secret"],
-            settings["public_base_url"],
-        ),
+        (settings["bot_token"],),
     )
     conn.commit()
+
+
+def clear_webhook(config: dict) -> tuple[bool, str]:
+    """Drop any webhook so Telegram accepts getUpdates (polling)."""
+    if not config.get("bot_token"):
+        return False, "Bot token is missing"
+    data, err = _telegram_api(
+        "deleteWebhook",
+        {"drop_pending_updates": False},
+        config["bot_token"],
+    )
+    if err:
+        return False, err
+    if data and data.get("ok"):
+        return True, "Webhook cleared — polling mode active"
+    return False, data.get("description", "deleteWebhook failed") if data else "deleteWebhook failed"
 
 
 def get_bot_username(config: dict) -> str | None:
@@ -565,6 +533,32 @@ def format_balances(conn: sqlite3.Connection, user_id: int, balance_fn) -> str:
     return "\n".join(lines)
 
 
+def _telegram_api_get(
+    method: str, bot_token: str, params: dict | None = None
+) -> tuple[dict | None, str | None]:
+    if not bot_token:
+        return None, "Bot token is missing. Paste the token from @BotFather and save again."
+    query = urlencode(params or {})
+    url = f"https://api.telegram.org/bot{bot_token}/{method}"
+    if query:
+        url = f"{url}?{query}"
+    req = Request(url, method="GET", headers={"Accept": "application/json"})
+    try:
+        with urlopen(req, timeout=POLL_LONG_TIMEOUT + 10) as resp:
+            return json.loads(resp.read().decode()), None
+    except HTTPError as exc:
+        try:
+            detail = json.loads(exc.read().decode())
+            desc = detail.get("description") or str(exc)
+        except (json.JSONDecodeError, OSError):
+            desc = str(exc)
+        return None, f"Telegram API HTTP {exc.code}: {desc}"
+    except URLError as exc:
+        return None, f"Could not reach Telegram API: {exc.reason}"
+    except (json.JSONDecodeError, OSError, TimeoutError) as exc:
+        return None, f"Could not reach Telegram API: {exc}"
+
+
 def _telegram_api(method: str, payload: dict, bot_token: str) -> tuple[dict | None, str | None]:
     if not bot_token:
         return None, "Bot token is missing. Paste the token from @BotFather and save again."
@@ -607,22 +601,86 @@ def test_telegram_connection(config: dict) -> tuple[bool, str]:
     return True, f"Connected to @{username}"
 
 
-def register_webhook(config: dict) -> tuple[bool, str]:
-    if not is_configured(config):
-        return False, "Telegram bot is not fully configured"
-    url = build_webhook_url(config["public_base_url"], config["webhook_secret"])
-    data, err = _telegram_api(
-        "setWebhook",
-        {"url": url, "drop_pending_updates": True},
+def fetch_updates(config: dict, offset: int) -> tuple[list[dict], str | None]:
+    data, err = _telegram_api_get(
+        "getUpdates",
         config["bot_token"],
+        {"offset": offset, "timeout": POLL_LONG_TIMEOUT},
     )
     if err:
-        return False, err
-    if not data:
-        return False, "Could not reach Telegram API"
-    if data.get("ok"):
-        return True, f"Webhook registered: {url}"
-    return False, data.get("description", "setWebhook failed")
+        return [], err
+    if not data or not data.get("ok"):
+        desc = data.get("description", "getUpdates failed") if data else "getUpdates failed"
+        return [], desc
+    return data.get("result") or [], None
+
+
+def _poll_loop(get_connection: Callable, balance_fn: Callable, lock_path: str) -> None:
+    lock_fd = None
+    if fcntl is not None:
+        os.makedirs(os.path.dirname(lock_path) or ".", exist_ok=True)
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(lock_fd)
+            print("[telegram] Poller skipped — another worker is already polling.", flush=True)
+            return
+    else:
+        try:
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(lock_fd, str(os.getpid()).encode())
+        except FileExistsError:
+            print("[telegram] Poller skipped — lock file exists.", flush=True)
+            return
+
+    print("[telegram] Polling started (Tailscale-safe, no public URL).", flush=True)
+    offset = 0
+    try:
+        while True:
+            conn = get_connection()
+            try:
+                config = get_server_config(conn)
+            finally:
+                conn.close()
+
+            if not is_configured(config):
+                time.sleep(POLL_IDLE_SLEEP)
+                continue
+
+            updates, err = fetch_updates(config, offset)
+            if err:
+                print(f"[telegram] Poll error: {err}", flush=True)
+                time.sleep(POLL_ERROR_SLEEP)
+                continue
+
+            for update in updates:
+                update_id = int(update.get("update_id", 0))
+                conn = get_connection()
+                try:
+                    handle_update(update, conn, balance_fn, config)
+                finally:
+                    conn.close()
+                if update_id >= offset:
+                    offset = update_id + 1
+    finally:
+        if lock_fd is not None:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
+            except OSError:
+                pass
+
+
+def start_poller(get_connection: Callable, balance_fn: Callable, lock_path: str) -> None:
+    thread = threading.Thread(
+        target=_poll_loop,
+        args=(get_connection, balance_fn, lock_path),
+        name="telegram-poller",
+        daemon=True,
+    )
+    thread.start()
 
 
 def _link_account(conn: sqlite3.Connection, code: str, chat_id: str, username: str) -> str:
