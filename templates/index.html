@@ -1608,6 +1608,173 @@
                                 </div>
                             </div>
 
+                            <div class="settings-section {% if settings_section == 'integrations' %}active{% endif %}" id="settings-integrations">
+                                <h2>Integrations</h2>
+
+                                <h3>Local AI (Ollama)</h3>
+                                <p class="muted small-hint">
+                                    Your Ollama settings are used by the Telegram bot for free-form messages
+                                    (for example «χθες καφές 3.50»). Simple messages like «supermarket 20» work without AI.
+                                </p>
+                                <form action="{{ url_for('save_integrations') }}" class="integrations-form" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <input name="next_panel" type="hidden" value="settings">
+                                    <input name="settings_section" type="hidden" value="integrations">
+
+                                    <label class="checkbox-row">
+                                        <input name="ai_enabled" type="checkbox" value="1" {% if user_integrations.ai_enabled %}checked{% endif %}>
+                                        <span>Enable AI connection</span>
+                                    </label>
+
+                                    <label class="field-label" for="ai-provider">Provider</label>
+                                    <select id="ai-provider" name="ai_provider">
+                                        <option value="ollama" {% if user_integrations.ai_provider == 'ollama' %}selected{% endif %}>Ollama</option>
+                                    </select>
+
+                                    <label class="field-label" for="ai-base-url">Base URL</label>
+                                    <input
+                                        id="ai-base-url"
+                                        name="ai_base_url"
+                                        placeholder="http://100.x.x.x:11434"
+                                        type="url"
+                                        value="{{ user_integrations.ai_base_url }}"
+                                    >
+                                    <p class="muted small-hint">Use your Tailscale IP or local network address where Ollama listens.</p>
+
+                                    <label class="field-label" for="ai-model">Model</label>
+                                    <input
+                                        id="ai-model"
+                                        name="ai_model"
+                                        placeholder="llama3.2"
+                                        type="text"
+                                        value="{{ user_integrations.ai_model }}"
+                                    >
+
+                                    <label class="field-label" for="ai-timeout">Timeout (seconds)</label>
+                                    <input
+                                        id="ai-timeout"
+                                        min="5"
+                                        max="120"
+                                        name="ai_timeout"
+                                        required
+                                        step="1"
+                                        type="number"
+                                        value="{{ user_integrations.ai_timeout }}"
+                                    >
+
+                                    <div class="integrations-actions">
+                                        <button type="submit">Save</button>
+                                        <button class="btn-secondary" formaction="{{ url_for('test_integrations') }}" formmethod="post" type="submit">Test connection</button>
+                                    </div>
+                                </form>
+
+                                <h3>Telegram bot</h3>
+                                <p class="muted small-hint">
+                                    Server-wide settings (one bot for this app). Saved in the database — no docker-compose edits needed.
+                                    Use your public HTTPS URL (for example Tailscale Funnel). The webhook path is added automatically.
+                                </p>
+                                <form action="{{ url_for('save_telegram_server') }}" class="integrations-form" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <input name="next_panel" type="hidden" value="settings">
+                                    <input name="settings_section" type="hidden" value="integrations">
+
+                                    <label class="field-label" for="telegram-bot-token">Bot token</label>
+                                    <input
+                                        id="telegram-bot-token"
+                                        name="bot_token"
+                                        placeholder="{% if telegram_server.bot_token_set %}Saved — leave blank to keep{% else %}123456789:ABC...{% endif %}"
+                                        type="password"
+                                        autocomplete="off"
+                                    >
+                                    <p class="muted small-hint">From @BotFather. Never shared in the UI after save.</p>
+
+                                    <label class="field-label" for="telegram-webhook-secret">Webhook secret</label>
+                                    <input
+                                        id="telegram-webhook-secret"
+                                        name="webhook_secret"
+                                        placeholder="Leave blank to keep or auto-generate"
+                                        type="text"
+                                        value="{{ telegram_server.webhook_secret }}"
+                                        autocomplete="off"
+                                    >
+                                    <p class="muted small-hint">Random string. Used in the webhook URL path.</p>
+
+                                    <label class="field-label" for="telegram-public-base-url">Public HTTPS base URL</label>
+                                    <input
+                                        id="telegram-public-base-url"
+                                        name="public_base_url"
+                                        placeholder="https://personal-disk-share.tailXXXX.ts.net"
+                                        type="url"
+                                        value="{{ telegram_server.public_base_url }}"
+                                    >
+
+                                    {% if telegram_server.webhook_url %}
+                                        <p class="muted small-hint">
+                                            Webhook URL: <code>{{ telegram_server.webhook_url }}</code>
+                                        </p>
+                                    {% endif %}
+
+                                    <div class="integrations-actions">
+                                        <button type="submit">Save Telegram settings</button>
+                                        {% if telegram_enabled %}
+                                            <button class="btn-secondary" formaction="{{ url_for('register_telegram_webhook') }}" formmethod="post" type="submit">Register webhook</button>
+                                        {% endif %}
+                                    </div>
+                                </form>
+
+                                {% if telegram_enabled %}
+                                    {% if telegram_bot_username %}
+                                        <p class="muted small-hint">Bot: <a href="https://t.me/{{ telegram_bot_username }}" rel="noopener noreferrer" target="_blank">@{{ telegram_bot_username }}</a></p>
+                                    {% endif %}
+
+                                    {% if telegram_link %}
+                                        <p class="muted small-hint">
+                                            Status: <strong>Linked</strong>
+                                            {% if telegram_link.telegram_username %}(@{{ telegram_link.telegram_username }}){% endif %}
+                                            since {{ telegram_link.linked_at[:10] if telegram_link.linked_at else '—' }}
+                                        </p>
+                                        <form action="{{ url_for('telegram_default_account') }}" class="integrations-form" method="post">
+                                            <input name="month" type="hidden" value="{{ month_filter }}">
+                                            <input name="next_panel" type="hidden" value="settings">
+                                            <input name="settings_section" type="hidden" value="integrations">
+                                            <label class="field-label" for="telegram-default-account">Default account for new entries</label>
+                                            <select id="telegram-default-account" name="default_account_id">
+                                                <option value="">First account (auto)</option>
+                                                {% for account in accounts %}
+                                                    <option value="{{ account.id }}" {% if telegram_link.default_account_id == account.id %}selected{% endif %}>{{ account.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <div class="integrations-actions">
+                                                <button type="submit">Save default account</button>
+                                            </div>
+                                        </form>
+                                        <form action="{{ url_for('telegram_unlink') }}" method="post">
+                                            <input name="month" type="hidden" value="{{ month_filter }}">
+                                            <input name="next_panel" type="hidden" value="settings">
+                                            <input name="settings_section" type="hidden" value="integrations">
+                                            <button class="btn-danger" type="submit">Unlink Telegram</button>
+                                        </form>
+                                    {% else %}
+                                        <p class="muted small-hint">Your account: <strong>Not linked</strong></p>
+                                        {% if telegram_link_code %}
+                                            <p class="muted small-hint">
+                                                Active code: <strong>{{ telegram_link_code.code }}</strong>
+                                                (expires {{ telegram_link_code.expires_at[:16].replace('T', ' ') }})
+                                                — send <code>/link {{ telegram_link_code.code }}</code> to the bot.
+                                            </p>
+                                        {% endif %}
+                                        <form action="{{ url_for('telegram_generate_code') }}" method="post">
+                                            <input name="month" type="hidden" value="{{ month_filter }}">
+                                            <input name="next_panel" type="hidden" value="settings">
+                                            <input name="settings_section" type="hidden" value="integrations">
+                                            <button type="submit">Generate link code</button>
+                                        </form>
+                                    {% endif %}
+                                {% else %}
+                                    <p class="muted small-hint">Save bot token and public URL above to enable linking and messages.</p>
+                                {% endif %}
+                            </div>
+
                             <div class="settings-section {% if settings_section == 'export' %}active{% endif %}" id="settings-export">
                                 <h2>Export</h2>
                                 <p class="muted small-hint">
@@ -1735,6 +1902,7 @@
                         <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'banks' %}active{% endif %}" data-target="panel-settings" data-section="settings-banks" data-section-key="banks" data-section-param="settings_section" type="button">Banks</button>
                         <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'expenses' %}active{% endif %}" data-target="panel-settings" data-section="settings-expenses" data-section-key="expenses" data-section-param="settings_section" type="button">Expenses</button>
                         <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'income' %}active{% endif %}" data-target="panel-settings" data-section="settings-income" data-section-key="income" data-section-param="settings_section" type="button">Income</button>
+                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'integrations' %}active{% endif %}" data-target="panel-settings" data-section="settings-integrations" data-section-key="integrations" data-section-param="settings_section" type="button">Integrations</button>
                         <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'export' %}active{% endif %}" data-target="panel-settings" data-section="settings-export" data-section-key="export" data-section-param="settings_section" type="button">Export</button>
                         <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'migration' %}active{% endif %}" data-target="panel-settings" data-section="settings-migration" data-section-key="migration" data-section-param="settings_section" type="button">Migration</button>
                     </div>
@@ -1768,6 +1936,7 @@
                 "settings-banks": "banks",
                 "settings-expenses": "expenses",
                 "settings-income": "income",
+                "settings-integrations": "integrations",
                 "settings-export": "export",
                 "settings-migration": "migration"
             };

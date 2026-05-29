@@ -15,6 +15,9 @@ from urllib.error import URLError, HTTPError
 from openpyxl import Workbook, load_workbook
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import integrations
+import telegram_bot
+
 def _sqlite_db_path():
     raw = os.environ.get("DATABASE_PATH") or os.environ.get("VB_DATABASE_PATH") or "database.db"
     return os.path.abspath(raw)
@@ -65,7 +68,7 @@ ALLOWED_PANELS = {
     "investments",
     "settings",
 }
-SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration"}
+SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration", "integrations"}
 INVESTMENTS_SECTIONS = {"crypto", "stocks"}
 REPORTS_SECTIONS = {"bank", "crypto", "stocks"}
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "").strip()
@@ -76,7 +79,7 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
 
 @app.before_request
 def _require_login():
-    if request.endpoint in ("login", "register", "static", None):
+    if request.endpoint in ("login", "register", "static", "telegram_webhook", None):
         return None
     uid = session.get("user_id")
     if not uid:
@@ -827,6 +830,8 @@ def migrate_schema(conn):
     migrate_stock_transactions(conn)
     migrate_crypto_month_prices(conn)
     migrate_stock_month_prices(conn)
+    integrations.migrate_user_integrations(conn)
+    telegram_bot.migrate_telegram(conn)
 
 
 def migrate_users_multitenancy(conn):
@@ -2736,12 +2741,28 @@ def index():
     )
     stock_chart_spec = balance_line_chart_spec(stock_chart_rows)
 
+    user_integrations = integrations.get_user_integrations(conn, uid)
+    telegram_server = telegram_bot.server_config_for_form(conn)
+    telegram_link = telegram_bot.get_telegram_link(conn, uid)
+    telegram_link_code = telegram_bot.get_active_link_code(conn, uid)
+    telegram_cfg = telegram_bot.get_server_config(conn)
+    telegram_enabled = telegram_bot.is_configured(telegram_cfg)
+    telegram_bot_username = None
+    if telegram_enabled and settings_section == "integrations":
+        telegram_bot_username = telegram_bot.get_bot_username(telegram_cfg)
+
     conn.commit()
     conn.close()
 
     return render_template(
         "index.html",
         session_username=g.username,
+        user_integrations=user_integrations,
+        telegram_server=telegram_server,
+        telegram_link=telegram_link,
+        telegram_link_code=telegram_link_code,
+        telegram_enabled=telegram_enabled,
+        telegram_bot_username=telegram_bot_username,
         categories=categories,
         income_categories=income_categories,
         expenses=expenses,
@@ -3612,8 +3633,135 @@ def delete_transfer(transfer_id):
     return redirect_home()
 
 
+def _integrations_from_request():
+    try:
+        return integrations.parse_integration_form(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return None
+
+
+@app.route("/settings/integrations/save", methods=["POST"])
+def save_integrations():
+    settings = _integrations_from_request()
+    if settings is None:
+        return redirect_home(panel="settings", settings_section="integrations")
+    conn = get_connection()
+    integrations.save_user_integrations(conn, g.user_id, settings)
+    conn.close()
+    flash("Integration settings saved.", "success")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+
+@app.route("/settings/integrations/test", methods=["POST"])
+def test_integrations():
+    settings = _integrations_from_request()
+    if settings is None:
+        return redirect_home(panel="settings", settings_section="integrations")
+    ok, message = integrations.test_ai_connection(settings)
+    flash(message, "success" if ok else "error")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+
+@app.route("/telegram/webhook/<secret>", methods=["POST"])
+def telegram_webhook(secret):
+    conn = get_connection()
+    config = telegram_bot.get_server_config(conn)
+    if not telegram_bot.is_configured(config) or secret != config["webhook_secret"]:
+        conn.close()
+        return ("", 404)
+    update = request.get_json(silent=True)
+    if not isinstance(update, dict):
+        conn.close()
+        return ("", 400)
+    try:
+        telegram_bot.handle_update(update, conn, fetch_account_balances_through, config)
+    finally:
+        conn.close()
+    return ("", 200)
+
+
+@app.route("/settings/telegram/server", methods=["POST"])
+def save_telegram_server():
+    conn = get_connection()
+    existing = telegram_bot.get_server_config(conn)
+    try:
+        settings = telegram_bot.parse_server_config_form(request.form, existing)
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc), "error")
+        return redirect_home(panel="settings", settings_section="integrations")
+    telegram_bot.save_server_config(conn, settings)
+    ok, message = telegram_bot.register_webhook(settings)
+    conn.close()
+    flash("Telegram settings saved.", "success")
+    flash(message, "success" if ok else "error")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+
+@app.route("/settings/telegram/register-webhook", methods=["POST"])
+def register_telegram_webhook():
+    conn = get_connection()
+    config = telegram_bot.get_server_config(conn)
+    if not telegram_bot.is_configured(config):
+        conn.close()
+        flash("Save bot token, webhook secret, and public URL first.", "error")
+        return redirect_home(panel="settings", settings_section="integrations")
+    ok, message = telegram_bot.register_webhook(config)
+    conn.close()
+    flash(message, "success" if ok else "error")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+
+@app.route("/settings/telegram/generate-code", methods=["POST"])
+def telegram_generate_code():
+    conn = get_connection()
+    config = telegram_bot.get_server_config(conn)
+    if not telegram_bot.is_configured(config):
+        conn.close()
+        flash("Configure the Telegram bot below first.", "error")
+        return redirect_home(panel="settings", settings_section="integrations")
+    code = telegram_bot.create_link_code(conn, g.user_id)
+    conn.close()
+    flash(f"Link code: {code} (15 min). In Telegram send: /link {code}", "success")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+
+@app.route("/settings/telegram/unlink", methods=["POST"])
+def telegram_unlink():
+    conn = get_connection()
+    telegram_bot.unlink_telegram(conn, g.user_id)
+    conn.close()
+    flash("Telegram unlinked.", "success")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+
+@app.route("/settings/telegram/default-account", methods=["POST"])
+def telegram_default_account():
+    raw = request.form.get("default_account_id", "").strip()
+    account_id = int(raw) if raw else None
+    conn = get_connection()
+    if not telegram_bot.set_default_account(conn, g.user_id, account_id):
+        conn.close()
+        flash("Could not update default account.", "error")
+        return redirect_home(panel="settings", settings_section="integrations")
+    conn.close()
+    flash("Telegram default account updated.", "success")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+
 _prepare_sqlite_storage()
 init_db()
+
+_conn_boot = get_connection()
+_boot_cfg = telegram_bot.get_server_config(_conn_boot)
+_conn_boot.close()
+if telegram_bot.is_configured(_boot_cfg):
+    ok, msg = telegram_bot.register_webhook(_boot_cfg)
+    if ok:
+        print(f"Telegram webhook: {msg}", file=sys.stderr)
+    else:
+        print(f"Telegram webhook failed: {msg}", file=sys.stderr)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
