@@ -81,6 +81,13 @@ AMOUNT_TEXT_RE = re.compile(
     r"^(-?\d+(?:[.,]\d{1,2})?)\s*(?:€|eur(?:o?s)?|ευρώ|ευρω)?\s+(.+)$",
     re.I,
 )
+_RELATIVE_DATE_PREFIXES = (
+    (re.compile(r"^(?:χθες|χτες|yesterday)\b", re.I), 1),
+    (re.compile(r"^(?:προχθές|προχτες)\b", re.I), 2),
+    (re.compile(r"^(?:σήμερα|simera|today)\b", re.I), 0),
+)
+FALLBACK_CATEGORY_NAME = "Other"
+RESERVED_NON_SEMANTIC_CATEGORIES = frozenset({"general", "other"})
 
 
 def _env_server_config() -> dict:
@@ -241,6 +248,64 @@ def _parse_amount(raw: str) -> float | None:
         return None
 
 
+def _normalize_name_key(name: str) -> str:
+    return re.sub(r"[\s\-_]+", "", name.strip().lower())
+
+
+def _split_relative_date(text: str, *, default_date: str | None = None) -> tuple[str, str]:
+    cleaned = " ".join(text.split()).strip()
+    movement_date = default_date or datetime.now().date().isoformat()
+    for pattern, days_ago in _RELATIVE_DATE_PREFIXES:
+        match = pattern.match(cleaned)
+        if not match:
+            continue
+        remainder = cleaned[match.end() :].strip(" -–—,")
+        movement_date = (datetime.now().date() - timedelta(days=days_ago)).isoformat()
+        return remainder or cleaned, movement_date
+    return cleaned, movement_date
+
+
+
+def _categories_for_ai(options: list[str]) -> list[str]:
+    return [opt for opt in options if opt.strip().lower() not in RESERVED_NON_SEMANTIC_CATEGORIES]
+
+
+def _ensure_fallback_category(conn: sqlite3.Connection, user_id: int, *, expense: bool) -> str:
+    table = "categories" if expense else "income_categories"
+    uid = int(user_id)
+    conn.execute(
+        f"INSERT OR IGNORE INTO {table} (user_id, name) VALUES (?, ?)",
+        (uid, FALLBACK_CATEGORY_NAME),
+    )
+    conn.commit()
+    row = conn.execute(
+        f"SELECT name FROM {table} WHERE user_id = ? AND lower(name) = lower(?)",
+        (uid, FALLBACK_CATEGORY_NAME),
+    ).fetchone()
+    return row["name"] if row else FALLBACK_CATEGORY_NAME
+
+
+def _find_fallback_category(options: list[str]) -> str:
+    for opt in options:
+        if opt.strip().lower() == FALLBACK_CATEGORY_NAME.lower():
+            return opt
+    return FALLBACK_CATEGORY_NAME
+
+
+def _resolve_category_name(name: str, options: list[str]) -> str:
+    clean = (name or "").strip()
+    if not options:
+        return FALLBACK_CATEGORY_NAME
+    if clean.lower() in {"general", "unknown", "misc"}:
+        clean = ""
+    if clean.lower() in {"other", "άλλο", "αλλο"}:
+        return _find_fallback_category(options)
+    matched = _best_name_match(clean, options)
+    if matched and matched.strip().lower() not in RESERVED_NON_SEMANTIC_CATEGORIES:
+        return matched
+    return _find_fallback_category(options)
+
+
 def _best_name_match(name: str, options: list[str]) -> str | None:
     needle = name.strip().lower()
     if not needle or not options:
@@ -248,9 +313,24 @@ def _best_name_match(name: str, options: list[str]) -> str | None:
     lowered = {opt.lower(): opt for opt in options}
     if needle in lowered:
         return lowered[needle]
+    norm_needle = _normalize_name_key(name)
+    if norm_needle:
+        for opt in options:
+            if _normalize_name_key(opt) == norm_needle:
+                return opt
     for key, original in lowered.items():
         if needle in key or key in needle:
             return original
+    for word in re.split(r"[\s,]+", name):
+        if len(word) < 3:
+            continue
+        word_lower = word.lower()
+        if word_lower in lowered:
+            return lowered[word_lower]
+        norm_word = _normalize_name_key(word)
+        for opt in options:
+            if _normalize_name_key(opt) == norm_word:
+                return opt
     return None
 
 
@@ -276,17 +356,41 @@ def _parse_with_regex(text: str) -> dict | None:
         return None
 
     label = INCOME_HINT_RE.sub("", label).strip(" -–—,")
-    if not label:
-        label = "General"
+
+    label, movement_date = _split_relative_date(label)
 
     return {
         "type": tx_type,
         "amount": abs(amount),
-        "category": label,
+        "description": label,
         "account": None,
         "notes": "",
-        "date": datetime.now().date().isoformat(),
+        "date": movement_date,
         "source": "regex",
+    }
+
+
+def _merge_parsed(
+    skeleton: dict,
+    *,
+    category: str,
+    notes: str = "",
+    account=None,
+    date: str | None = None,
+    source: str,
+) -> dict:
+    merged_notes = notes.strip()
+    description = str(skeleton.get("description") or "").strip()
+    if description and description.lower() not in merged_notes.lower():
+        merged_notes = f"{description} — {merged_notes}" if merged_notes else description
+    return {
+        "type": skeleton["type"],
+        "amount": skeleton["amount"],
+        "category": category,
+        "account": account,
+        "notes": merged_notes,
+        "date": date or skeleton["date"],
+        "source": source,
     }
 
 
@@ -305,32 +409,45 @@ def _parse_with_ollama(
     if not base_url or not model:
         return None
 
-    today = datetime.now().date().isoformat()
-    prompt = f"""You parse short budget messages into JSON for a personal finance app.
-Today is {today}.
+    today = datetime.now().date()
+    today_iso = today.isoformat()
+    yesterday_iso = (today - timedelta(days=1)).isoformat()
+    ai_expense = _categories_for_ai(expense_categories)
+    ai_income = _categories_for_ai(income_categories)
+    fallback_expense = _find_fallback_category(expense_categories)
+    fallback_income = _find_fallback_category(income_categories)
+    entertainment_hint = ""
+    if any(c.lower() == "entertainment" for c in ai_expense):
+        entertainment_hint = f' For coffee/cafe/καφές use exactly "Entertainment".'
+    prompt = f"""You parse short budget messages into structured JSON for a personal finance app.
+Today is {today_iso}.
 
-Expense categories: {json.dumps(expense_categories, ensure_ascii=False)}
-Income categories: {json.dumps(income_categories, ensure_ascii=False)}
+Expense categories (pick ONE, copy the name exactly): {json.dumps(ai_expense, ensure_ascii=False)}
+Income categories (pick ONE, copy the name exactly): {json.dumps(ai_income, ensure_ascii=False)}
 Accounts: {json.dumps(accounts, ensure_ascii=False)}
 
 User message: {json.dumps(text, ensure_ascii=False)}
 
-Rules:
-- type is "expense" or "income"
-- amount is a positive number (no currency symbol)
-- category must match an existing category name when possible, otherwise a short new label
-- account is an exact account name from the list, or null for default
-- notes is extra detail or empty string
-- date is YYYY-MM-DD (use today if not specified)
+Parse the ENTIRE message:
+- type: "expense" or "income"
+- amount: positive number, no currency symbol
+- category: MUST be copied exactly from the lists above — never use "General", never invent a name
+- Pick the best semantic match.{entertainment_hint}
+  coffee/cafe/καφές → Entertainment; butcher/κρεοπωλείο/grocery → Super Market
+- Only if nothing fits at all, use exactly "{fallback_expense}" (expense) or "{fallback_income}" (income)
+- account: exact account name or null
+- notes: shop or item detail (e.g. "καφές"), not the category name
+- date: YYYY-MM-DD (χθες/yesterday={yesterday_iso}, σήμερα/today={today_iso})
 
-Return ONLY valid JSON with keys: type, amount, category, account, notes, date"""
+Example: "χθες καφές 3.50" → category "Entertainment" if in list, amount 3.5, notes "καφές", date "{yesterday_iso}"
+
+Return ONLY valid JSON: type, amount, category, account, notes, date"""
 
     raw = integrations.ollama_chat(base_url, model, prompt, timeout=timeout, json_mode=True)
     if not raw:
         return None
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
+    parsed = integrations.parse_json_text(raw)
+    if not parsed:
         return None
 
     tx_type = str(parsed.get("type", "")).strip().lower()
@@ -341,7 +458,7 @@ Return ONLY valid JSON with keys: type, amount, category, account, notes, date""
         return None
 
     date_raw = parsed.get("date")
-    movement_date = today
+    movement_date = today_iso
     if date_raw:
         text_date = str(date_raw).strip()
         if len(text_date) >= 10:
@@ -354,7 +471,7 @@ Return ONLY valid JSON with keys: type, amount, category, account, notes, date""
     return {
         "type": tx_type,
         "amount": abs(amount),
-        "category": str(parsed.get("category", "General")).strip() or "General",
+        "category": str(parsed.get("category", "")).strip(),
         "account": parsed.get("account"),
         "notes": str(parsed.get("notes", "")).strip(),
         "date": movement_date,
@@ -369,25 +486,49 @@ def parse_message(
     income_categories: list[str],
     accounts: list[str],
 ) -> dict | None:
-    parsed = _parse_with_regex(text)
-    if parsed:
-        cats = income_categories if parsed["type"] == "income" else expense_categories
-        matched = _best_name_match(parsed["category"], cats)
-        if matched:
-            parsed["category"] = matched
-            return parsed
+    cleaned = " ".join(text.split()).strip()
+    if not cleaned:
+        return None
 
-    ollama_parsed = _parse_with_ollama(
-        text, ai_settings, expense_categories, income_categories, accounts
+    if ai_settings.get("ai_enabled"):
+        ollama_parsed = _parse_with_ollama(
+            text,
+            ai_settings,
+            expense_categories,
+            income_categories,
+            accounts,
+        )
+        if not ollama_parsed:
+            return None
+        cats = (
+            income_categories
+            if ollama_parsed["type"] == "income"
+            else expense_categories
+        )
+        category = _resolve_category_name(ollama_parsed.get("category", ""), cats)
+        return {
+            "type": ollama_parsed["type"],
+            "amount": ollama_parsed["amount"],
+            "category": category,
+            "account": ollama_parsed.get("account"),
+            "notes": ollama_parsed.get("notes", ""),
+            "date": ollama_parsed.get("date"),
+            "source": "ollama",
+        }
+
+    skeleton = _parse_with_regex(cleaned)
+    if not skeleton:
+        return None
+
+    cats = income_categories if skeleton["type"] == "income" else expense_categories
+    exact = _best_name_match(str(skeleton.get("description") or ""), cats)
+    category = exact or _find_fallback_category(cats)
+    return _merge_parsed(
+        skeleton,
+        category=category,
+        notes="" if exact else "",
+        source="regex" if exact else "fallback",
     )
-    if ollama_parsed:
-        cats = income_categories if ollama_parsed["type"] == "income" else expense_categories
-        matched = _best_name_match(ollama_parsed["category"], cats)
-        if matched:
-            ollama_parsed["category"] = matched
-        return ollama_parsed
-
-    return parsed
 
 
 def _lookup_category_id(
@@ -395,14 +536,38 @@ def _lookup_category_id(
 ) -> int:
     table = "categories" if expense else "income_categories"
     uid = int(user_id)
+    clean = name.strip()
     row = conn.execute(
         f"SELECT id FROM {table} WHERE user_id = ? AND lower(name) = lower(?)",
-        (uid, name.strip()),
+        (uid, clean),
     ).fetchone()
     if row:
         return int(row["id"])
-    conn.execute(f"INSERT INTO {table} (user_id, name) VALUES (?, ?)", (uid, name.strip()))
-    return int(conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"])
+
+    existing = conn.execute(
+        f"SELECT id, name FROM {table} WHERE user_id = ? ORDER BY name",
+        (uid,),
+    ).fetchall()
+    names = [r["name"] for r in existing]
+    matched = _best_name_match(clean, names)
+    if matched:
+        row = conn.execute(
+            f"SELECT id FROM {table} WHERE user_id = ? AND name = ?",
+            (uid, matched),
+        ).fetchone()
+        if row:
+            return int(row["id"])
+
+    fallback = _find_fallback_category(names)
+    if fallback.lower() == FALLBACK_CATEGORY_NAME.lower():
+        fallback = _ensure_fallback_category(conn, uid, expense=expense)
+    row = conn.execute(
+        f"SELECT id FROM {table} WHERE user_id = ? AND lower(name) = lower(?)",
+        (uid, fallback),
+    ).fetchone()
+    if row:
+        return int(row["id"])
+    raise ValueError(f"Category '{clean}' not found and no fallback category exists.")
 
 
 def _resolve_account_id(
@@ -453,28 +618,31 @@ def save_transaction(
     notes = str(parsed.get("notes") or "").strip()
     movement_date = parsed.get("date") or datetime.now().date().isoformat()
 
-    if tx_type == "income":
-        category_id = _lookup_category_id(conn, uid, parsed["category"], expense=False)
+    try:
+        if tx_type == "income":
+            category_id = _lookup_category_id(conn, uid, parsed["category"], expense=False)
+            conn.execute(
+                """
+                INSERT INTO income_entries (user_id, notes, amount, category_id, account_id, received_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (uid, notes, amount, category_id, account_id, movement_date),
+            )
+            conn.commit()
+            return True, f"Income recorded: {parsed['category']} {amount:.2f}€", account_name
+
+        category_id = _lookup_category_id(conn, uid, parsed["category"], expense=True)
         conn.execute(
             """
-            INSERT INTO income_entries (user_id, notes, amount, category_id, account_id, received_at)
+            INSERT INTO expenses (user_id, notes, amount, category_id, account_id, spent_at)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (uid, notes, amount, category_id, account_id, movement_date),
+            (uid, notes, -abs(amount), category_id, account_id, movement_date),
         )
         conn.commit()
-        return True, f"Income recorded: {parsed['category']} {amount:.2f}€", account_name
-
-    category_id = _lookup_category_id(conn, uid, parsed["category"], expense=True)
-    conn.execute(
-        """
-        INSERT INTO expenses (user_id, notes, amount, category_id, account_id, spent_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (uid, notes, -abs(amount), category_id, account_id, movement_date),
-    )
-    conn.commit()
-    return True, f"Expense recorded: {parsed['category']} {amount:.2f}€", account_name
+        return True, f"Expense recorded: {parsed['category']} {amount:.2f}€", account_name
+    except ValueError as exc:
+        return False, str(exc), ""
 
 
 def undo_last_entry(conn: sqlite3.Connection, user_id: int) -> str:
@@ -720,6 +888,8 @@ def _link_account(conn: sqlite3.Connection, code: str, chat_id: str, username: s
 def _user_context(conn: sqlite3.Connection, user_id: int) -> dict:
     uid = int(user_id)
     ai_settings = integrations.get_user_integrations(conn, uid)
+    _ensure_fallback_category(conn, uid, expense=True)
+    _ensure_fallback_category(conn, uid, expense=False)
     expense_categories = [
         r["name"]
         for r in conn.execute(
@@ -767,7 +937,8 @@ def handle_update(update: dict, conn: sqlite3.Connection, balance_fn, config: di
             "Vibe Budgeting bot\n\n"
             "1) Settings → Integrations → Generate link code\n"
             "2) Send: /link YOURCODE\n"
-            "3) Send entries: supermarket 20\n\n"
+            "3) Enable AI in Integrations (required for smart categories)\n"
+            "4) Send: χθες καφές 3.50\n\n"
             "Commands: /help /balance /undo /unlink",
             bot_token=bot_token,
         )
@@ -776,12 +947,12 @@ def handle_update(update: dict, conn: sqlite3.Connection, balance_fn, config: di
     if text.startswith("/help"):
         send_message(
             chat_id,
-            "Examples:\n"
-            "• supermarket 20\n"
-            "• 45 sklavenitis\n"
-            "• salary 1500\n\n"
-            "With AI enabled in Integrations:\n"
-            "• χθες καφές 3.50\n\n"
+            "Examples (AI enabled — maps to your categories, never creates new ones):\n"
+            "• χθες καφές 3.50 → Entertainment\n"
+            "• κρεοπωλείο 25 → Super Market\n"
+            "• unknown shop 10 → Other\n\n"
+            "Exact category name also works without AI:\n"
+            "• Super Market 20\n\n"
             "Commands: /link /balance /undo /unlink",
             bot_token=bot_token,
         )
@@ -831,9 +1002,11 @@ def handle_update(update: dict, conn: sqlite3.Connection, balance_fn, config: di
         ctx["accounts"],
     )
     if not parsed:
-        hint = "Try: supermarket 20"
+        hint = "Try: Super Market 20"
         if not ctx["ai_settings"].get("ai_enabled"):
-            hint += "\n(Enable AI in Integrations for free-form messages.)"
+            hint += "\nEnable AI in Integrations — with AI on, the whole message is parsed by Ollama."
+        else:
+            hint += "\nAI could not parse this message. Check Ollama connection/model in Integrations."
         send_message(chat_id, f"Could not parse.\n{hint}", bot_token=bot_token)
         return
 

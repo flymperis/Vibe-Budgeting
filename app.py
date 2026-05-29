@@ -929,6 +929,10 @@ def seed_user_defaults(conn, user_id):
         (uid, "General"),
     )
     conn.execute(
+        "INSERT OR IGNORE INTO categories (user_id, name) VALUES (?, ?)",
+        (uid, "Other"),
+    )
+    conn.execute(
         "INSERT OR IGNORE INTO income_categories (user_id, name) VALUES (?, ?)",
         (uid, "General"),
     )
@@ -3662,6 +3666,51 @@ def test_integrations():
     ok, message = integrations.test_ai_connection(settings)
     flash(message, "success" if ok else "error")
     return redirect_home(panel="settings", settings_section="integrations")
+
+
+@app.route("/settings/integrations/models")
+def list_integration_models():
+    base_url = (request.args.get("base_url") or "").strip().rstrip("/")
+    if not base_url:
+        return app.response_class(
+            response=json.dumps({"error": "Base URL is required."}),
+            status=400,
+            mimetype="application/json",
+        )
+    try:
+        integrations._normalize_base_url(base_url)
+    except ValueError as exc:
+        return app.response_class(
+            response=json.dumps({"error": str(exc)}),
+            status=400,
+            mimetype="application/json",
+        )
+    timeout = integrations.DEFAULT_AI_TIMEOUT
+    try:
+        models = integrations.fetch_ollama_models(base_url, timeout=timeout)
+    except HTTPError as exc:
+        return app.response_class(
+            response=json.dumps({"error": f"Ollama responded with HTTP {exc.code}."}),
+            status=502,
+            mimetype="application/json",
+        )
+    except URLError as exc:
+        return app.response_class(
+            response=json.dumps({"error": f"Could not reach Ollama: {exc.reason}"}),
+            status=502,
+            mimetype="application/json",
+        )
+    except (json.JSONDecodeError, OSError, TimeoutError) as exc:
+        return app.response_class(
+            response=json.dumps({"error": f"Connection failed: {exc}"}),
+            status=502,
+            mimetype="application/json",
+        )
+    return app.response_class(
+        response=json.dumps({"models": models}),
+        status=200,
+        mimetype="application/json",
+    )
 
 
 @app.route("/settings/telegram/server", methods=["POST"])

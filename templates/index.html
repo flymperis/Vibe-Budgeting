@@ -1613,10 +1613,11 @@
 
                                 <h3>Local AI (Ollama)</h3>
                                 <p class="muted small-hint">
-                                    Your Ollama settings are used by the Telegram bot for free-form messages
-                                    (for example «χθες καφές 3.50»). Simple messages like «supermarket 20» work without AI.
+                                    Required for Telegram: the whole message is sent to Ollama, which extracts
+                                    amount, date, notes, and picks an existing category (unknown → Other).
+                                    The bot never creates new categories.
                                 </p>
-                                <form action="{{ url_for('save_integrations') }}" class="integrations-form" method="post">
+                                <form action="{{ url_for('save_integrations') }}" class="integrations-form" method="post" id="integrations-ai-form">
                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                     <input name="next_panel" type="hidden" value="settings">
                                     <input name="settings_section" type="hidden" value="integrations">
@@ -1644,11 +1645,14 @@
                                     <label class="field-label" for="ai-model">Model</label>
                                     <input
                                         id="ai-model"
+                                        list="ai-model-options"
                                         name="ai_model"
                                         placeholder="llama3.2"
                                         type="text"
                                         value="{{ user_integrations.ai_model }}"
                                     >
+                                    <datalist id="ai-model-options"></datalist>
+                                    <p class="muted small-hint" id="ai-models-status"></p>
 
                                     <label class="field-label" for="ai-timeout">Timeout (seconds)</label>
                                     <input
@@ -1665,6 +1669,7 @@
                                     <div class="integrations-actions">
                                         <button type="submit">Save</button>
                                         <button class="btn-secondary" formaction="{{ url_for('test_integrations') }}" formmethod="post" type="submit">Test connection</button>
+                                        <button class="btn-secondary" id="ai-load-models" type="button">Load models</button>
                                     </div>
                                 </form>
 
@@ -2320,6 +2325,65 @@
                         btnInc.classList.add("is-active");
                         sheetInc.scrollIntoView({ behavior: "smooth", block: "nearest" });
                     }
+                });
+            })();
+
+            (function setupAiModelLoader() {
+                const loadBtn = document.getElementById("ai-load-models");
+                const baseUrlInput = document.getElementById("ai-base-url");
+                const modelInput = document.getElementById("ai-model");
+                const modelList = document.getElementById("ai-model-options");
+                const statusEl = document.getElementById("ai-models-status");
+                if (!loadBtn || !baseUrlInput || !modelList) {
+                    return;
+                }
+
+                loadBtn.addEventListener("click", function () {
+                    const baseUrl = baseUrlInput.value.trim();
+                    if (!baseUrl) {
+                        if (statusEl) {
+                            statusEl.textContent = "Enter a Base URL first.";
+                        }
+                        return;
+                    }
+                    loadBtn.disabled = true;
+                    if (statusEl) {
+                        statusEl.textContent = "Loading models…";
+                    }
+                    fetch("/settings/integrations/models?base_url=" + encodeURIComponent(baseUrl))
+                        .then(function (resp) {
+                            return resp.json().then(function (data) {
+                                return { ok: resp.ok, data: data };
+                            });
+                        })
+                        .then(function (result) {
+                            if (!result.ok) {
+                                throw new Error(result.data.error || "Could not load models.");
+                            }
+                            const models = result.data.models || [];
+                            modelList.innerHTML = "";
+                            models.forEach(function (name) {
+                                const opt = document.createElement("option");
+                                opt.value = name;
+                                modelList.appendChild(opt);
+                            });
+                            if (statusEl) {
+                                statusEl.textContent = models.length
+                                    ? models.length + " model(s) loaded."
+                                    : "Connected, but no models are installed.";
+                            }
+                            if (models.length === 1 && modelInput && !modelInput.value.trim()) {
+                                modelInput.value = models[0];
+                            }
+                        })
+                        .catch(function (err) {
+                            if (statusEl) {
+                                statusEl.textContent = err.message || "Could not load models.";
+                            }
+                        })
+                        .finally(function () {
+                            loadBtn.disabled = false;
+                        });
                 });
             })();
         })();

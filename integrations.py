@@ -134,6 +134,52 @@ def save_user_integrations(conn: sqlite3.Connection, user_id: int, settings: dic
     conn.commit()
 
 
+def _model_base(name: str) -> str:
+    return name.strip().lower().split(":", 1)[0]
+
+
+def model_matches(requested: str, available: str) -> bool:
+    req = requested.strip().lower()
+    avail = available.strip().lower()
+    if not req or not avail:
+        return False
+    if req == avail:
+        return True
+    if avail.startswith(req + ":"):
+        return True
+    return _model_base(req) == _model_base(avail)
+
+
+def resolve_model_name(requested: str, models: list[str]) -> str | None:
+    needle = requested.strip()
+    if not needle or not models:
+        return None
+    for name in models:
+        if model_matches(needle, name):
+            return name
+    return None
+
+
+def fetch_ollama_models(base_url: str, *, timeout: int) -> list[str]:
+    url = base_url.rstrip("/") + "/api/tags"
+    data = _fetch_json(url, timeout=timeout)
+    return [m["name"] for m in data.get("models", []) if m.get("name")]
+
+
+def parse_json_text(raw: str) -> dict | None:
+    text = raw.strip()
+    if not text:
+        return None
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _fetch_json(url: str, *, timeout: int, method: str = "GET", payload: dict | None = None) -> dict:
     data = None
     headers = {"Accept": "application/json"}
@@ -146,9 +192,19 @@ def _fetch_json(url: str, *, timeout: int, method: str = "GET", payload: dict | 
 
 
 def ollama_chat(base_url: str, model: str, prompt: str, *, timeout: int, json_mode: bool = False) -> str | None:
-    url = base_url.rstrip("/") + "/api/chat"
+    base = base_url.rstrip("/")
+    resolved = model.strip()
+    try:
+        models = fetch_ollama_models(base, timeout=min(timeout, 10))
+        picked = resolve_model_name(resolved, models)
+        if picked:
+            resolved = picked
+    except (HTTPError, URLError, json.JSONDecodeError, OSError, TimeoutError):
+        pass
+
+    url = base + "/api/chat"
     payload: dict = {
-        "model": model,
+        "model": resolved,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
     }
@@ -186,10 +242,13 @@ def test_ai_connection(settings: dict) -> tuple[bool, str]:
     if not models:
         return False, "Connected, but no models are installed on this Ollama instance."
 
-    if model and model not in models:
+    resolved = resolve_model_name(model, models) if model else None
+    if model and not resolved:
         preview = ", ".join(models[:5])
         extra = f" (and {len(models) - 5} more)" if len(models) > 5 else ""
         return False, f"Connected, but model '{model}' was not found. Available: {preview}{extra}"
+    if resolved:
+        model = resolved
 
     if model:
         try:
