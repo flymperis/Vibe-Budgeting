@@ -200,7 +200,7 @@ def save_server_config(conn: sqlite3.Connection, settings: dict) -> None:
 
 
 def get_bot_username(config: dict) -> str | None:
-    data = _telegram_api("getMe", {}, config["bot_token"])
+    data, _err = _telegram_api("getMe", {}, config["bot_token"])
     if data and data.get("ok"):
         return data.get("result", {}).get("username")
     return None
@@ -565,9 +565,9 @@ def format_balances(conn: sqlite3.Connection, user_id: int, balance_fn) -> str:
     return "\n".join(lines)
 
 
-def _telegram_api(method: str, payload: dict, bot_token: str) -> dict | None:
+def _telegram_api(method: str, payload: dict, bot_token: str) -> tuple[dict | None, str | None]:
     if not bot_token:
-        return None
+        return None, "Bot token is missing. Paste the token from @BotFather and save again."
     body = json.dumps(payload).encode("utf-8")
     req = Request(
         f"https://api.telegram.org/bot{bot_token}/{method}",
@@ -577,24 +577,47 @@ def _telegram_api(method: str, payload: dict, bot_token: str) -> dict | None:
     )
     try:
         with urlopen(req, timeout=20) as resp:
-            return json.loads(resp.read().decode())
-    except (URLError, HTTPError, json.JSONDecodeError, OSError):
-        return None
+            return json.loads(resp.read().decode()), None
+    except HTTPError as exc:
+        try:
+            detail = json.loads(exc.read().decode())
+            desc = detail.get("description") or str(exc)
+        except (json.JSONDecodeError, OSError):
+            desc = str(exc)
+        return None, f"Telegram API HTTP {exc.code}: {desc}"
+    except URLError as exc:
+        return None, f"Could not reach Telegram API: {exc.reason}"
+    except (json.JSONDecodeError, OSError, TimeoutError) as exc:
+        return None, f"Could not reach Telegram API: {exc}"
 
 
 def send_message(chat_id: str | int, text: str, *, bot_token: str) -> None:
     _telegram_api("sendMessage", {"chat_id": str(chat_id), "text": text}, bot_token)
 
 
+def test_telegram_connection(config: dict) -> tuple[bool, str]:
+    if not config.get("bot_token"):
+        return False, "Bot token is missing. Paste the token from @BotFather and save again."
+    data, err = _telegram_api("getMe", {}, config["bot_token"])
+    if err:
+        return False, err
+    if not data or not data.get("ok"):
+        return False, data.get("description", "getMe failed") if data else "getMe failed"
+    username = data.get("result", {}).get("username") or "?"
+    return True, f"Connected to @{username}"
+
+
 def register_webhook(config: dict) -> tuple[bool, str]:
     if not is_configured(config):
         return False, "Telegram bot is not fully configured"
     url = build_webhook_url(config["public_base_url"], config["webhook_secret"])
-    data = _telegram_api(
+    data, err = _telegram_api(
         "setWebhook",
         {"url": url, "drop_pending_updates": True},
         config["bot_token"],
     )
+    if err:
+        return False, err
     if not data:
         return False, "Could not reach Telegram API"
     if data.get("ok"):

@@ -1716,6 +1716,7 @@
 
                                     <div class="integrations-actions">
                                         <button type="submit">Save Telegram settings</button>
+                                        <button class="btn-secondary" formaction="{{ url_for('test_telegram_server') }}" formmethod="post" type="submit">Test bot token</button>
                                         {% if telegram_enabled %}
                                             <button class="btn-secondary" formaction="{{ url_for('register_telegram_webhook') }}" formmethod="post" type="submit">Register webhook</button>
                                         {% endif %}

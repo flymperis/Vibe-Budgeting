@@ -3699,6 +3699,22 @@ def save_telegram_server():
     return redirect_home(panel="settings", settings_section="integrations")
 
 
+@app.route("/settings/telegram/test", methods=["POST"])
+def test_telegram_server():
+    conn = get_connection()
+    existing = telegram_bot.get_server_config(conn)
+    try:
+        settings = telegram_bot.parse_server_config_form(request.form, existing)
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc), "error")
+        return redirect_home(panel="settings", settings_section="integrations")
+    ok, message = telegram_bot.test_telegram_connection(settings)
+    conn.close()
+    flash(message, "success" if ok else "error")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+
 @app.route("/settings/telegram/register-webhook", methods=["POST"])
 def register_telegram_webhook():
     conn = get_connection()
