@@ -69,23 +69,6 @@ def migrate_telegram(conn: sqlite3.Connection) -> None:
 LINK_CODE_TTL_MINUTES = 15
 LINK_CODE_ALPHABET = string.ascii_uppercase + string.digits
 
-INCOME_HINT_RE = re.compile(
-    r"\b(?:μισθ(?:ός|οσ)|salary|income|έσοδ(?:α|ο)|εσοδ(?:α|ο)|paycheck|bonus)\b",
-    re.I,
-)
-TEXT_AMOUNT_RE = re.compile(
-    r"^(.+?)\s+(-?\d+(?:[.,]\d{1,2})?)\s*(?:€|eur(?:o?s)?|ευρώ|ευρω)?\s*$",
-    re.I,
-)
-AMOUNT_TEXT_RE = re.compile(
-    r"^(-?\d+(?:[.,]\d{1,2})?)\s*(?:€|eur(?:o?s)?|ευρώ|ευρω)?\s+(.+)$",
-    re.I,
-)
-_RELATIVE_DATE_PREFIXES = (
-    (re.compile(r"^(?:χθες|χτες|yesterday)\b", re.I), 1),
-    (re.compile(r"^(?:προχθές|προχτες)\b", re.I), 2),
-    (re.compile(r"^(?:σήμερα|simera|today)\b", re.I), 0),
-)
 FALLBACK_CATEGORY_NAME = "Other"
 RESERVED_NON_SEMANTIC_CATEGORIES = frozenset({"general", "other"})
 
@@ -252,22 +235,23 @@ def _normalize_name_key(name: str) -> str:
     return re.sub(r"[\s\-_]+", "", name.strip().lower())
 
 
-def _split_relative_date(text: str, *, default_date: str | None = None) -> tuple[str, str]:
-    cleaned = " ".join(text.split()).strip()
-    movement_date = default_date or datetime.now().date().isoformat()
-    for pattern, days_ago in _RELATIVE_DATE_PREFIXES:
-        match = pattern.match(cleaned)
-        if not match:
-            continue
-        remainder = cleaned[match.end() :].strip(" -–—,")
-        movement_date = (datetime.now().date() - timedelta(days=days_ago)).isoformat()
-        return remainder or cleaned, movement_date
-    return cleaned, movement_date
-
-
-
 def _categories_for_ai(options: list[str]) -> list[str]:
     return [opt for opt in options if opt.strip().lower() not in RESERVED_NON_SEMANTIC_CATEGORIES]
+
+
+def _prompt_category_hints(expense_categories: list[str], income_categories: list[str]) -> str:
+    hints: list[str] = []
+    ai_expense = _categories_for_ai(expense_categories)
+    ai_income = _categories_for_ai(income_categories)
+    if any(c.lower() == "entertainment" for c in ai_expense):
+        hints.append('coffee/cafe/καφές → "Entertainment"')
+    if any(c.lower() == "super market" for c in ai_expense):
+        hints.append('supermarket/grocery/κρεοπωλείο → "Super Market"')
+    if any(c.lower() == "salary" for c in ai_income):
+        hints.append('salary/misthos/μισθός/paycheck/wages → type "income", category "Salary"')
+    if hints:
+        return " Semantic hints: " + "; ".join(hints) + "."
+    return ""
 
 
 def _ensure_fallback_category(conn: sqlite3.Connection, user_id: int, *, expense: bool) -> str:
@@ -283,6 +267,14 @@ def _ensure_fallback_category(conn: sqlite3.Connection, user_id: int, *, expense
         (uid, FALLBACK_CATEGORY_NAME),
     ).fetchone()
     return row["name"] if row else FALLBACK_CATEGORY_NAME
+
+
+def _ensure_salary_category(conn: sqlite3.Connection, user_id: int) -> None:
+    conn.execute(
+        "INSERT OR IGNORE INTO income_categories (user_id, name) VALUES (?, ?)",
+        (int(user_id), "Salary"),
+    )
+    conn.commit()
 
 
 def _find_fallback_category(options: list[str]) -> str:
@@ -334,66 +326,6 @@ def _best_name_match(name: str, options: list[str]) -> str | None:
     return None
 
 
-def _parse_with_regex(text: str) -> dict | None:
-    cleaned = " ".join(text.split())
-    if not cleaned:
-        return None
-
-    tx_type = "income" if INCOME_HINT_RE.search(cleaned) else "expense"
-    label = cleaned
-    amount_raw = None
-
-    m = TEXT_AMOUNT_RE.match(cleaned)
-    if m:
-        label, amount_raw = m.group(1).strip(), m.group(2)
-    else:
-        m = AMOUNT_TEXT_RE.match(cleaned)
-        if m:
-            amount_raw, label = m.group(1), m.group(2).strip()
-
-    amount = _parse_amount(amount_raw) if amount_raw else None
-    if amount is None or amount == 0:
-        return None
-
-    label = INCOME_HINT_RE.sub("", label).strip(" -–—,")
-
-    label, movement_date = _split_relative_date(label)
-
-    return {
-        "type": tx_type,
-        "amount": abs(amount),
-        "description": label,
-        "account": None,
-        "notes": "",
-        "date": movement_date,
-        "source": "regex",
-    }
-
-
-def _merge_parsed(
-    skeleton: dict,
-    *,
-    category: str,
-    notes: str = "",
-    account=None,
-    date: str | None = None,
-    source: str,
-) -> dict:
-    merged_notes = notes.strip()
-    description = str(skeleton.get("description") or "").strip()
-    if description and description.lower() not in merged_notes.lower():
-        merged_notes = f"{description} — {merged_notes}" if merged_notes else description
-    return {
-        "type": skeleton["type"],
-        "amount": skeleton["amount"],
-        "category": category,
-        "account": account,
-        "notes": merged_notes,
-        "date": date or skeleton["date"],
-        "source": source,
-    }
-
-
 def _parse_with_ollama(
     text: str,
     ai_settings: dict,
@@ -412,13 +344,12 @@ def _parse_with_ollama(
     today = datetime.now().date()
     today_iso = today.isoformat()
     yesterday_iso = (today - timedelta(days=1)).isoformat()
+    day_before_iso = (today - timedelta(days=2)).isoformat()
     ai_expense = _categories_for_ai(expense_categories)
     ai_income = _categories_for_ai(income_categories)
     fallback_expense = _find_fallback_category(expense_categories)
     fallback_income = _find_fallback_category(income_categories)
-    entertainment_hint = ""
-    if any(c.lower() == "entertainment" for c in ai_expense):
-        entertainment_hint = f' For coffee/cafe/καφές use exactly "Entertainment".'
+    category_hints = _prompt_category_hints(expense_categories, income_categories)
     prompt = f"""You parse short budget messages into structured JSON for a personal finance app.
 Today is {today_iso}.
 
@@ -429,17 +360,22 @@ Accounts: {json.dumps(accounts, ensure_ascii=False)}
 User message: {json.dumps(text, ensure_ascii=False)}
 
 Parse the ENTIRE message:
-- type: "expense" or "income"
-- amount: positive number, no currency symbol
-- category: MUST be copied exactly from the lists above — never use "General", never invent a name
-- Pick the best semantic match.{entertainment_hint}
-  coffee/cafe/καφές → Entertainment; butcher/κρεοπωλείο/grocery → Super Market
-- Only if nothing fits at all, use exactly "{fallback_expense}" (expense) or "{fallback_income}" (income)
+- type: "expense" OR "income"
+  • income = salary, misthos, μισθός, paycheck, wages, bonus, freelance, έσοδα received
+  • expense = everything else (purchases, bills, food out, etc.)
+- amount: positive number, no currency symbol (ignore minus signs)
+- category: MUST be copied exactly from the matching list (expense OR income) — never invent a name
+- Pick the best semantic match.{category_hints}
+- Only if nothing fits, use "{fallback_expense}" (expense) or "{fallback_income}" (income)
 - account: exact account name or null
-- notes: shop or item detail (e.g. "καφές"), not the category name
-- date: YYYY-MM-DD (χθες/yesterday={yesterday_iso}, σήμερα/today={today_iso})
+- notes: short detail (e.g. "καφές", "Μάιος"), not the category name
+- date: YYYY-MM-DD (χθες/yesterday={yesterday_iso}, προχθές/day before yesterday={day_before_iso}, σήμερα/today={today_iso})
 
-Example: "χθες καφές 3.50" → category "Entertainment" if in list, amount 3.5, notes "καφές", date "{yesterday_iso}"
+Examples:
+- "χθες καφές 3.50" → expense, Entertainment, 3.5, notes "καφές", date "{yesterday_iso}"
+- "misthos 2000" → income, Salary, 2000, notes ""
+- "μισθός 1500" → income, Salary, 1500
+- "salary 1800" → income, Salary, 1800
 
 Return ONLY valid JSON: type, amount, category, account, notes, date"""
 
@@ -487,48 +423,33 @@ def parse_message(
     accounts: list[str],
 ) -> dict | None:
     cleaned = " ".join(text.split()).strip()
-    if not cleaned:
+    if not cleaned or not ai_settings.get("ai_enabled"):
         return None
 
-    if ai_settings.get("ai_enabled"):
-        ollama_parsed = _parse_with_ollama(
-            text,
-            ai_settings,
-            expense_categories,
-            income_categories,
-            accounts,
-        )
-        if not ollama_parsed:
-            return None
-        cats = (
-            income_categories
-            if ollama_parsed["type"] == "income"
-            else expense_categories
-        )
-        category = _resolve_category_name(ollama_parsed.get("category", ""), cats)
-        return {
-            "type": ollama_parsed["type"],
-            "amount": ollama_parsed["amount"],
-            "category": category,
-            "account": ollama_parsed.get("account"),
-            "notes": ollama_parsed.get("notes", ""),
-            "date": ollama_parsed.get("date"),
-            "source": "ollama",
-        }
-
-    skeleton = _parse_with_regex(cleaned)
-    if not skeleton:
-        return None
-
-    cats = income_categories if skeleton["type"] == "income" else expense_categories
-    exact = _best_name_match(str(skeleton.get("description") or ""), cats)
-    category = exact or _find_fallback_category(cats)
-    return _merge_parsed(
-        skeleton,
-        category=category,
-        notes="" if exact else "",
-        source="regex" if exact else "fallback",
+    ollama_parsed = _parse_with_ollama(
+        text,
+        ai_settings,
+        expense_categories,
+        income_categories,
+        accounts,
     )
+    if not ollama_parsed:
+        return None
+    cats = (
+        income_categories
+        if ollama_parsed["type"] == "income"
+        else expense_categories
+    )
+    category = _resolve_category_name(ollama_parsed.get("category", ""), cats)
+    return {
+        "type": ollama_parsed["type"],
+        "amount": ollama_parsed["amount"],
+        "category": category,
+        "account": ollama_parsed.get("account"),
+        "notes": ollama_parsed.get("notes", ""),
+        "date": ollama_parsed.get("date"),
+        "source": "ollama",
+    }
 
 
 def _lookup_category_id(
@@ -890,6 +811,7 @@ def _user_context(conn: sqlite3.Connection, user_id: int) -> dict:
     ai_settings = integrations.get_user_integrations(conn, uid)
     _ensure_fallback_category(conn, uid, expense=True)
     _ensure_fallback_category(conn, uid, expense=False)
+    _ensure_salary_category(conn, uid)
     expense_categories = [
         r["name"]
         for r in conn.execute(
@@ -937,8 +859,8 @@ def handle_update(update: dict, conn: sqlite3.Connection, balance_fn, config: di
             "Vibe Budgeting bot\n\n"
             "1) Settings → Integrations → Generate link code\n"
             "2) Send: /link YOURCODE\n"
-            "3) Enable AI in Integrations (required for smart categories)\n"
-            "4) Send: χθες καφές 3.50\n\n"
+            "3) Enable AI in Integrations (required)\n"
+            "4) Send: misthos 2000 or χθες καφές 3.50\n\n"
             "Commands: /help /balance /undo /unlink",
             bot_token=bot_token,
         )
@@ -947,12 +869,10 @@ def handle_update(update: dict, conn: sqlite3.Connection, balance_fn, config: di
     if text.startswith("/help"):
         send_message(
             chat_id,
-            "Examples (AI enabled — maps to your categories, never creates new ones):\n"
-            "• χθες καφές 3.50 → Entertainment\n"
-            "• κρεοπωλείο 25 → Super Market\n"
-            "• unknown shop 10 → Other\n\n"
-            "Exact category name also works without AI:\n"
-            "• Super Market 20\n\n"
+            "Examples (AI required):\n"
+            "• misthos 2000 → Salary (income)\n"
+            "• χθες καφές 3.50 → Entertainment (expense)\n"
+            "• κρεοπωλείο 25 → Super Market (expense)\n\n"
             "Commands: /link /balance /undo /unlink",
             bot_token=bot_token,
         )
@@ -1002,11 +922,10 @@ def handle_update(update: dict, conn: sqlite3.Connection, balance_fn, config: di
         ctx["accounts"],
     )
     if not parsed:
-        hint = "Try: Super Market 20"
         if not ctx["ai_settings"].get("ai_enabled"):
-            hint += "\nEnable AI in Integrations — with AI on, the whole message is parsed by Ollama."
+            hint = "Enable AI in Settings → Integrations. All messages are parsed by Ollama only."
         else:
-            hint += "\nAI could not parse this message. Check Ollama connection/model in Integrations."
+            hint = "AI could not parse this message. Check Ollama connection/model in Integrations."
         send_message(chat_id, f"Could not parse.\n{hint}", bot_token=bot_token)
         return
 

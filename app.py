@@ -937,6 +937,14 @@ def seed_user_defaults(conn, user_id):
         (uid, "General"),
     )
     conn.execute(
+        "INSERT OR IGNORE INTO income_categories (user_id, name) VALUES (?, ?)",
+        (uid, "Salary"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO income_categories (user_id, name) VALUES (?, ?)",
+        (uid, "Other"),
+    )
+    conn.execute(
         "INSERT OR IGNORE INTO accounts (user_id, name, opening_balance) VALUES (?, ?, ?)",
         (uid, "Main", 0.0),
     )

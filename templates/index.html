@@ -1613,9 +1613,8 @@
 
                                 <h3>Local AI (Ollama)</h3>
                                 <p class="muted small-hint">
-                                    Required for Telegram: the whole message is sent to Ollama, which extracts
-                                    amount, date, notes, and picks an existing category (unknown → Other).
-                                    The bot never creates new categories.
+                                    Required for Telegram. Every message is parsed by Ollama only
+                                    (expenses and income). Unknown items → Other. No regex fallback.
                                 </p>
                                 <form action="{{ url_for('save_integrations') }}" class="integrations-form" method="post" id="integrations-ai-form">
                                     <input name="month" type="hidden" value="{{ month_filter }}">
