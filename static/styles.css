@@ -199,6 +199,10 @@ h3 {
     font-size: 0.82rem;
 }
 
+.recurring-rule-duration {
+    font-size: 0.82rem;
+}
+
 .recurring-enabled-label {
     display: inline-flex;
     align-items: center;

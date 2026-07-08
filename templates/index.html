@@ -589,6 +589,13 @@
                         </select>
                         <label class="month-label" for="recurring-dom">Day of month</label>
                         <input id="recurring-dom" max="31" min="1" name="day_of_month" required type="number" value="1">
+                        <label class="checkbox-inline recurring-enabled-label">
+                            <input checked data-recurring-indefinite-toggle name="indefinitely" type="checkbox" value="1"> Indefinitely
+                        </label>
+                        <div data-recurring-months-wrap hidden>
+                            <label class="month-label" for="recurring-months">Run for how many months</label>
+                            <input id="recurring-months" data-recurring-months-input min="1" name="months_to_run" placeholder="e.g. 12" type="number">
+                        </div>
                         <label class="month-label" for="recurring-notes">Notes (optional)</label>
                         <textarea id="recurring-notes" name="notes" placeholder="e.g. Rent, Salary, Subscription" rows="2"></textarea>
                         <button type="submit">Add recurring rule</button>
@@ -604,6 +611,13 @@
                                     <div class="recurring-rule-header">
                                         <span class="recurring-rule-badge {% if rule.entry_type == 'expense' %}recurring-rule-expense{% else %}recurring-rule-income{% endif %}">{{ rule.entry_type }}</span>
                                         {% if not rule.enabled %}<span class="muted recurring-rule-paused">paused</span>{% endif %}
+                                        <span class="muted recurring-rule-duration">
+                                            {% if rule.months_to_run %}
+                                                {{ rule.months_to_run }} month{% if rule.months_to_run != 1 %}s{% endif %}
+                                            {% else %}
+                                                indefinitely
+                                            {% endif %}
+                                        </span>
                                     </div>
                                     <select name="category_choice" required autocomplete="off" aria-label="Category">
                                         <optgroup label="Expense">
@@ -624,6 +638,13 @@
                                         {% endfor %}
                                     </select>
                                     <input max="31" min="1" name="day_of_month" required type="number" value="{{ rule.day_of_month }}" aria-label="Day of month">
+                                    <label class="checkbox-inline recurring-enabled-label">
+                                        <input data-recurring-indefinite-toggle name="indefinitely" type="checkbox" value="1" {% if not rule.months_to_run %}checked{% endif %}> Indefinitely
+                                    </label>
+                                    <div data-recurring-months-wrap {% if not rule.months_to_run %}hidden{% endif %}>
+                                        <label class="sr-only">Run for how many months</label>
+                                        <input data-recurring-months-input min="1" name="months_to_run" placeholder="Months" type="number" value="{{ rule.months_to_run or '' }}" aria-label="Run for how many months">
+                                    </div>
                                     <input name="notes" placeholder="Notes" type="text" value="{{ rule.notes }}">
                                     <label class="checkbox-inline recurring-enabled-label">
                                         <input name="enabled" type="checkbox" value="1" {% if rule.enabled %}checked{% endif %}> Active
@@ -1906,6 +1927,43 @@
                     localStorage.setItem("theme", next);
                 });
             }
+
+            function syncRecurringDuration(form) {
+                if (!form) {
+                    return;
+                }
+                const toggle = form.querySelector("[data-recurring-indefinite-toggle]");
+                const wrap = form.querySelector("[data-recurring-months-wrap]");
+                const input = form.querySelector("[data-recurring-months-input]");
+                if (!toggle || !wrap || !input) {
+                    return;
+                }
+                const indefinite = !!toggle.checked;
+                wrap.hidden = indefinite;
+                input.disabled = indefinite;
+                input.required = !indefinite;
+                if (indefinite) {
+                    input.value = "";
+                }
+            }
+
+            function bindRecurringDurationControls(scope) {
+                const forms = (scope || document).querySelectorAll(".recurring-add-form, .recurring-rule-form");
+                forms.forEach(function (form) {
+                    const toggle = form.querySelector("[data-recurring-indefinite-toggle]");
+                    if (!toggle || toggle.dataset.boundRecurringDuration === "1") {
+                        syncRecurringDuration(form);
+                        return;
+                    }
+                    toggle.dataset.boundRecurringDuration = "1";
+                    toggle.addEventListener("change", function () {
+                        syncRecurringDuration(form);
+                    });
+                    syncRecurringDuration(form);
+                });
+            }
+
+            bindRecurringDurationControls(document);
 
             const settingsSections = document.querySelectorAll(".settings-section");
             const settingsSectionMap = {

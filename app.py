@@ -188,6 +188,18 @@ def normalize_day_of_month(value):
         return 1
 
 
+def normalize_optional_positive_int(value):
+    """Positive integer from form string, or None when blank/invalid."""
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        n = int(s)
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_row_created_date(row):
     raw = row["created_at"]
     if raw is None:
@@ -224,7 +236,7 @@ def apply_recurring_entries(conn, user_id):
     today_ym = f"{today.year:04d}-{today.month:02d}"
     rules = conn.execute(
         """
-        SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at
+        SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at, months_to_run
         FROM recurring_entries
         WHERE enabled = 1 AND user_id = ?
         """,
@@ -239,6 +251,12 @@ def apply_recurring_entries(conn, user_id):
         full_notes = f"{prefix}{note_text}" if note_text else prefix.strip()
 
         for ym in _month_iter(start_ym, today_ym):
+            months_to_run = normalize_optional_positive_int(rule["months_to_run"])
+            if months_to_run is not None:
+                year_num, month_num = map(int, ym.split("-", 1))
+                month_index = (year_num - created_d.year) * 12 + (month_num - created_d.month) + 1
+                if month_index > months_to_run:
+                    break
             exists = conn.execute(
                 "SELECT 1 FROM recurring_applied WHERE recurring_id = ? AND ym = ?",
                 (rule["id"], ym),
@@ -1483,12 +1501,18 @@ def migrate_recurring_entries(conn):
             category_id INTEGER NOT NULL,
             account_id INTEGER NOT NULL REFERENCES accounts(id),
             day_of_month INTEGER NOT NULL CHECK (day_of_month >= 1 AND day_of_month <= 31),
+            months_to_run INTEGER CHECK (months_to_run IS NULL OR months_to_run > 0),
             notes TEXT NOT NULL DEFAULT '',
             enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    cols = _column_names(conn, "recurring_entries")
+    if cols and "months_to_run" not in cols:
+        conn.execute(
+            "ALTER TABLE recurring_entries ADD COLUMN months_to_run INTEGER CHECK (months_to_run IS NULL OR months_to_run > 0)"
+        )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS recurring_applied (
@@ -2457,6 +2481,7 @@ def index():
             r.category_id,
             r.account_id,
             r.day_of_month,
+            r.months_to_run,
             r.notes,
             r.enabled,
             r.created_at,
@@ -2982,6 +3007,16 @@ def _recurring_category_ok(conn, entry_type, category_id, user_id):
     return None
 
 
+def _parse_recurring_duration(form):
+    indefinite = form.get("indefinitely") == "1"
+    if indefinite:
+        return None
+    months_to_run = normalize_optional_positive_int(form.get("months_to_run"))
+    if months_to_run is None:
+        raise ValueError("Choose how many months the recurring rule should run, or enable Indefinitely.")
+    return months_to_run
+
+
 @app.route("/recurring/add", methods=["POST"])
 def add_recurring():
     uid = g.user_id
@@ -3016,6 +3051,12 @@ def add_recurring():
         conn.close()
         flash("Invalid amount or account.", "error")
         return redirect_home(panel="recurring")
+    try:
+        months_to_run = _parse_recurring_duration(request.form)
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc), "error")
+        return redirect_home(panel="recurring")
 
     if amt <= 0:
         conn.close()
@@ -3024,10 +3065,12 @@ def add_recurring():
 
     conn.execute(
         """
-        INSERT INTO recurring_entries (user_id, entry_type, amount, category_id, account_id, day_of_month, notes, enabled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        INSERT INTO recurring_entries (
+            user_id, entry_type, amount, category_id, account_id, day_of_month, months_to_run, notes, enabled
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
         """,
-        (uid, entry_type, amt, category_id, account_id, dom, notes),
+        (uid, entry_type, amt, category_id, account_id, dom, months_to_run, notes),
     )
     conn.commit()
     conn.close()
@@ -3070,6 +3113,12 @@ def edit_recurring(recurring_id):
         conn.close()
         flash("Invalid amount or account.", "error")
         return redirect_home(panel="recurring")
+    try:
+        months_to_run = _parse_recurring_duration(request.form)
+    except ValueError as exc:
+        conn.close()
+        flash(str(exc), "error")
+        return redirect_home(panel="recurring")
 
     if amt <= 0:
         conn.close()
@@ -3079,10 +3128,10 @@ def edit_recurring(recurring_id):
     cur = conn.execute(
         """
         UPDATE recurring_entries
-        SET entry_type = ?, amount = ?, category_id = ?, account_id = ?, day_of_month = ?, notes = ?, enabled = ?
+        SET entry_type = ?, amount = ?, category_id = ?, account_id = ?, day_of_month = ?, months_to_run = ?, notes = ?, enabled = ?
         WHERE id = ? AND user_id = ?
         """,
-        (entry_type, amt, category_id, account_id, dom, notes, enabled, recurring_id, uid),
+        (entry_type, amt, category_id, account_id, dom, months_to_run, notes, enabled, recurring_id, uid),
     )
     conn.commit()
     conn.close()
