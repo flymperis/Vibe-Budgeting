@@ -24,11 +24,7 @@
         </div>
         <div class="cal-dropdown-field">
             <label class="month-label" for="shell-y-{{ suffix }}">Year</label>
-            <select id="shell-y-{{ suffix }}" name="cal_year" class="shell-cal-year" autocomplete="off">
-                {% for yi in range(2000, 2101) %}
-                    <option value="{{ yi }}" {% if yi == y %}selected{% endif %}>{{ yi }}</option>
-                {% endfor %}
-            </select>
+            <input id="shell-y-{{ suffix }}" name="cal_year" class="shell-cal-year shell-cal-year-input" type="number" min="2000" max="2100" step="1" value="{{ y }}" required inputmode="numeric" autocomplete="off">
         </div>
     </div>
     {%- endmacro %}
@@ -46,12 +42,7 @@
         </div>
         <div class="cal-dropdown-field">
             <label class="month-label" for="{{ yid }}">Year</label>
-            <select id="{{ yid }}" name="{{ year_name }}" class="list-cal-year" autocomplete="off">
-                <option value="">—</option>
-                {% for yi in range(2000, 2101) %}
-                    <option value="{{ yi }}" {% if filter_ym and filter_ym[0:4]|int == yi %}selected{% elif not filter_ym and shell_ym[0:4]|int == yi %}selected{% endif %}>{{ yi }}</option>
-                {% endfor %}
-            </select>
+            <input id="{{ yid }}" name="{{ year_name }}" class="list-cal-year list-cal-year-input" type="number" min="2000" max="2100" step="1" placeholder="Year" inputmode="numeric" autocomplete="off"{% if filter_ym %} value="{{ filter_ym[0:4]|int }}"{% elif not filter_ym and shell_ym %} value="{{ shell_ym[0:4]|int }}"{% endif %}>
         </div>
     </div>
     {%- endmacro %}
@@ -1924,6 +1915,10 @@
                 }
                 const scope = root && root.querySelectorAll ? root : document;
                 scope.querySelectorAll("select[data-option-set]").forEach(function (sel) {
+                    const modal = sel.closest(".home-modal");
+                    if (modal && modal.hidden && (!root || root === document)) {
+                        return;
+                    }
                     if (sel.options.length > 0 && sel.dataset.optionsFilled === "1") {
                         return;
                     }
@@ -2361,13 +2356,16 @@
                     { modal: modalExp, button: btnExp },
                     { modal: modalInc, button: btnInc },
                 ];
+                const pageChrome = document.querySelector(".app-layout");
 
-                function focusFirstField(modal) {
-                    const field = modal.querySelector(
-                        "textarea, input:not([type='hidden']), select, button[type='submit']"
-                    );
-                    if (field) {
-                        field.focus();
+                function setBackgroundInert(inert) {
+                    if (!pageChrome) {
+                        return;
+                    }
+                    if (inert) {
+                        pageChrome.setAttribute("inert", "");
+                    } else {
+                        pageChrome.removeAttribute("inert");
                     }
                 }
 
@@ -2379,16 +2377,18 @@
                         entry.button.classList.remove("is-active");
                     });
                     document.body.classList.remove("home-modal-open");
+                    setBackgroundInert(false);
                 }
 
                 function openModal(modal, button) {
                     closeAll();
+                    populateFormSelects(modal);
                     modal.hidden = false;
                     modal.setAttribute("aria-hidden", "false");
                     button.setAttribute("aria-expanded", "true");
                     button.classList.add("is-active");
                     document.body.classList.add("home-modal-open");
-                    focusFirstField(modal);
+                    setBackgroundInert(true);
                 }
 
                 btnExp.addEventListener("click", function () {

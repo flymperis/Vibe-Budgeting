@@ -430,6 +430,22 @@ form {
     min-width: 5.75rem;
 }
 
+.shell-cal-year-input,
+.list-cal-year-input {
+    min-width: 5.75rem;
+    max-width: 7rem;
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.shell-cal-year-input::-webkit-outer-spin-button,
+.shell-cal-year-input::-webkit-inner-spin-button,
+.list-cal-year-input::-webkit-outer-spin-button,
+.list-cal-year-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 .list-cal-picker .list-cal-month {
     min-width: 11rem;
 }
@@ -1171,6 +1187,11 @@ body.home-modal-open {
     overflow: hidden;
 }
 
+body.home-modal-open .app-layout {
+    content-visibility: hidden;
+    pointer-events: none;
+}
+
 .home-modal {
     position: fixed;
     inset: 0;
@@ -1179,6 +1200,8 @@ body.home-modal-open {
     align-items: center;
     justify-content: center;
     padding: 1rem;
+    content-visibility: visible;
+    contain: strict;
 }
 
 .home-modal[hidden] {
@@ -1210,6 +1233,23 @@ body.home-modal-open {
     border-radius: 16px;
     background: var(--surface);
     box-shadow: 0 22px 56px rgba(15, 23, 42, 0.24);
+    contain: layout style paint;
+    will-change: transform;
+    transform: translateZ(0);
+}
+
+.home-modal-dialog input:not([type="hidden"]),
+.home-modal-dialog textarea,
+.home-modal-dialog select {
+    transition: none;
+}
+
+.home-modal-dialog input:not([type="hidden"]):focus,
+.home-modal-dialog textarea:focus,
+.home-modal-dialog select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.28);
 }
 
 :root[data-theme="dark"] .home-modal-dialog {
