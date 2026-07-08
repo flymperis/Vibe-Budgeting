@@ -174,60 +174,12 @@
                     <h3 class="home-balances-heading">Account balances</h3>
 
                     <div class="home-quick-bar">
-                        <button id="home-btn-expense" type="button" class="btn-home-quick btn-home-quick-expense" aria-expanded="false" aria-controls="home-drawer-expense">
+                        <button id="home-btn-expense" type="button" class="btn-home-quick btn-home-quick-expense" aria-expanded="false" aria-controls="home-modal-expense">
                             + Expense
                         </button>
-                        <button id="home-btn-income" type="button" class="btn-home-quick btn-home-quick-income" aria-expanded="false" aria-controls="home-drawer-income">
+                        <button id="home-btn-income" type="button" class="btn-home-quick btn-home-quick-income" aria-expanded="false" aria-controls="home-modal-income">
                             + Income
                         </button>
-                    </div>
-
-                    <div id="home-drawer-expense" class="home-drawer" hidden>
-                        <div class="home-drawer-inner">
-                            <h3 class="home-drawer-title">New expense</h3>
-                            <form action="/expenses/add" class="panel-add-form home-quick-form" method="post">
-                                <input name="month" type="hidden" value="{{ month_filter }}">
-                                <input name="exp_page" type="hidden" value="1">
-                                <input name="next_panel" type="hidden" value="home">
-                                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                                <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
-                                <select name="category_id" required>
-                                    {% for category in categories %}
-                                        <option value="{{ category.id }}">{{ category.name }}</option>
-                                    {% endfor %}
-                                </select>
-                                <select name="account_id" required>
-                                    {% for account in accounts %}
-                                        <option value="{{ account.id }}">{{ account.name }}</option>
-                                    {% endfor %}
-                                </select>
-                                <button type="submit">Add expense</button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <div id="home-drawer-income" class="home-drawer" hidden>
-                        <div class="home-drawer-inner">
-                            <h3 class="home-drawer-title">New income</h3>
-                            <form action="/income/add" class="panel-add-form home-quick-form" method="post">
-                                <input name="month" type="hidden" value="{{ month_filter }}">
-                                <input name="inc_page" type="hidden" value="1">
-                                <input name="next_panel" type="hidden" value="home">
-                                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                                <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
-                                <select name="category_id" required>
-                                    {% for category in income_categories %}
-                                        <option value="{{ category.id }}">{{ category.name }}</option>
-                                    {% endfor %}
-                                </select>
-                                <select name="account_id" required>
-                                    {% for account in accounts %}
-                                        <option value="{{ account.id }}">{{ account.name }}</option>
-                                    {% endfor %}
-                                </select>
-                                <button type="submit">Add income</button>
-                            </form>
-                        </div>
                     </div>
 
                     <div class="home-balances-wrap">
@@ -1908,6 +1860,63 @@
             </aside>
         </div>
     </main>
+
+    <div id="home-modal-expense" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="home-modal-expense-title">
+        <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close expense dialog"></button>
+        <div class="home-modal-dialog home-modal-dialog-expense">
+            <div class="home-modal-header">
+                <h3 id="home-modal-expense-title" class="home-modal-title">New expense</h3>
+                <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">&times;</button>
+            </div>
+            <form action="/expenses/add" class="panel-add-form home-quick-form" method="post">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                <input name="exp_page" type="hidden" value="1">
+                <input name="next_panel" type="hidden" value="home">
+                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
+                <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
+                <select name="category_id" required>
+                    {% for category in categories %}
+                        <option value="{{ category.id }}">{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="account_id" required>
+                    {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Add expense</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="home-modal-income" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="home-modal-income-title">
+        <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close income dialog"></button>
+        <div class="home-modal-dialog home-modal-dialog-income">
+            <div class="home-modal-header">
+                <h3 id="home-modal-income-title" class="home-modal-title">New income</h3>
+                <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">&times;</button>
+            </div>
+            <form action="/income/add" class="panel-add-form home-quick-form" method="post">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                <input name="inc_page" type="hidden" value="1">
+                <input name="next_panel" type="hidden" value="home">
+                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
+                <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
+                <select name="category_id" required>
+                    {% for category in income_categories %}
+                        <option value="{{ category.id }}">{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="account_id" required>
+                    {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Add income</button>
+            </form>
+        </div>
+    </div>
+
     <script>
         (function () {
             const root = document.documentElement;
@@ -2345,43 +2354,72 @@
                 });
             })();
 
-            (function setupHomeQuickDrawers() {
-                const sheetExp = document.getElementById("home-drawer-expense");
-                const sheetInc = document.getElementById("home-drawer-income");
+            (function setupHomeQuickModals() {
+                const modalExp = document.getElementById("home-modal-expense");
+                const modalInc = document.getElementById("home-modal-income");
                 const btnExp = document.getElementById("home-btn-expense");
                 const btnInc = document.getElementById("home-btn-income");
-                if (!sheetExp || !sheetInc || !btnExp || !btnInc) {
+                if (!modalExp || !modalInc || !btnExp || !btnInc) {
                     return;
                 }
 
-                function closeBoth() {
-                    sheetExp.hidden = true;
-                    sheetInc.hidden = true;
-                    btnExp.setAttribute("aria-expanded", "false");
-                    btnInc.setAttribute("aria-expanded", "false");
-                    btnExp.classList.remove("is-active");
-                    btnInc.classList.remove("is-active");
+                const modals = [
+                    { modal: modalExp, button: btnExp },
+                    { modal: modalInc, button: btnInc },
+                ];
+
+                function focusFirstField(modal) {
+                    const field = modal.querySelector(
+                        "textarea, input:not([type='hidden']), select, button[type='submit']"
+                    );
+                    if (field) {
+                        field.focus();
+                    }
+                }
+
+                function closeAll() {
+                    modals.forEach(function (entry) {
+                        entry.modal.hidden = true;
+                        entry.modal.setAttribute("aria-hidden", "true");
+                        entry.button.setAttribute("aria-expanded", "false");
+                        entry.button.classList.remove("is-active");
+                    });
+                    document.body.classList.remove("home-modal-open");
+                }
+
+                function openModal(modal, button) {
+                    closeAll();
+                    modal.hidden = false;
+                    modal.setAttribute("aria-hidden", "false");
+                    button.setAttribute("aria-expanded", "true");
+                    button.classList.add("is-active");
+                    document.body.classList.add("home-modal-open");
+                    focusFirstField(modal);
                 }
 
                 btnExp.addEventListener("click", function () {
-                    const opening = sheetExp.hidden;
-                    closeBoth();
-                    if (opening) {
-                        sheetExp.hidden = false;
-                        btnExp.setAttribute("aria-expanded", "true");
-                        btnExp.classList.add("is-active");
-                        sheetExp.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                    if (modalExp.hidden) {
+                        openModal(modalExp, btnExp);
+                    } else {
+                        closeAll();
                     }
                 });
 
                 btnInc.addEventListener("click", function () {
-                    const opening = sheetInc.hidden;
-                    closeBoth();
-                    if (opening) {
-                        sheetInc.hidden = false;
-                        btnInc.setAttribute("aria-expanded", "true");
-                        btnInc.classList.add("is-active");
-                        sheetInc.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                    if (modalInc.hidden) {
+                        openModal(modalInc, btnInc);
+                    } else {
+                        closeAll();
+                    }
+                });
+
+                document.querySelectorAll("[data-home-modal-close]").forEach(function (el) {
+                    el.addEventListener("click", closeAll);
+                });
+
+                document.addEventListener("keydown", function (event) {
+                    if (event.key === "Escape" && document.body.classList.contains("home-modal-open")) {
+                        closeAll();
                     }
                 });
             })();
