@@ -1234,22 +1234,27 @@ body.home-modal-open .app-layout {
     background: var(--surface);
     box-shadow: 0 22px 56px rgba(15, 23, 42, 0.24);
     contain: layout style paint;
-    will-change: transform;
-    transform: translateZ(0);
 }
 
 .home-modal-dialog input:not([type="hidden"]),
 .home-modal-dialog textarea,
 .home-modal-dialog select {
-    transition: none;
+    transition: none !important;
+}
+
+.home-modal-dialog input:not([type="hidden"]):hover,
+.home-modal-dialog textarea:hover,
+.home-modal-dialog select:hover {
+    border-color: var(--border);
 }
 
 .home-modal-dialog input:not([type="hidden"]):focus,
 .home-modal-dialog textarea:focus,
 .home-modal-dialog select:focus {
-    outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.28);
+    box-shadow: none !important;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 :root[data-theme="dark"] .home-modal-dialog {
