@@ -24,11 +24,7 @@
         </div>
         <div class="cal-dropdown-field">
             <label class="month-label" for="shell-y-{{ suffix }}">Year</label>
-            <select id="shell-y-{{ suffix }}" name="cal_year" class="shell-cal-year" autocomplete="off">
-                {% for yi in range(2000, 2101) %}
-                    <option value="{{ yi }}" {% if yi == y %}selected{% endif %}>{{ yi }}</option>
-                {% endfor %}
-            </select>
+            <input id="shell-y-{{ suffix }}" name="cal_year" class="shell-cal-year shell-cal-year-input" type="number" min="2000" max="2100" step="1" value="{{ y }}" required inputmode="numeric" autocomplete="off">
         </div>
     </div>
     {%- endmacro %}
@@ -46,12 +42,7 @@
         </div>
         <div class="cal-dropdown-field">
             <label class="month-label" for="{{ yid }}">Year</label>
-            <select id="{{ yid }}" name="{{ year_name }}" class="list-cal-year" autocomplete="off">
-                <option value="">—</option>
-                {% for yi in range(2000, 2101) %}
-                    <option value="{{ yi }}" {% if filter_ym and filter_ym[0:4]|int == yi %}selected{% elif not filter_ym and shell_ym[0:4]|int == yi %}selected{% endif %}>{{ yi }}</option>
-                {% endfor %}
-            </select>
+            <input id="{{ yid }}" name="{{ year_name }}" class="list-cal-year list-cal-year-input" type="number" min="2000" max="2100" step="1" placeholder="Year" inputmode="numeric" autocomplete="off"{% if filter_ym %} value="{{ filter_ym[0:4]|int }}"{% elif not filter_ym and shell_ym %} value="{{ shell_ym[0:4]|int }}"{% endif %}>
         </div>
     </div>
     {%- endmacro %}
@@ -78,6 +69,14 @@
     {%- else -%}
     {{ url_for('index', panel='income', month=mf, inc_page=page) }}
     {%- endif -%}
+    {%- endmacro %}
+
+    {% macro vb_select(name, option_set, required=false, selected='', placeholder='', id='', extra_class='') -%}
+    <select name="{{ name }}"{% if id %} id="{{ id }}"{% endif %} class="vb-select{% if extra_class %} {{ extra_class }}{% endif %}"{% if required %} required{% endif %} data-option-set="{{ option_set }}" data-selected="{{ selected }}"{% if placeholder %} data-placeholder="{{ placeholder }}"{% endif %} autocomplete="off"></select>
+    {%- endmacro %}
+
+    {% macro vb_recurring_category_select(selected='', id='') -%}
+    <select name="category_choice"{% if id %} id="{{ id }}"{% endif %} class="vb-select" required autocomplete="off" aria-label="Category" data-option-set="recurring-categories" data-selected="{{ selected }}"></select>
     {%- endmacro %}
 
     {% macro reports_balance_chart(spec, fig_caption, aria_label) -%}
@@ -144,7 +143,8 @@
 
         <div class="app-layout">
             <div class="panel-shell">
-                <section class="panel {% if active_panel == 'home' %}active{% endif %}" id="panel-home">
+                {% if active_panel == 'home' %}
+                <section class="panel active" id="panel-home">
                     <h2 class="home-title">{{ month_heading }}</h2>
                     <p class="muted small-hint home-intro">
                         Income / Expenses / Net are for the selected month.
@@ -216,8 +216,10 @@
                         <a href="{{ url_for('index', panel='summary', month=month_filter) }}">Consolidated breakdown</a>
                     </p>
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'expenses' %}active{% endif %}" id="panel-expenses">
+                {% if active_panel == 'expenses' %}
+                <section class="panel active" id="panel-expenses">
                     <h2>Add Expense</h2>
                     <form action="/expenses/add" class="panel-add-form" method="post">
                         <input name="month" type="hidden" value="{{ month_filter }}">
@@ -231,16 +233,8 @@
                         {% endif %}
                         <textarea name="notes" placeholder="Notes" rows="2"></textarea>
                         <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
-                        <select name="category_id" required>
-                            {% for category in categories %}
-                                <option value="{{ category.id }}">{{ category.name }}</option>
-                            {% endfor %}
-                        </select>
-                        <select name="account_id" required>
-                            {% for account in accounts %}
-                                <option value="{{ account.id }}">{{ account.name }}</option>
-                            {% endfor %}
-                        </select>
+                        {{ vb_select('category_id', 'categories', required=true) }}
+                        {{ vb_select('account_id', 'accounts', required=true) }}
                         <button type="submit">Add Expense</button>
                     </form>
 
@@ -252,12 +246,7 @@
                         {{ list_filter_month_row(expense_filter_month, 'exp_cal_month', 'exp_cal_year', 'exp-cal-month', 'exp-cal-year', cal, month_filter) }}
                         <div class="cal-dropdown-field list-category-filter-field">
                             <label class="month-label" for="exp-category-filter">Category</label>
-                            <select id="exp-category-filter" name="exp_category" class="list-category-filter-select" autocomplete="off">
-                                <option value="">All categories</option>
-                                {% for category in categories %}
-                                    <option value="{{ category.id }}" {% if expense_filter_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
-                                {% endfor %}
-                            </select>
+                            {{ vb_select('exp_category', 'categories', id='exp-category-filter', extra_class='list-category-filter-select', placeholder='All categories', selected=expense_filter_category_id or '') }}
                         </div>
                         <button type="submit">Apply</button>
                         {% if expense_filter_month %}
@@ -337,8 +326,10 @@
                         </nav>
                     {% endif %}
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'income' %}active{% endif %}" id="panel-income">
+                {% if active_panel == 'income' %}
+                <section class="panel active" id="panel-income">
                     <h2>Add Income Entry</h2>
                     <form action="/income/add" class="panel-add-form" method="post">
                         <input name="month" type="hidden" value="{{ month_filter }}">
@@ -352,16 +343,8 @@
                         {% endif %}
                         <textarea name="notes" placeholder="Notes" rows="2"></textarea>
                         <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
-                        <select name="category_id" required>
-                            {% for category in income_categories %}
-                                <option value="{{ category.id }}">{{ category.name }}</option>
-                            {% endfor %}
-                        </select>
-                        <select name="account_id" required>
-                            {% for account in accounts %}
-                                <option value="{{ account.id }}">{{ account.name }}</option>
-                            {% endfor %}
-                        </select>
+                        {{ vb_select('category_id', 'income_categories', required=true) }}
+                        {{ vb_select('account_id', 'accounts', required=true) }}
                         <button type="submit">Add Income</button>
                     </form>
 
@@ -373,12 +356,7 @@
                         {{ list_filter_month_row(income_filter_month, 'inc_cal_month', 'inc_cal_year', 'inc-cal-month', 'inc-cal-year', cal, month_filter) }}
                         <div class="cal-dropdown-field list-category-filter-field">
                             <label class="month-label" for="inc-category-filter">Category</label>
-                            <select id="inc-category-filter" name="inc_category" class="list-category-filter-select" autocomplete="off">
-                                <option value="">All categories</option>
-                                {% for category in income_categories %}
-                                    <option value="{{ category.id }}" {% if income_filter_category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
-                                {% endfor %}
-                            </select>
+                            {{ vb_select('inc_category', 'income_categories', id='inc-category-filter', extra_class='list-category-filter-select', placeholder='All categories', selected=income_filter_category_id or '') }}
                         </div>
                         <button type="submit">Apply</button>
                         {% if income_filter_month %}
@@ -458,8 +436,10 @@
                         </nav>
                     {% endif %}
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'recurring' %}active{% endif %}" id="panel-recurring">
+                {% if active_panel == 'recurring' %}
+                <section class="panel active" id="panel-recurring">
                     <h2>Recurring Entries</h2>
                     <p class="muted small-hint">
                         Each rule posts automatically once per calendar month on the day you choose (or the last day of the month if that day does not exist).
@@ -471,26 +451,11 @@
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <input name="next_panel" type="hidden" value="recurring">
                         <label class="month-label" for="recurring-category-choice">Category</label>
-                        <select id="recurring-category-choice" name="category_choice" required autocomplete="off">
-                            <optgroup label="Expense">
-                                {% for category in categories %}
-                                    <option value="e-{{ category.id }}">{{ category.name }}</option>
-                                {% endfor %}
-                            </optgroup>
-                            <optgroup label="Income">
-                                {% for category in income_categories %}
-                                    <option value="i-{{ category.id }}">{{ category.name }}</option>
-                                {% endfor %}
-                            </optgroup>
-                        </select>
+                        {{ vb_recurring_category_select(id='recurring-category-choice') }}
                         <label class="month-label" for="recurring-amount">Amount (positive)</label>
                         <input id="recurring-amount" min="0.01" name="amount" placeholder="Amount per month" required step="0.01" type="number">
                         <label class="month-label" for="recurring-account">Account</label>
-                        <select id="recurring-account" name="account_id" required>
-                            {% for account in accounts %}
-                                <option value="{{ account.id }}">{{ account.name }}</option>
-                            {% endfor %}
-                        </select>
+                        {{ vb_select('account_id', 'accounts', required=true, id='recurring-account') }}
                         <label class="month-label" for="recurring-dom">Day of month</label>
                         <input id="recurring-dom" max="31" min="1" name="day_of_month" required type="number" value="1">
                         <label class="checkbox-inline recurring-enabled-label">
@@ -523,24 +488,9 @@
                                             {% endif %}
                                         </span>
                                     </div>
-                                    <select name="category_choice" required autocomplete="off" aria-label="Category">
-                                        <optgroup label="Expense">
-                                            {% for category in categories %}
-                                                <option value="e-{{ category.id }}" {% if rule.entry_type == 'expense' and category.id == rule.category_id %}selected{% endif %}>{{ category.name }}</option>
-                                            {% endfor %}
-                                        </optgroup>
-                                        <optgroup label="Income">
-                                            {% for category in income_categories %}
-                                                <option value="i-{{ category.id }}" {% if rule.entry_type == 'income' and category.id == rule.category_id %}selected{% endif %}>{{ category.name }}</option>
-                                            {% endfor %}
-                                        </optgroup>
-                                    </select>
+                                    {{ vb_recurring_category_select('e-' ~ rule.category_id if rule.entry_type == 'expense' else 'i-' ~ rule.category_id) }}
                                     <input min="0.01" name="amount" required step="0.01" type="number" value="{{ '%.2f'|format(rule.amount) }}" aria-label="Amount">
-                                    <select name="account_id" required aria-label="Account">
-                                        {% for account in accounts %}
-                                            <option value="{{ account.id }}" {% if account.id == rule.account_id %}selected{% endif %}>{{ account.name }}</option>
-                                        {% endfor %}
-                                    </select>
+                                    {{ vb_select('account_id', 'accounts', required=true, selected=rule.account_id) }}
                                     <input max="31" min="1" name="day_of_month" required type="number" value="{{ rule.day_of_month }}" aria-label="Day of month">
                                     <label class="checkbox-inline recurring-enabled-label">
                                         <input data-recurring-indefinite-toggle name="indefinitely" type="checkbox" value="1" {% if not rule.months_to_run %}checked{% endif %}> Indefinitely
@@ -562,8 +512,10 @@
                         <p class="muted">No recurring rules yet.</p>
                     {% endif %}
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'transfer' %}active{% endif %}" id="panel-transfer">
+                {% if active_panel == 'transfer' %}
+                <section class="panel active" id="panel-transfer">
                     <h2>Bank Transfer</h2>
                     <p class="muted small-hint">Move money between your accounts (e.g. Piraeus → AlphaBank). Balances update from the transfer date.</p>
                     {% if account_balances %}
@@ -596,17 +548,9 @@
                             <input name="month" type="hidden" value="{{ month_filter }}">
                             <input name="next_panel" type="hidden" value="transfer">
                             <label class="transfer-field-label" for="transfer-from">From account</label>
-                            <select id="transfer-from" name="from_account_id" required>
-                                {% for account in accounts %}
-                                    <option value="{{ account.id }}">{{ account.name }}</option>
-                                {% endfor %}
-                            </select>
+                            {{ vb_select('from_account_id', 'accounts', required=true, id='transfer-from') }}
                             <label class="transfer-field-label" for="transfer-to">To account</label>
-                            <select id="transfer-to" name="to_account_id" required>
-                                {% for account in accounts %}
-                                    <option value="{{ account.id }}">{{ account.name }}</option>
-                                {% endfor %}
-                            </select>
+                            {{ vb_select('to_account_id', 'accounts', required=true, id='transfer-to') }}
                             <label class="transfer-field-label" for="transfer-amount">Amount</label>
                             <input id="transfer-amount" min="0.01" name="amount" placeholder="Amount" required step="0.01" type="number">
                             <label class="transfer-field-label" for="transfer-date">Date</label>
@@ -649,8 +593,10 @@
                         </table>
                     </div>
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'summary' %}active{% endif %}" id="panel-summary">
+                {% if active_panel == 'summary' %}
+                <section class="panel active" id="panel-summary">
                     <h2>Consolidated</h2>
                     <form action="/" class="month-picker" method="get">
                         <input name="panel" type="hidden" value="summary">
@@ -735,8 +681,10 @@
                         </div>
                     </div>
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'yearly' %}active{% endif %}" id="panel-yearly">
+                {% if active_panel == 'yearly' %}
+                <section class="panel active" id="panel-yearly">
                     <h2>Yearly overview</h2>
                     <form action="/" class="year-picker" method="get">
                         <input name="panel" type="hidden" value="yearly">
@@ -781,8 +729,10 @@
                         </table>
                     </div>
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'reports' %}active{% endif %}" id="panel-reports">
+                {% if active_panel == 'reports' %}
+                <section class="panel active" id="panel-reports">
                     <div class="reports-body">
                         <div class="reports-section {% if reports_section == 'bank' %}active{% endif %}" id="reports-bank">
                             <h2>Bank balance — {{ report_account_label }}</h2>
@@ -933,8 +883,10 @@
                         </div>
                     </div>
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'investments' %}active{% endif %}" id="panel-investments">
+                {% if active_panel == 'investments' %}
+                <section class="panel active" id="panel-investments">
                     <div class="investments-body">
                             <div class="investments-section {% if investments_section == 'crypto' %}active{% endif %}" id="investments-crypto">
                                 <h2>Crypto Portfolio</h2>
@@ -1432,8 +1384,10 @@
                             </div>
                         </div>
                 </section>
+                {% endif %}
 
-                <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">
+                {% if active_panel == 'settings' %}
+                <section class="panel active" id="panel-settings">
                     <div class="settings-body">
                             <div class="settings-section {% if settings_section == 'general' %}active{% endif %}" id="settings-general">
                                 <h2>Appearance</h2>
@@ -1722,97 +1676,101 @@
                             </div>
                         </div>
                 </section>
+                {% endif %}
             </div>
 
             <aside class="side-menu">
-                <button class="menu-item {% if active_panel == 'home' %}active{% endif %}" data-target="panel-home" type="button">
+                <a class="menu-item {% if active_panel == 'home' %}active{% endif %}" href="{{ url_for('index', panel='home', month=month_filter) }}">
                     <span class="menu-item-inner">
                         <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                         <span class="menu-item-text">Home</span>
                     </span>
-                </button>
-                <button class="menu-item {% if active_panel == 'expenses' %}active{% endif %}" data-target="panel-expenses" type="button">
+                </a>
+                <a class="menu-item {% if active_panel == 'expenses' %}active{% endif %}" href="{{ url_for('index', panel='expenses', month=month_filter) }}">
                     <span class="menu-item-inner">
                         <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><rect height="16" rx="2" width="22" x="1" y="4"/><line x1="1" x2="23" y1="10" y2="10"/></svg>
                         <span class="menu-item-text">Expenses</span>
                     </span>
-                </button>
-                <button class="menu-item {% if active_panel == 'income' %}active{% endif %}" data-target="panel-income" type="button">
+                </a>
+                <a class="menu-item {% if active_panel == 'income' %}active{% endif %}" href="{{ url_for('index', panel='income', month=month_filter) }}">
                     <span class="menu-item-inner">
                         <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><line x1="12" x2="12" y1="19" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
                         <span class="menu-item-text">Income</span>
                     </span>
-                </button>
-                <button class="menu-item {% if active_panel == 'recurring' %}active{% endif %}" data-target="panel-recurring" type="button">
+                </a>
+                <a class="menu-item {% if active_panel == 'recurring' %}active{% endif %}" href="{{ url_for('index', panel='recurring', month=month_filter) }}">
                     <span class="menu-item-inner">
                         <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 1 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
                         <span class="menu-item-text">Recurring</span>
                     </span>
-                </button>
-                <button class="menu-item {% if active_panel == 'transfer' %}active{% endif %}" data-target="panel-transfer" type="button">
+                </a>
+                <a class="menu-item {% if active_panel == 'transfer' %}active{% endif %}" href="{{ url_for('index', panel='transfer', month=month_filter) }}">
                     <span class="menu-item-inner">
                         <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><line x1="3" x2="21" y1="5" y2="5"/><polyline points="7 23 3 19 7 15"/><line x1="21" x2="3" y1="19" y2="19"/></svg>
                         <span class="menu-item-text">Bank Transfer</span>
                     </span>
-                </button>
-                <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">
+                </a>
+                <a class="menu-item {% if active_panel == 'summary' %}active{% endif %}" href="{{ url_for('index', panel='summary', month=month_filter) }}">
                     <span class="menu-item-inner">
                         <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="3"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
                         <span class="menu-item-text">Consolidated</span>
                     </span>
-                </button>
-                <button class="menu-item {% if active_panel == 'yearly' %}active{% endif %}" data-target="panel-yearly" type="button">
+                </a>
+                <a class="menu-item {% if active_panel == 'yearly' %}active{% endif %}" href="{{ url_for('index', panel='yearly', month=month_filter, year=year_filter) }}">
                     <span class="menu-item-inner">
                         <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="4"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
                         <span class="menu-item-text">Yearly</span>
                     </span>
-                </button>
+                </a>
                 <div class="menu-group">
-                    <button class="menu-item {% if active_panel == 'reports' %}active{% endif %}" data-target="panel-reports" type="button">
+                    <a class="menu-item {% if active_panel == 'reports' %}active{% endif %}" href="{{ url_for('index', panel='reports', month=month_filter, report_year=report_year, reports_section=reports_section) }}">
                         <span class="menu-item-inner">
                             <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
                             <span class="menu-item-text">Reports</span>
                         </span>
-                    </button>
+                    </a>
                     <div class="menu-sub-items {% if active_panel == 'reports' %}active{% endif %}">
-                        <button class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'bank' %}active{% endif %}" data-target="panel-reports" data-section="reports-bank" data-section-key="bank" data-section-param="reports_section" type="button">Bank</button>
-                        <button class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'crypto' %}active{% endif %}" data-target="panel-reports" data-section="reports-crypto" data-section-key="crypto" data-section-param="reports_section" type="button">Crypto</button>
-                        <button class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'stocks' %}active{% endif %}" data-target="panel-reports" data-section="reports-stocks" data-section-key="stocks" data-section-param="reports_section" type="button">Stocks</button>
+                        <a class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'bank' %}active{% endif %}" href="{{ url_for('index', panel='reports', month=month_filter, report_year=report_year, reports_section='bank') }}">Bank</a>
+                        <a class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'crypto' %}active{% endif %}" href="{{ url_for('index', panel='reports', month=month_filter, report_year=report_year, reports_section='crypto') }}">Crypto</a>
+                        <a class="menu-sub-item {% if active_panel == 'reports' and reports_section == 'stocks' %}active{% endif %}" href="{{ url_for('index', panel='reports', month=month_filter, report_year=report_year, reports_section='stocks') }}">Stocks</a>
                     </div>
                 </div>
                 <div class="menu-group">
-                    <button class="menu-item {% if active_panel == 'investments' %}active{% endif %}" data-target="panel-investments" type="button">
+                    <a class="menu-item {% if active_panel == 'investments' %}active{% endif %}" href="{{ url_for('index', panel='investments', month=month_filter, investments_section=investments_section) }}">
                         <span class="menu-item-inner">
                             <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
                             <span class="menu-item-text">Investments</span>
                         </span>
-                    </button>
+                    </a>
                     <div class="menu-sub-items {% if active_panel == 'investments' %}active{% endif %}">
-                        <button class="menu-sub-item {% if active_panel == 'investments' and investments_section == 'crypto' %}active{% endif %}" data-target="panel-investments" data-section="investments-crypto" data-section-key="crypto" data-section-param="investments_section" type="button">Crypto</button>
-                        <button class="menu-sub-item {% if active_panel == 'investments' and investments_section == 'stocks' %}active{% endif %}" data-target="panel-investments" data-section="investments-stocks" data-section-key="stocks" data-section-param="investments_section" type="button">Stocks</button>
+                        <a class="menu-sub-item {% if active_panel == 'investments' and investments_section == 'crypto' %}active{% endif %}" href="{{ url_for('index', panel='investments', month=month_filter, investments_section='crypto') }}">Crypto</a>
+                        <a class="menu-sub-item {% if active_panel == 'investments' and investments_section == 'stocks' %}active{% endif %}" href="{{ url_for('index', panel='investments', month=month_filter, investments_section='stocks') }}">Stocks</a>
                     </div>
                 </div>
                 <div class="menu-group">
-                    <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">
+                    <a class="menu-item {% if active_panel == 'settings' %}active{% endif %}" href="{{ url_for('index', panel='settings', month=month_filter, settings_section=settings_section) }}">
                         <span class="menu-item-inner">
                             <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
                             <span class="menu-item-text">Settings</span>
                         </span>
-                    </button>
+                    </a>
                     <div class="menu-sub-items {% if active_panel == 'settings' %}active{% endif %}">
-                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'general' %}active{% endif %}" data-target="panel-settings" data-section="settings-general" data-section-key="general" data-section-param="settings_section" type="button">General</button>
-                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'banks' %}active{% endif %}" data-target="panel-settings" data-section="settings-banks" data-section-key="banks" data-section-param="settings_section" type="button">Banks</button>
-                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'expenses' %}active{% endif %}" data-target="panel-settings" data-section="settings-expenses" data-section-key="expenses" data-section-param="settings_section" type="button">Expenses</button>
-                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'income' %}active{% endif %}" data-target="panel-settings" data-section="settings-income" data-section-key="income" data-section-param="settings_section" type="button">Income</button>
-                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'integrations' %}active{% endif %}" data-target="panel-settings" data-section="settings-integrations" data-section-key="integrations" data-section-param="settings_section" type="button">Integrations</button>
-                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'export' %}active{% endif %}" data-target="panel-settings" data-section="settings-export" data-section-key="export" data-section-param="settings_section" type="button">Export</button>
-                        <button class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'migration' %}active{% endif %}" data-target="panel-settings" data-section="settings-migration" data-section-key="migration" data-section-param="settings_section" type="button">Migration</button>
+                        <a class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'general' %}active{% endif %}" href="{{ url_for('index', panel='settings', month=month_filter, settings_section='general') }}">General</a>
+                        <a class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'banks' %}active{% endif %}" href="{{ url_for('index', panel='settings', month=month_filter, settings_section='banks') }}">Banks</a>
+                        <a class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'expenses' %}active{% endif %}" href="{{ url_for('index', panel='settings', month=month_filter, settings_section='expenses') }}">Expenses</a>
+                        <a class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'income' %}active{% endif %}" href="{{ url_for('index', panel='settings', month=month_filter, settings_section='income') }}">Income</a>
+                        <a class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'integrations' %}active{% endif %}" href="{{ url_for('index', panel='settings', month=month_filter, settings_section='integrations') }}">Integrations</a>
+                        <a class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'export' %}active{% endif %}" href="{{ url_for('index', panel='settings', month=month_filter, settings_section='export') }}">Export</a>
+                        <a class="menu-sub-item {% if active_panel == 'settings' and settings_section == 'migration' %}active{% endif %}" href="{{ url_for('index', panel='settings', month=month_filter, settings_section='migration') }}">Migration</a>
                     </div>
                 </div>
             </aside>
         </div>
     </main>
 
+    <script type="application/json" id="vb-form-options">{{ form_options|tojson }}</script>
+
+    {% if active_panel == 'expenses' %}
     <template id="expense-edit-form-template">
         <form class="inline-edit-form" method="post">
             <input name="month" type="hidden" value="{{ month_filter }}">
@@ -1826,21 +1784,15 @@
             {% endif %}
             <textarea name="notes" placeholder="Notes" rows="2"></textarea>
             <input name="amount" required step="any" type="number">
-            <select name="category_id" required>
-                {% for category in categories %}
-                    <option value="{{ category.id }}">{{ category.name }}</option>
-                {% endfor %}
-            </select>
-            <select name="account_id" required>
-                {% for account in accounts %}
-                    <option value="{{ account.id }}">{{ account.name }}</option>
-                {% endfor %}
-            </select>
+            {{ vb_select('category_id', 'categories', required=true) }}
+            {{ vb_select('account_id', 'accounts', required=true) }}
             <input name="spent_at" type="date">
             <button type="submit">Save</button>
         </form>
     </template>
+    {% endif %}
 
+    {% if active_panel == 'income' %}
     <template id="income-edit-form-template">
         <form class="inline-edit-form" method="post">
             <input name="month" type="hidden" value="{{ month_filter }}">
@@ -1854,21 +1806,15 @@
             {% endif %}
             <textarea name="notes" placeholder="Notes" rows="2"></textarea>
             <input min="0" name="amount" required step="0.01" type="number">
-            <select name="category_id" required>
-                {% for category in income_categories %}
-                    <option value="{{ category.id }}">{{ category.name }}</option>
-                {% endfor %}
-            </select>
-            <select name="account_id" required>
-                {% for account in accounts %}
-                    <option value="{{ account.id }}">{{ account.name }}</option>
-                {% endfor %}
-            </select>
+            {{ vb_select('category_id', 'income_categories', required=true) }}
+            {{ vb_select('account_id', 'accounts', required=true) }}
             <input name="received_at" type="date">
             <button type="submit">Save</button>
         </form>
     </template>
+    {% endif %}
 
+    {% if active_panel == 'home' %}
     <div id="home-modal-expense" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="home-modal-expense-title">
         <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close expense dialog"></button>
         <div class="home-modal-dialog home-modal-dialog-expense">
@@ -1876,23 +1822,29 @@
                 <h3 id="home-modal-expense-title" class="home-modal-title">New expense</h3>
                 <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">&times;</button>
             </div>
-            <form action="/expenses/add" class="panel-add-form home-quick-form" method="post">
+            <form action="/expenses/add" class="panel-add-form home-quick-form form-stack" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
                 <input name="exp_page" type="hidden" value="1">
                 <input name="next_panel" type="hidden" value="home">
-                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
-                <select name="category_id" required>
-                    {% for category in categories %}
-                        <option value="{{ category.id }}">{{ category.name }}</option>
-                    {% endfor %}
-                </select>
-                <select name="account_id" required>
-                    {% for account in accounts %}
-                        <option value="{{ account.id }}">{{ account.name }}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit">Add expense</button>
+                <div class="form-field form-field-full">
+                    <label class="form-label" for="home-exp-notes">Notes</label>
+                    <textarea id="home-exp-notes" name="notes" placeholder="Optional description" rows="2"></textarea>
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-exp-amount">Amount</label>
+                    <input id="home-exp-amount" name="amount" inputmode="decimal" placeholder="e.g. 25.50 or -10" required step="any" type="number">
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-exp-category">Category</label>
+                    {{ vb_select('category_id', 'categories', required=true, id='home-exp-category') }}
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-exp-account">Account</label>
+                    {{ vb_select('account_id', 'accounts', required=true, id='home-exp-account') }}
+                </div>
+                <div class="form-actions">
+                    <button class="home-quick-submit home-quick-submit-expense" type="submit">Add expense</button>
+                </div>
             </form>
         </div>
     </div>
@@ -1904,33 +1856,38 @@
                 <h3 id="home-modal-income-title" class="home-modal-title">New income</h3>
                 <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">&times;</button>
             </div>
-            <form action="/income/add" class="panel-add-form home-quick-form" method="post">
+            <form action="/income/add" class="panel-add-form home-quick-form form-stack" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
                 <input name="inc_page" type="hidden" value="1">
                 <input name="next_panel" type="hidden" value="home">
-                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
-                <select name="category_id" required>
-                    {% for category in income_categories %}
-                        <option value="{{ category.id }}">{{ category.name }}</option>
-                    {% endfor %}
-                </select>
-                <select name="account_id" required>
-                    {% for account in accounts %}
-                        <option value="{{ account.id }}">{{ account.name }}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit">Add income</button>
+                <div class="form-field form-field-full">
+                    <label class="form-label" for="home-inc-notes">Notes</label>
+                    <textarea id="home-inc-notes" name="notes" placeholder="Optional description" rows="2"></textarea>
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-inc-amount">Amount</label>
+                    <input id="home-inc-amount" min="0" name="amount" inputmode="decimal" placeholder="e.g. 1200.00" required step="0.01" type="number">
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-inc-category">Category</label>
+                    {{ vb_select('category_id', 'income_categories', required=true, id='home-inc-category') }}
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-inc-account">Account</label>
+                    {{ vb_select('account_id', 'accounts', required=true, id='home-inc-account') }}
+                </div>
+                <div class="form-actions">
+                    <button class="home-quick-submit home-quick-submit-income" type="submit">Add income</button>
+                </div>
             </form>
         </div>
     </div>
+    {% endif %}
 
     <script>
         (function () {
             const root = document.documentElement;
             const themeToggle = document.getElementById("theme-dark-toggle");
-            const menuButtons = document.querySelectorAll(".menu-item");
-            const panels = document.querySelectorAll(".panel");
             const savedTheme = localStorage.getItem("theme");
             const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
             const theme = savedTheme || (prefersDark ? "dark" : "light");
@@ -1944,6 +1901,71 @@
                     localStorage.setItem("theme", next);
                 });
             }
+
+            function populateFormSelects(root) {
+                const optionsEl = document.getElementById("vb-form-options");
+                if (!optionsEl) {
+                    return;
+                }
+                let data = {};
+                try {
+                    data = JSON.parse(optionsEl.textContent || "{}");
+                } catch (err) {
+                    data = {};
+                }
+                const scope = root && root.querySelectorAll ? root : document;
+                scope.querySelectorAll("select[data-option-set]").forEach(function (sel) {
+                    const modal = sel.closest(".home-modal");
+                    if (modal && modal.hidden && (!root || root === document)) {
+                        return;
+                    }
+                    if (sel.options.length > 0 && sel.dataset.optionsFilled === "1") {
+                        return;
+                    }
+                    const kind = sel.getAttribute("data-option-set");
+                    const selected = sel.getAttribute("data-selected") || "";
+                    const placeholder = sel.getAttribute("data-placeholder");
+                    sel.innerHTML = "";
+                    if (placeholder) {
+                        const ph = document.createElement("option");
+                        ph.value = "";
+                        ph.textContent = placeholder;
+                        sel.appendChild(ph);
+                    }
+                    if (kind === "recurring-categories") {
+                        [
+                            ["Expense", "categories", "e-"],
+                            ["Income", "income_categories", "i-"],
+                        ].forEach(function (group) {
+                            const groupEl = document.createElement("optgroup");
+                            groupEl.label = group[0];
+                            (data[group[1]] || []).forEach(function (item) {
+                                const opt = document.createElement("option");
+                                opt.value = group[2] + String(item.id);
+                                opt.textContent = item.name;
+                                if (selected && opt.value === String(selected)) {
+                                    opt.selected = true;
+                                }
+                                groupEl.appendChild(opt);
+                            });
+                            sel.appendChild(groupEl);
+                        });
+                    } else {
+                        (data[kind] || []).forEach(function (item) {
+                            const opt = document.createElement("option");
+                            opt.value = String(item.id);
+                            opt.textContent = item.name;
+                            if (selected && opt.value === String(selected)) {
+                                opt.selected = true;
+                            }
+                            sel.appendChild(opt);
+                        });
+                    }
+                    sel.dataset.optionsFilled = "1";
+                });
+            }
+
+            populateFormSelects(document);
 
             function syncRecurringDuration(form) {
                 if (!form) {
@@ -2031,6 +2053,7 @@
                         dateField.value = payload.spent_at || payload.received_at || "";
                     }
                     slot.appendChild(form);
+                    populateFormSelects(form);
                     slot.dataset.loaded = "1";
                 }
 
@@ -2043,16 +2066,6 @@
                 });
             })();
 
-            const settingsSections = document.querySelectorAll(".settings-section");
-            const settingsSectionMap = {
-                "settings-general": "general",
-                "settings-banks": "banks",
-                "settings-expenses": "expenses",
-                "settings-income": "income",
-                "settings-integrations": "integrations",
-                "settings-export": "export",
-                "settings-migration": "migration"
-            };
 
             function readShellMonth() {
                 const fallbackMonth = "{{ month_filter }}";
@@ -2177,99 +2190,6 @@
                 window.history.replaceState({}, "", nextUrl);
             }
 
-            const investSections = document.querySelectorAll(".investments-section");
-            const investSectionMap = {
-                "investments-crypto": "crypto",
-                "investments-stocks": "stocks"
-            };
-
-            const reportsSections = document.querySelectorAll(".reports-section");
-
-            const subMenuItems = document.querySelectorAll(".menu-sub-item");
-            const subMenuGroups = document.querySelectorAll(".menu-sub-items");
-
-            subMenuItems.forEach(function (subBtn) {
-                subBtn.addEventListener("click", function () {
-                    const panelTarget = subBtn.getAttribute("data-target");
-                    const sectionId = subBtn.getAttribute("data-section");
-
-                    menuButtons.forEach(function (item) {
-                        item.classList.toggle("active", item.getAttribute("data-target") === panelTarget);
-                    });
-                    panels.forEach(function (panel) {
-                        panel.classList.toggle("active", panel.id === panelTarget);
-                    });
-
-                    subMenuGroups.forEach(function (group) {
-                        const parentBtn = group.previousElementSibling;
-                        group.classList.toggle("active", parentBtn && parentBtn.getAttribute("data-target") === panelTarget);
-                    });
-
-                    subMenuItems.forEach(function (s) {
-                        s.classList.toggle("active", s === subBtn);
-                    });
-
-                    if (panelTarget === "panel-settings") {
-                        settingsSections.forEach(function (section) {
-                            section.classList.toggle("active", section.id === sectionId);
-                        });
-                    }
-                    if (panelTarget === "panel-investments") {
-                        investSections.forEach(function (section) {
-                            section.classList.toggle("active", section.id === sectionId);
-                        });
-                    }
-                    if (panelTarget === "panel-reports") {
-                        reportsSections.forEach(function (section) {
-                            section.classList.toggle("active", section.id === sectionId);
-                        });
-                    }
-
-                    const panelMap2 = {
-                        "panel-investments": "investments",
-                        "panel-settings": "settings",
-                        "panel-reports": "reports"
-                    };
-                    var panelKey = panelMap2[panelTarget];
-                    if (panelKey) {
-                        syncShellUrl(panelKey);
-                    }
-                });
-            });
-
-            menuButtons.forEach(function (menuButton) {
-                menuButton.addEventListener("click", function () {
-                    const target = menuButton.getAttribute("data-target");
-                    menuButtons.forEach(function (item) {
-                        item.classList.toggle("active", item === menuButton);
-                    });
-                    panels.forEach(function (panel) {
-                        panel.classList.toggle("active", panel.id === target);
-                    });
-
-                    subMenuGroups.forEach(function (group) {
-                        const parentBtn = group.previousElementSibling;
-                        group.classList.toggle("active", parentBtn && parentBtn === menuButton);
-                    });
-
-                    const panelMap = {
-                        "panel-home": "home",
-                        "panel-expenses": "expenses",
-                        "panel-income": "income",
-                        "panel-recurring": "recurring",
-                        "panel-transfer": "transfer",
-                        "panel-summary": "summary",
-                        "panel-yearly": "yearly",
-                        "panel-reports": "reports",
-                        "panel-investments": "investments",
-                        "panel-settings": "settings"
-                    };
-                    const panelValue = panelMap[target];
-                    if (panelValue) {
-                        syncShellUrl(panelValue);
-                    }
-                });
-            });
 
             (function setupStockSearch() {
                 const searchInput = document.getElementById("stock-search-input");
@@ -2436,13 +2356,16 @@
                     { modal: modalExp, button: btnExp },
                     { modal: modalInc, button: btnInc },
                 ];
+                const pageChrome = document.querySelector(".app-layout");
 
-                function focusFirstField(modal) {
-                    const field = modal.querySelector(
-                        "textarea, input:not([type='hidden']), select, button[type='submit']"
-                    );
-                    if (field) {
-                        field.focus();
+                function setBackgroundInert(inert) {
+                    if (!pageChrome) {
+                        return;
+                    }
+                    if (inert) {
+                        pageChrome.setAttribute("inert", "");
+                    } else {
+                        pageChrome.removeAttribute("inert");
                     }
                 }
 
@@ -2454,16 +2377,18 @@
                         entry.button.classList.remove("is-active");
                     });
                     document.body.classList.remove("home-modal-open");
+                    setBackgroundInert(false);
                 }
 
                 function openModal(modal, button) {
                     closeAll();
+                    populateFormSelects(modal);
                     modal.hidden = false;
                     modal.setAttribute("aria-hidden", "false");
                     button.setAttribute("aria-expanded", "true");
                     button.classList.add("is-active");
                     document.body.classList.add("home-modal-open");
-                    focusFirstField(modal);
+                    setBackgroundInert(true);
                 }
 
                 btnExp.addEventListener("click", function () {
