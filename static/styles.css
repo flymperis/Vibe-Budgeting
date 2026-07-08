@@ -701,10 +701,13 @@ table.yearly-table {
 
 .panel {
     display: none;
+    content-visibility: hidden;
+    contain-intrinsic-size: auto 600px;
 }
 
 .panel.active {
     display: block;
+    content-visibility: visible;
 }
 
 .side-menu {

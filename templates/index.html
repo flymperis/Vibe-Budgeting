@@ -290,36 +290,12 @@
                                     <td class="cell-date">{{ expense.spent_at|txn_day }}</td>
                                     <td class="cell-actions">
                                         <div class="action-stack">
-                                            <details class="edit-details">
+                                            <details class="edit-details lazy-edit-details" data-edit-kind="expense" data-edit-id="{{ expense.id }}" data-edit-payload='{{ {"notes": expense.notes, "amount": expense.amount, "category_id": expense.category_id, "account_id": expense.account_id, "spent_at": expense.spent_at|txn_day}|tojson }}'>
                                                 <summary class="btn-icon btn-icon-edit" title="Edit expense">
                                                     <span class="visually-hidden">Edit expense</span>
                                                     <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z"/></svg>
                                                 </summary>
-                                                <form action="/expenses/{{ expense.id }}/edit" class="inline-edit-form" method="post">
-                                                    <input name="month" type="hidden" value="{{ month_filter }}">
-                                                    <input name="exp_page" type="hidden" value="{{ expense_page }}">
-                                                    <input name="next_panel" type="hidden" value="expenses">
-                                                    {% if expense_filter_month %}
-                                                        <input name="exp_month" type="hidden" value="{{ expense_filter_month }}">
-                                                    {% endif %}
-                                                    {% if expense_filter_category_id %}
-                                                        <input name="exp_category" type="hidden" value="{{ expense_filter_category_id }}">
-                                                    {% endif %}
-                                                    <textarea name="notes" placeholder="Notes" rows="2">{{ expense.notes }}</textarea>
-                                                    <input name="amount" required step="any" type="number" value="{{ expense.amount }}">
-                                                    <select name="category_id" required>
-                                                        {% for category in categories %}
-                                                            <option {% if category.id == expense.category_id %}selected{% endif %} value="{{ category.id }}">{{ category.name }}</option>
-                                                        {% endfor %}
-                                                    </select>
-                                                    <select name="account_id" required>
-                                                        {% for account in accounts %}
-                                                            <option {% if account.id == expense.account_id %}selected{% endif %} value="{{ account.id }}">{{ account.name }}</option>
-                                                        {% endfor %}
-                                                    </select>
-                                                    <input name="spent_at" type="date" value="{{ expense.spent_at|txn_day }}">
-                                                    <button type="submit">Save</button>
-                                                </form>
+                                                <div class="inline-edit-slot" aria-live="polite"></div>
                                             </details>
                                             <form action="/expenses/{{ expense.id }}/delete" method="post">
                                                 <input name="month" type="hidden" value="{{ month_filter }}">
@@ -435,36 +411,12 @@
                                     <td class="cell-date">{{ entry.received_at|txn_day }}</td>
                                     <td class="cell-actions">
                                         <div class="action-stack">
-                                            <details class="edit-details">
+                                            <details class="edit-details lazy-edit-details" data-edit-kind="income" data-edit-id="{{ entry.id }}" data-edit-payload='{{ {"notes": entry.notes, "amount": entry.amount, "category_id": entry.category_id, "account_id": entry.account_id, "received_at": entry.received_at|txn_day}|tojson }}'>
                                                 <summary class="btn-icon btn-icon-edit" title="Edit income">
                                                     <span class="visually-hidden">Edit income</span>
                                                     <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z"/></svg>
                                                 </summary>
-                                                <form action="/income/{{ entry.id }}/edit" class="inline-edit-form" method="post">
-                                                    <input name="month" type="hidden" value="{{ month_filter }}">
-                                                    <input name="inc_page" type="hidden" value="{{ income_page }}">
-                                                    <input name="next_panel" type="hidden" value="income">
-                                                    {% if income_filter_month %}
-                                                        <input name="inc_month" type="hidden" value="{{ income_filter_month }}">
-                                                    {% endif %}
-                                                    {% if income_filter_category_id %}
-                                                        <input name="inc_category" type="hidden" value="{{ income_filter_category_id }}">
-                                                    {% endif %}
-                                                    <textarea name="notes" placeholder="Notes" rows="2">{{ entry.notes }}</textarea>
-                                                    <input min="0" name="amount" required step="0.01" type="number" value="{{ entry.amount }}">
-                                                    <select name="category_id" required>
-                                                        {% for category in income_categories %}
-                                                            <option {% if category.id == entry.category_id %}selected{% endif %} value="{{ category.id }}">{{ category.name }}</option>
-                                                        {% endfor %}
-                                                    </select>
-                                                    <select name="account_id" required>
-                                                        {% for account in accounts %}
-                                                            <option {% if account.id == entry.account_id %}selected{% endif %} value="{{ account.id }}">{{ account.name }}</option>
-                                                        {% endfor %}
-                                                    </select>
-                                                    <input name="received_at" type="date" value="{{ entry.received_at|txn_day }}">
-                                                    <button type="submit">Save</button>
-                                                </form>
+                                                <div class="inline-edit-slot" aria-live="polite"></div>
                                             </details>
                                             <form action="/income/{{ entry.id }}/delete" method="post">
                                                 <input name="month" type="hidden" value="{{ month_filter }}">
@@ -1861,6 +1813,62 @@
         </div>
     </main>
 
+    <template id="expense-edit-form-template">
+        <form class="inline-edit-form" method="post">
+            <input name="month" type="hidden" value="{{ month_filter }}">
+            <input name="exp_page" type="hidden" value="{{ expense_page }}">
+            <input name="next_panel" type="hidden" value="expenses">
+            {% if expense_filter_month %}
+                <input name="exp_month" type="hidden" value="{{ expense_filter_month }}">
+            {% endif %}
+            {% if expense_filter_category_id %}
+                <input name="exp_category" type="hidden" value="{{ expense_filter_category_id }}">
+            {% endif %}
+            <textarea name="notes" placeholder="Notes" rows="2"></textarea>
+            <input name="amount" required step="any" type="number">
+            <select name="category_id" required>
+                {% for category in categories %}
+                    <option value="{{ category.id }}">{{ category.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="account_id" required>
+                {% for account in accounts %}
+                    <option value="{{ account.id }}">{{ account.name }}</option>
+                {% endfor %}
+            </select>
+            <input name="spent_at" type="date">
+            <button type="submit">Save</button>
+        </form>
+    </template>
+
+    <template id="income-edit-form-template">
+        <form class="inline-edit-form" method="post">
+            <input name="month" type="hidden" value="{{ month_filter }}">
+            <input name="inc_page" type="hidden" value="{{ income_page }}">
+            <input name="next_panel" type="hidden" value="income">
+            {% if income_filter_month %}
+                <input name="inc_month" type="hidden" value="{{ income_filter_month }}">
+            {% endif %}
+            {% if income_filter_category_id %}
+                <input name="inc_category" type="hidden" value="{{ income_filter_category_id }}">
+            {% endif %}
+            <textarea name="notes" placeholder="Notes" rows="2"></textarea>
+            <input min="0" name="amount" required step="0.01" type="number">
+            <select name="category_id" required>
+                {% for category in income_categories %}
+                    <option value="{{ category.id }}">{{ category.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="account_id" required>
+                {% for account in accounts %}
+                    <option value="{{ account.id }}">{{ account.name }}</option>
+                {% endfor %}
+            </select>
+            <input name="received_at" type="date">
+            <button type="submit">Save</button>
+        </form>
+    </template>
+
     <div id="home-modal-expense" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="home-modal-expense-title">
         <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close expense dialog"></button>
         <div class="home-modal-dialog home-modal-dialog-expense">
@@ -1973,6 +1981,67 @@
             }
 
             bindRecurringDurationControls(document);
+
+            (function setupLazyEditDetails() {
+                const templates = {
+                    expense: document.getElementById("expense-edit-form-template"),
+                    income: document.getElementById("income-edit-form-template"),
+                };
+                const actionPaths = {
+                    expense: "/expenses/",
+                    income: "/income/",
+                };
+
+                function mountEditForm(details) {
+                    const kind = details.getAttribute("data-edit-kind");
+                    const entryId = details.getAttribute("data-edit-id");
+                    const slot = details.querySelector(".inline-edit-slot");
+                    const tpl = templates[kind];
+                    if (!kind || !entryId || !slot || !tpl || slot.dataset.loaded === "1") {
+                        return;
+                    }
+                    let payload = {};
+                    try {
+                        payload = JSON.parse(details.getAttribute("data-edit-payload") || "{}");
+                    } catch (err) {
+                        payload = {};
+                    }
+                    const form = tpl.content.firstElementChild.cloneNode(true);
+                    form.action = actionPaths[kind] + entryId + "/edit";
+                    const notesField = form.querySelector('[name="notes"]');
+                    const amountField = form.querySelector('[name="amount"]');
+                    const categoryField = form.querySelector('[name="category_id"]');
+                    const accountField = form.querySelector('[name="account_id"]');
+                    const dateField = form.querySelector(
+                        kind === "expense" ? '[name="spent_at"]' : '[name="received_at"]'
+                    );
+                    if (notesField) {
+                        notesField.value = payload.notes || "";
+                    }
+                    if (amountField && payload.amount !== undefined && payload.amount !== null) {
+                        amountField.value = payload.amount;
+                    }
+                    if (categoryField && payload.category_id !== undefined) {
+                        categoryField.value = String(payload.category_id);
+                    }
+                    if (accountField && payload.account_id !== undefined) {
+                        accountField.value = String(payload.account_id);
+                    }
+                    if (dateField) {
+                        dateField.value = payload.spent_at || payload.received_at || "";
+                    }
+                    slot.appendChild(form);
+                    slot.dataset.loaded = "1";
+                }
+
+                document.querySelectorAll("details.lazy-edit-details").forEach(function (details) {
+                    details.addEventListener("toggle", function () {
+                        if (details.open) {
+                            mountEditForm(details);
+                        }
+                    });
+                });
+            })();
 
             const settingsSections = document.querySelectorAll(".settings-section");
             const settingsSectionMap = {
