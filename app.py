@@ -1,7 +1,9 @@
-from flask import Flask, flash, g, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 import calendar
+import hmac
 import json
 import os
+import secrets
 import sys
 import re
 import sqlite3
@@ -50,6 +52,9 @@ LIST_PAGE_SIZE = 75
 TRANSFER_LOG_LIMIT = 10
 ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "true").lower() in ("1", "true", "yes")
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
+# Precomputed hash of a random value, compared against when a username is not
+# found so login timing stays constant regardless of username existence.
+_DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(16))
 
 SHEET_META = "_meta"
 SHEET_ACCOUNTS = "Accounts"
@@ -74,8 +79,51 @@ INVESTMENTS_SECTIONS = {"crypto", "stocks"}
 REPORTS_SECTIONS = {"bank", "crypto", "stocks"}
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "").strip()
 
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    # Enable only when served over HTTPS (set VB_SECURE_COOKIES=true behind TLS).
+    SESSION_COOKIE_SECURE=_env_flag("VB_SECURE_COOKIES", False),
+)
+
+CSRF_FIELD_NAME = "_csrf_token"  # noqa: S105 - form field name, not a secret
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+_CSRF_EXEMPT_ENDPOINTS = frozenset({"static"})
+
+
+def get_csrf_token() -> str:
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
+@app.context_processor
+def _inject_csrf_token():
+    return {"csrf_token": get_csrf_token()}
+
+
+@app.before_request
+def _csrf_protect():
+    if request.method in _CSRF_SAFE_METHODS:
+        return None
+    if request.endpoint in _CSRF_EXEMPT_ENDPOINTS:
+        return None
+    expected = session.get("_csrf_token")
+    submitted = request.form.get(CSRF_FIELD_NAME) or request.headers.get("X-CSRF-Token", "")
+    if not expected or not submitted or not hmac.compare_digest(str(expected), str(submitted)):
+        abort(400, description="Invalid or missing CSRF token.")
+    return None
 
 
 @app.before_request
@@ -695,6 +743,18 @@ def _avg_over_nonzero_month_cells(months: list[float]):
     return sum(months) / active
 
 
+def _empty_expense_pivot() -> dict:
+    """Placeholder pivot used when the Reports panel is not being rendered."""
+    return {
+        "rows": [],
+        "month_headers": [f"{m:02d}.{calendar.month_abbr[m]}" for m in range(1, 13)],
+        "month_totals": [0.0] * 12,
+        "grand_total": 0.0,
+        "active_month_count": 0,
+        "avg_monthly_total": None,
+    }
+
+
 def expense_pivot_for_report_year(conn, year: int, user_id: int) -> dict:
     """Category × month sums of expense amounts for a calendar year (values as stored in DB)."""
     uid = int(user_id)
@@ -973,6 +1033,7 @@ def migrate_crypto_transactions(conn):
 
 
 _price_cache: dict = {"prices": {}, "fetched_at": 0.0}
+_price_cache_lock = threading.Lock()
 PRICE_CACHE_TTL = 300
 
 
@@ -981,9 +1042,10 @@ def fetch_coingecko_prices(coin_ids, force=False):
         return {}
     now = time.time()
     cached = _price_cache
-    if not force and cached["prices"] and (now - cached["fetched_at"]) < PRICE_CACHE_TTL:
-        if all(cid in cached["prices"] for cid in coin_ids):
-            return {cid: cached["prices"][cid] for cid in coin_ids}
+    with _price_cache_lock:
+        if not force and cached["prices"] and (now - cached["fetched_at"]) < PRICE_CACHE_TTL:
+            if all(cid in cached["prices"] for cid in coin_ids):
+                return {cid: cached["prices"][cid] for cid in coin_ids}
     ids_str = ",".join(sorted(set(coin_ids)))
     url = f"https://api.coingecko.com/api/v3/simple/price?ids={ids_str}&vs_currencies=eur&include_24hr_change=true"
     try:
@@ -997,11 +1059,13 @@ def fetch_coingecko_prices(coin_ids, force=False):
                     "price": data[cid]["eur"],
                     "change_24h": data[cid].get("eur_24h_change"),
                 }
-        cached["prices"].update(prices)
-        cached["fetched_at"] = time.time()
+        with _price_cache_lock:
+            cached["prices"].update(prices)
+            cached["fetched_at"] = time.time()
         return prices
     except (URLError, HTTPError, json.JSONDecodeError, OSError):
-        return {cid: cached["prices"][cid] for cid in coin_ids if cid in cached["prices"]}
+        with _price_cache_lock:
+            return {cid: cached["prices"][cid] for cid in coin_ids if cid in cached["prices"]}
 
 
 def migrate_crypto_month_prices(conn):
@@ -1235,7 +1299,9 @@ def migrate_stock_transactions(conn):
 
 
 _stock_price_cache: dict = {"prices": {}, "fetched_at": 0.0}
+_stock_price_cache_lock = threading.Lock()
 _fx_usd_cache: dict = {"rates": {}, "fetched_at": 0.0}
+_fx_usd_cache_lock = threading.Lock()
 _EUR_LISTING_SUFFIXES = (
     ".DE",
     ".AS",
@@ -1303,19 +1369,23 @@ def _finnhub_fx_to_usd(pair):
     """OANDA:EUR_USD / OANDA:GBP_USD → USD per 1 unit of base currency."""
     now = time.time()
     cached = _fx_usd_cache
-    if not cached["rates"] or (now - cached["fetched_at"]) >= PRICE_CACHE_TTL:
-        cached["rates"] = {}
-        cached["fetched_at"] = now
-    if pair in cached["rates"]:
-        return cached["rates"][pair]
+    with _fx_usd_cache_lock:
+        if not cached["rates"] or (now - cached["fetched_at"]) >= PRICE_CACHE_TTL:
+            cached["rates"] = {}
+            cached["fetched_at"] = now
+        if pair in cached["rates"]:
+            return cached["rates"][pair]
     data = _finnhub_request(f"/quote?symbol={pair}")
     if data and data.get("c") is not None and float(data["c"]) > 0:
-        cached["rates"][pair] = float(data["c"])
-        return cached["rates"][pair]
+        rate = float(data["c"])
+        with _fx_usd_cache_lock:
+            cached["rates"][pair] = rate
+        return rate
     yf_symbol = "EURUSD=X" if "EUR" in pair else "GBPUSD=X"
     yf_rate = _yfinance_last_price(yf_symbol)
     if yf_rate:
-        cached["rates"][pair] = yf_rate
+        with _fx_usd_cache_lock:
+            cached["rates"][pair] = yf_rate
         return yf_rate
     return None
 
@@ -1338,12 +1408,14 @@ def fetch_finnhub_quotes(symbols, force=False):
         return {}
     now = time.time()
     cached = _stock_price_cache
-    if not force and cached["prices"] and (now - cached["fetched_at"]) < PRICE_CACHE_TTL:
-        if all(sym in cached["prices"] for sym in symbols):
-            return {sym: cached["prices"][sym] for sym in symbols}
+    with _stock_price_cache_lock:
+        if not force and cached["prices"] and (now - cached["fetched_at"]) < PRICE_CACHE_TTL:
+            if all(sym in cached["prices"] for sym in symbols):
+                return {sym: cached["prices"][sym] for sym in symbols}
     if force:
-        _fx_usd_cache["rates"] = {}
-        _fx_usd_cache["fetched_at"] = 0.0
+        with _fx_usd_cache_lock:
+            _fx_usd_cache["rates"] = {}
+            _fx_usd_cache["fetched_at"] = 0.0
     prices = {}
     for sym in sorted(set(symbols)):
         raw = None
@@ -1363,8 +1435,9 @@ def fetch_finnhub_quotes(symbols, force=False):
                 "change_24h": change_24h,
                 "source": "finnhub" if data and data.get("c") else "yfinance",
             }
-    cached["prices"].update(prices)
-    cached["fetched_at"] = time.time()
+    with _stock_price_cache_lock:
+        cached["prices"].update(prices)
+        cached["fetched_at"] = time.time()
     return prices
 
 
@@ -1894,6 +1967,27 @@ def _lookup_account_id(conn, name, user_id):
     return row["id"] if row else None
 
 
+def _user_owns_category(conn, category_id, user_id, *, expense):
+    table = "categories" if expense else "income_categories"
+    return (
+        conn.execute(
+            f"SELECT 1 FROM {table} WHERE id = ? AND user_id = ?",
+            (int(category_id), int(user_id)),
+        ).fetchone()
+        is not None
+    )
+
+
+def _user_owns_account(conn, account_id, user_id):
+    return (
+        conn.execute(
+            "SELECT 1 FROM accounts WHERE id = ? AND user_id = ?",
+            (int(account_id), int(user_id)),
+        ).fetchone()
+        is not None
+    )
+
+
 def _safe_next_url(raw):
     if not raw or not isinstance(raw, str):
         return None
@@ -2166,7 +2260,11 @@ def login():
             ).fetchone()
         finally:
             conn.close()
-        if row and check_password_hash(row["password_hash"], password):
+        # Always run a hash comparison so response timing does not reveal
+        # whether the username exists (mitigates user enumeration).
+        password_hash = row["password_hash"] if row else _DUMMY_PASSWORD_HASH
+        password_ok = check_password_hash(password_hash, password)
+        if row and password_ok:
             session["user_id"] = row["id"]
             session["username"] = username
             nxt = _safe_next_url(request.form.get("next")) or _safe_next_url(request.args.get("next"))
@@ -2715,44 +2813,53 @@ def index():
                 report_account_label = str(acc["name"])
                 break
 
-    jan1_this_year = f"{report_year:04d}-01-01"
-    prev_balance_total = account_balance_at_cutoff(
-        conn, jan1_this_year, uid, report_account_id
-    )
-    report_live_cutoff = (today_d + timedelta(days=1)).isoformat()
-    report_live_balance = account_balance_at_cutoff(
-        conn, report_live_cutoff, uid, report_account_id
-    )
-    report_balances_list = monthly_total_balances_for_year(
-        conn, report_year, today_d, uid, report_account_id
-    )
-    report_balance_rows = build_monthly_chart_rows(
-        report_balances_list, report_year, baseline=prev_balance_total
-    )
-    report_chart_spec = balance_line_chart_spec(report_balance_rows)
-    reports_expenses_table = expense_pivot_for_report_year(conn, report_year, uid)
+    # Reports involve month-by-month balance/portfolio math and can trigger
+    # synchronous external price lookups (CoinGecko/yfinance). Only compute them
+    # when the Reports panel is actually being viewed.
+    report_live_balance = 0.0
+    report_chart_spec = balance_line_chart_spec([])
+    crypto_chart_spec = balance_line_chart_spec([])
+    stock_chart_spec = balance_line_chart_spec([])
+    reports_expenses_table = _empty_expense_pivot()
+    if active_panel == "reports":
+        jan1_this_year = f"{report_year:04d}-01-01"
+        prev_balance_total = account_balance_at_cutoff(
+            conn, jan1_this_year, uid, report_account_id
+        )
+        report_live_cutoff = (today_d + timedelta(days=1)).isoformat()
+        report_live_balance = account_balance_at_cutoff(
+            conn, report_live_cutoff, uid, report_account_id
+        )
+        report_balances_list = monthly_total_balances_for_year(
+            conn, report_year, today_d, uid, report_account_id
+        )
+        report_balance_rows = build_monthly_chart_rows(
+            report_balances_list, report_year, baseline=prev_balance_total
+        )
+        report_chart_spec = balance_line_chart_spec(report_balance_rows)
+        reports_expenses_table = expense_pivot_for_report_year(conn, report_year, uid)
 
-    crypto_baseline = portfolio_baseline_before_year(
-        conn, crypto_txs, report_year, today_d, compute_crypto_holdings, "coin_id", "crypto"
-    )
-    crypto_monthly = monthly_crypto_portfolio_values_for_year(
-        conn, crypto_txs, report_year, today_d
-    )
-    crypto_chart_rows = build_monthly_chart_rows(
-        crypto_monthly, report_year, baseline=crypto_baseline
-    )
-    crypto_chart_spec = balance_line_chart_spec(crypto_chart_rows)
+        crypto_baseline = portfolio_baseline_before_year(
+            conn, crypto_txs, report_year, today_d, compute_crypto_holdings, "coin_id", "crypto"
+        )
+        crypto_monthly = monthly_crypto_portfolio_values_for_year(
+            conn, crypto_txs, report_year, today_d
+        )
+        crypto_chart_rows = build_monthly_chart_rows(
+            crypto_monthly, report_year, baseline=crypto_baseline
+        )
+        crypto_chart_spec = balance_line_chart_spec(crypto_chart_rows)
 
-    stock_baseline = portfolio_baseline_before_year(
-        conn, stock_txs, report_year, today_d, compute_stock_holdings, "symbol", "stock"
-    )
-    stock_monthly = monthly_stock_portfolio_values_for_year(
-        conn, stock_txs, report_year, today_d
-    )
-    stock_chart_rows = build_monthly_chart_rows(
-        stock_monthly, report_year, baseline=stock_baseline
-    )
-    stock_chart_spec = balance_line_chart_spec(stock_chart_rows)
+        stock_baseline = portfolio_baseline_before_year(
+            conn, stock_txs, report_year, today_d, compute_stock_holdings, "symbol", "stock"
+        )
+        stock_monthly = monthly_stock_portfolio_values_for_year(
+            conn, stock_txs, report_year, today_d
+        )
+        stock_chart_rows = build_monthly_chart_rows(
+            stock_monthly, report_year, baseline=stock_baseline
+        )
+        stock_chart_spec = balance_line_chart_spec(stock_chart_rows)
 
     user_integrations = integrations.get_user_integrations(conn, uid)
     telegram_server = telegram_bot.server_config_for_form(conn)
@@ -3386,12 +3493,24 @@ def delete_income_category(category_id):
 def add_expense():
     notes = request.form.get("notes", "").strip()
     amount = request.form.get("amount", "0").strip()
-    category_id = request.form.get("category_id", "").strip()
-    account_id = request.form.get("account_id", "").strip()
+    category_raw = request.form.get("category_id", "").strip()
+    account_raw = request.form.get("account_id", "").strip()
 
-    if category_id and account_id:
+    if category_raw and account_raw:
+        try:
+            category_id = int(category_raw)
+            account_id = int(account_raw)
+        except (TypeError, ValueError):
+            flash("Invalid category or account.", "error")
+            return redirect_home()
         spent_at = datetime.now().date().isoformat()
         conn = get_connection()
+        if not _user_owns_category(conn, category_id, g.user_id, expense=True) or not _user_owns_account(
+            conn, account_id, g.user_id
+        ):
+            conn.close()
+            flash("Invalid category or account.", "error")
+            return redirect_home()
         conn.execute(
             """
             INSERT INTO expenses (user_id, notes, amount, category_id, account_id, spent_at)
@@ -3401,8 +3520,8 @@ def add_expense():
                 g.user_id,
                 notes,
                 normalize_expense_amount(amount),
-                int(category_id),
-                int(account_id),
+                category_id,
+                account_id,
                 spent_at,
             ),
         )
@@ -3416,13 +3535,25 @@ def add_expense():
 def edit_expense(expense_id):
     notes = request.form.get("notes", "").strip()
     amount = request.form.get("amount", "0").strip()
-    category_id = request.form.get("category_id", "").strip()
-    account_id = request.form.get("account_id", "").strip()
+    category_raw = request.form.get("category_id", "").strip()
+    account_raw = request.form.get("account_id", "").strip()
     spent_at_raw = request.form.get("spent_at", "").strip()
 
-    if category_id and account_id:
+    if category_raw and account_raw:
+        try:
+            category_id = int(category_raw)
+            account_id = int(account_raw)
+        except (TypeError, ValueError):
+            flash("Invalid category or account.", "error")
+            return redirect_home()
         spent_at = normalize_txn_day_from_form(spent_at_raw)
         conn = get_connection()
+        if not _user_owns_category(conn, category_id, g.user_id, expense=True) or not _user_owns_account(
+            conn, account_id, g.user_id
+        ):
+            conn.close()
+            flash("Invalid category or account.", "error")
+            return redirect_home()
         conn.execute(
             """
             UPDATE expenses
@@ -3432,8 +3563,8 @@ def edit_expense(expense_id):
             (
                 notes,
                 normalize_expense_amount(amount),
-                int(category_id),
-                int(account_id),
+                category_id,
+                account_id,
                 spent_at,
                 expense_id,
                 g.user_id,
@@ -3457,15 +3588,26 @@ def delete_expense(expense_id):
     return redirect_home()
 
 
+def _parse_opening_balance(raw):
+    text = (raw or "0").strip() or "0"
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
 @app.route("/accounts/add", methods=["POST"])
 def add_account():
     name = request.form.get("name", "").strip()
-    opening_balance = request.form.get("opening_balance", "0").strip()
+    opening_balance = _parse_opening_balance(request.form.get("opening_balance"))
+    if opening_balance is None:
+        flash("Invalid opening balance.", "error")
+        return redirect_home()
     if name:
         conn = get_connection()
         conn.execute(
             "INSERT OR IGNORE INTO accounts(user_id, name, opening_balance) VALUES (?, ?, ?)",
-            (g.user_id, name, float(opening_balance)),
+            (g.user_id, name, opening_balance),
         )
         conn.commit()
         conn.close()
@@ -3489,12 +3631,15 @@ def delete_account(account_id):
 @app.route("/accounts/<int:account_id>/edit", methods=["POST"])
 def edit_account(account_id):
     name = request.form.get("name", "").strip()
-    opening_balance = request.form.get("opening_balance", "0").strip()
+    opening_balance = _parse_opening_balance(request.form.get("opening_balance"))
+    if opening_balance is None:
+        flash("Invalid opening balance.", "error")
+        return redirect_home()
     if name:
         conn = get_connection()
         conn.execute(
             "UPDATE accounts SET name = ?, opening_balance = ? WHERE id = ? AND user_id = ?",
-            (name, float(opening_balance), account_id, g.user_id),
+            (name, opening_balance, account_id, g.user_id),
         )
         conn.commit()
         conn.close()
@@ -3517,12 +3662,24 @@ def delete_income(income_id):
 def add_income():
     notes = request.form.get("notes", "").strip()
     amount = request.form.get("amount", "0").strip()
-    account_id = request.form.get("account_id", "").strip()
-    category_id = request.form.get("category_id", "").strip()
+    account_raw = request.form.get("account_id", "").strip()
+    category_raw = request.form.get("category_id", "").strip()
 
-    if category_id and account_id:
+    if category_raw and account_raw:
+        try:
+            category_id = int(category_raw)
+            account_id = int(account_raw)
+        except (TypeError, ValueError):
+            flash("Invalid category or account.", "error")
+            return redirect_home()
         received_at = datetime.now().date().isoformat()
         conn = get_connection()
+        if not _user_owns_category(conn, category_id, g.user_id, expense=False) or not _user_owns_account(
+            conn, account_id, g.user_id
+        ):
+            conn.close()
+            flash("Invalid category or account.", "error")
+            return redirect_home()
         conn.execute(
             """
             INSERT INTO income_entries (user_id, notes, amount, category_id, account_id, received_at)
@@ -3532,8 +3689,8 @@ def add_income():
                 g.user_id,
                 notes,
                 normalize_income_amount(amount),
-                int(category_id),
-                int(account_id),
+                category_id,
+                account_id,
                 received_at,
             ),
         )
@@ -3546,13 +3703,25 @@ def add_income():
 def edit_income(income_id):
     notes = request.form.get("notes", "").strip()
     amount = request.form.get("amount", "0").strip()
-    account_id = request.form.get("account_id", "").strip()
-    category_id = request.form.get("category_id", "").strip()
+    account_raw = request.form.get("account_id", "").strip()
+    category_raw = request.form.get("category_id", "").strip()
     received_at_raw = request.form.get("received_at", "").strip()
 
-    if category_id and account_id:
+    if category_raw and account_raw:
+        try:
+            category_id = int(category_raw)
+            account_id = int(account_raw)
+        except (TypeError, ValueError):
+            flash("Invalid category or account.", "error")
+            return redirect_home()
         received_at = normalize_txn_day_from_form(received_at_raw)
         conn = get_connection()
+        if not _user_owns_category(conn, category_id, g.user_id, expense=False) or not _user_owns_account(
+            conn, account_id, g.user_id
+        ):
+            conn.close()
+            flash("Invalid category or account.", "error")
+            return redirect_home()
         conn.execute(
             """
             UPDATE income_entries
@@ -3562,8 +3731,8 @@ def edit_income(income_id):
             (
                 notes,
                 normalize_income_amount(amount),
-                int(category_id),
-                int(account_id),
+                category_id,
+                account_id,
                 received_at,
                 income_id,
                 g.user_id,
@@ -3781,7 +3950,14 @@ def telegram_unlink():
 @app.route("/settings/telegram/default-account", methods=["POST"])
 def telegram_default_account():
     raw = request.form.get("default_account_id", "").strip()
-    account_id = int(raw) if raw else None
+    if raw:
+        try:
+            account_id = int(raw)
+        except (TypeError, ValueError):
+            flash("Could not update default account.", "error")
+            return redirect_home(panel="settings", settings_section="integrations")
+    else:
+        account_id = None
     conn = get_connection()
     if not telegram_bot.set_default_account(conn, g.user_id, account_id):
         conn.close()

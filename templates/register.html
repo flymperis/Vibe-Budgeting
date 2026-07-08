@@ -23,6 +23,7 @@
         {% endwith %}
 
         <form method="post" action="{{ url_for('register') }}" class="auth-form">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <label>
                 Username
                 <input type="text" name="username" autocomplete="username" required autofocus maxlength="32">

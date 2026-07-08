@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Vibe Budgeting.</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link rel="alternate icon" href="{{ url_for('static', filename='favicon.svg') }}">
@@ -2385,6 +2386,41 @@
                         });
                 });
             })();
+        })();
+    </script>
+    <script>
+        (function () {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            var token = meta ? meta.getAttribute("content") : "";
+            if (!token) {
+                return;
+            }
+            function ensureToken(form) {
+                if (!form || (form.method || "").toLowerCase() !== "post") {
+                    return;
+                }
+                var field = form.querySelector('input[name="_csrf_token"]');
+                if (!field) {
+                    field = document.createElement("input");
+                    field.type = "hidden";
+                    field.name = "_csrf_token";
+                    form.appendChild(field);
+                }
+                field.value = token;
+            }
+            document.addEventListener(
+                "submit",
+                function (event) {
+                    ensureToken(event.target);
+                },
+                true
+            );
+            document.addEventListener("DOMContentLoaded", function () {
+                var forms = document.querySelectorAll('form[method="post"], form[method="POST"]');
+                for (var i = 0; i < forms.length; i++) {
+                    ensureToken(forms[i]);
+                }
+            });
         })();
     </script>
 </body>

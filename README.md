@@ -18,6 +18,7 @@ Optional environment variables (set under `environment:` in `docker-compose.yml`
 | Variable | Purpose |
 |----------|---------|
 | `FLASK_SECRET_KEY` | Strong random string for sessions in production. |
+| `VB_SECURE_COOKIES` | `true` to mark the session cookie `Secure` (set only when served over HTTPS). |
 | `ALLOW_REGISTRATION` | `true` or `false` — allow `/register`. |
 | `DATABASE_PATH` | Default `/app/data/database.db` (see `Dockerfile`). |
 | `FINNHUB_API_KEY` | Free key from [finnhub.io](https://finnhub.io) — live stock/ETF prices in **Investments → Stocks**. |
