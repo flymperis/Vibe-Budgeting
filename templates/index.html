@@ -81,11 +81,11 @@
     {%- endmacro %}
 
     {% macro vb_select(name, option_set, required=false, selected='', placeholder='', id='', extra_class='') -%}
-    <select name="{{ name }}"{% if id %} id="{{ id }}"{% endif %}{% if extra_class %} class="{{ extra_class }}"{% endif %}{% if required %} required{% endif %} data-option-set="{{ option_set }}" data-selected="{{ selected }}"{% if placeholder %} data-placeholder="{{ placeholder }}"{% endif %} autocomplete="off"></select>
+    <select name="{{ name }}"{% if id %} id="{{ id }}"{% endif %} class="vb-select{% if extra_class %} {{ extra_class }}{% endif %}"{% if required %} required{% endif %} data-option-set="{{ option_set }}" data-selected="{{ selected }}"{% if placeholder %} data-placeholder="{{ placeholder }}"{% endif %} autocomplete="off"></select>
     {%- endmacro %}
 
     {% macro vb_recurring_category_select(selected='', id='') -%}
-    <select name="category_choice"{% if id %} id="{{ id }}"{% endif %} required autocomplete="off" aria-label="Category" data-option-set="recurring-categories" data-selected="{{ selected }}"></select>
+    <select name="category_choice"{% if id %} id="{{ id }}"{% endif %} class="vb-select" required autocomplete="off" aria-label="Category" data-option-set="recurring-categories" data-selected="{{ selected }}"></select>
     {%- endmacro %}
 
     {% macro reports_balance_chart(spec, fig_caption, aria_label) -%}
@@ -1831,15 +1831,29 @@
                 <h3 id="home-modal-expense-title" class="home-modal-title">New expense</h3>
                 <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">&times;</button>
             </div>
-            <form action="/expenses/add" class="panel-add-form home-quick-form" method="post">
+            <form action="/expenses/add" class="panel-add-form home-quick-form form-stack" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
                 <input name="exp_page" type="hidden" value="1">
                 <input name="next_panel" type="hidden" value="home">
-                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
-                {{ vb_select('category_id', 'categories', required=true) }}
-                {{ vb_select('account_id', 'accounts', required=true) }}
-                <button type="submit">Add expense</button>
+                <div class="form-field form-field-full">
+                    <label class="form-label" for="home-exp-notes">Notes</label>
+                    <textarea id="home-exp-notes" name="notes" placeholder="Optional description" rows="2"></textarea>
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-exp-amount">Amount</label>
+                    <input id="home-exp-amount" name="amount" inputmode="decimal" placeholder="e.g. 25.50 or -10" required step="any" type="number">
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-exp-category">Category</label>
+                    {{ vb_select('category_id', 'categories', required=true, id='home-exp-category') }}
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-exp-account">Account</label>
+                    {{ vb_select('account_id', 'accounts', required=true, id='home-exp-account') }}
+                </div>
+                <div class="form-actions">
+                    <button class="home-quick-submit home-quick-submit-expense" type="submit">Add expense</button>
+                </div>
             </form>
         </div>
     </div>
@@ -1851,15 +1865,29 @@
                 <h3 id="home-modal-income-title" class="home-modal-title">New income</h3>
                 <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">&times;</button>
             </div>
-            <form action="/income/add" class="panel-add-form home-quick-form" method="post">
+            <form action="/income/add" class="panel-add-form home-quick-form form-stack" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
                 <input name="inc_page" type="hidden" value="1">
                 <input name="next_panel" type="hidden" value="home">
-                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
-                {{ vb_select('category_id', 'income_categories', required=true) }}
-                {{ vb_select('account_id', 'accounts', required=true) }}
-                <button type="submit">Add income</button>
+                <div class="form-field form-field-full">
+                    <label class="form-label" for="home-inc-notes">Notes</label>
+                    <textarea id="home-inc-notes" name="notes" placeholder="Optional description" rows="2"></textarea>
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-inc-amount">Amount</label>
+                    <input id="home-inc-amount" min="0" name="amount" inputmode="decimal" placeholder="e.g. 1200.00" required step="0.01" type="number">
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-inc-category">Category</label>
+                    {{ vb_select('category_id', 'income_categories', required=true, id='home-inc-category') }}
+                </div>
+                <div class="form-field">
+                    <label class="form-label" for="home-inc-account">Account</label>
+                    {{ vb_select('account_id', 'accounts', required=true, id='home-inc-account') }}
+                </div>
+                <div class="form-actions">
+                    <button class="home-quick-submit home-quick-submit-income" type="submit">Add income</button>
+                </div>
             </form>
         </div>
     </div>
