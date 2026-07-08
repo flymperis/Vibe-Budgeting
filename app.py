@@ -74,6 +74,14 @@ ALLOWED_PANELS = {
     "investments",
     "settings",
 }
+
+
+def _rows_to_form_options(rows):
+    return [{"id": int(r["id"]), "name": str(r["name"])} for r in rows]
+
+
+def _empty_paginated_list():
+    return [], 0, 1, 1
 SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration", "integrations"}
 INVESTMENTS_SECTIONS = {"crypto", "stocks"}
 REPORTS_SECTIONS = {"bank", "crypto", "stocks"}
@@ -2472,362 +2480,419 @@ def index():
         (uid,),
     ).fetchall()
 
-    recurring_entries = conn.execute(
-        """
-        SELECT
-            r.id,
-            r.entry_type,
-            r.amount,
-            r.category_id,
-            r.account_id,
-            r.day_of_month,
-            r.months_to_run,
-            r.notes,
-            r.enabled,
-            r.created_at,
-            a.name AS account_name,
-            COALESCE(c.name, ic.name) AS category_name
-        FROM recurring_entries r
-        JOIN accounts a ON a.id = r.account_id
-        LEFT JOIN categories c ON r.entry_type = 'expense' AND c.id = r.category_id
-        LEFT JOIN income_categories ic ON r.entry_type = 'income' AND ic.id = r.category_id
-        WHERE r.user_id = ?
-        ORDER BY r.day_of_month, r.id
-        """,
-        (uid,),
-    ).fetchall()
+    load_expense_list = active_panel == "expenses"
+    load_income_list = active_panel == "income"
+    load_recurring_list = active_panel == "recurring"
+    load_home_month_stats = active_panel == "home"
+    load_summary_breakdown = active_panel == "summary"
+    load_transfer_panel = active_panel == "transfer"
+    load_yearly_panel = active_panel == "yearly"
+    load_investments_panel = active_panel == "investments"
+    load_portfolio_txs = active_panel in ("investments", "reports")
+    load_settings_panel = active_panel == "settings"
 
-    expense_filter_month = resolve_list_month_filter("exp_month", "exp_cal_year", "exp_cal_month")
-    expense_where = "WHERE e.user_id = ?"
-    expense_where_params = [uid]
-    if expense_filter_month:
-        eb = month_bounds_dates(expense_filter_month)
-        expense_where += " AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)"
-        expense_where_params.extend([eb[0], eb[1]])
-    expense_filter_category_id = normalize_optional_category_id(
-        request.args.get("exp_category") or request.form.get("exp_category")
-    )
-    if expense_filter_category_id is not None:
-        if not conn.execute(
-            "SELECT 1 FROM categories WHERE id = ? AND user_id = ?",
-            (expense_filter_category_id, uid),
-        ).fetchone():
-            expense_filter_category_id = None
-        else:
-            expense_where += " AND e.category_id = ?"
-            expense_where_params.append(expense_filter_category_id)
-
-    expense_total = conn.execute(
-        f"SELECT COUNT(*) AS n FROM expenses e {expense_where}",
-        expense_where_params,
-    ).fetchone()["n"]
-    expense_num_pages = max(1, (expense_total + LIST_PAGE_SIZE - 1) // LIST_PAGE_SIZE)
-    expense_page = min(normalize_list_page(request.args.get("exp_page")), expense_num_pages)
-    expense_offset = (expense_page - 1) * LIST_PAGE_SIZE
-    expenses = conn.execute(
-        f"""
-        SELECT
-            e.id,
-            e.category_id,
-            e.account_id,
-            e.notes,
-            e.amount,
-            e.spent_at,
-            e.created_at,
-            c.name AS category_name,
-            a.name AS account_name
-        FROM expenses e
-        JOIN categories c ON c.id = e.category_id
-        JOIN accounts a ON a.id = e.account_id
-        {expense_where}
-        ORDER BY e.spent_at DESC
-        LIMIT ? OFFSET ?
-        """,
-        (*expense_where_params, LIST_PAGE_SIZE, expense_offset),
-    ).fetchall()
+    if load_recurring_list:
+        recurring_entries = conn.execute(
+            """
+            SELECT
+                r.id,
+                r.entry_type,
+                r.amount,
+                r.category_id,
+                r.account_id,
+                r.day_of_month,
+                r.months_to_run,
+                r.notes,
+                r.enabled,
+                r.created_at,
+                a.name AS account_name,
+                COALESCE(c.name, ic.name) AS category_name
+            FROM recurring_entries r
+            JOIN accounts a ON a.id = r.account_id
+            LEFT JOIN categories c ON r.entry_type = 'expense' AND c.id = r.category_id
+            LEFT JOIN income_categories ic ON r.entry_type = 'income' AND ic.id = r.category_id
+            WHERE r.user_id = ?
+            ORDER BY r.day_of_month, r.id
+            """,
+            (uid,),
+        ).fetchall()
+    else:
+        recurring_entries = []
 
     accounts = conn.execute(
         "SELECT id, name, opening_balance FROM accounts WHERE user_id = ? ORDER BY name",
         (uid,),
     ).fetchall()
 
-    income_filter_month = resolve_list_month_filter("inc_month", "inc_cal_year", "inc_cal_month")
-    income_where = "WHERE i.user_id = ?"
-    income_where_params = [uid]
-    if income_filter_month:
-        ib = month_bounds_dates(income_filter_month)
-        income_where += " AND date(i.received_at) >= date(?) AND date(i.received_at) < date(?)"
-        income_where_params.extend([ib[0], ib[1]])
-    income_filter_category_id = normalize_optional_category_id(
-        request.args.get("inc_category") or request.form.get("inc_category")
-    )
-    if income_filter_category_id is not None:
-        if not conn.execute(
-            "SELECT 1 FROM income_categories WHERE id = ? AND user_id = ?",
-            (income_filter_category_id, uid),
-        ).fetchone():
-            income_filter_category_id = None
-        else:
-            income_where += " AND i.category_id = ?"
-            income_where_params.append(income_filter_category_id)
+    expense_filter_month = None
+    expense_filter_category_id = None
+    if load_expense_list:
+        expense_filter_month = resolve_list_month_filter("exp_month", "exp_cal_year", "exp_cal_month")
+        expense_where = "WHERE e.user_id = ?"
+        expense_where_params = [uid]
+        if expense_filter_month:
+            eb = month_bounds_dates(expense_filter_month)
+            expense_where += " AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)"
+            expense_where_params.extend([eb[0], eb[1]])
+        expense_filter_category_id = normalize_optional_category_id(
+            request.args.get("exp_category") or request.form.get("exp_category")
+        )
+        if expense_filter_category_id is not None:
+            if not conn.execute(
+                "SELECT 1 FROM categories WHERE id = ? AND user_id = ?",
+                (expense_filter_category_id, uid),
+            ).fetchone():
+                expense_filter_category_id = None
+            else:
+                expense_where += " AND e.category_id = ?"
+                expense_where_params.append(expense_filter_category_id)
 
-    income_total = conn.execute(
-        f"SELECT COUNT(*) AS n FROM income_entries i {income_where}",
-        income_where_params,
-    ).fetchone()["n"]
-    income_num_pages = max(1, (income_total + LIST_PAGE_SIZE - 1) // LIST_PAGE_SIZE)
-    income_page = min(normalize_list_page(request.args.get("inc_page")), income_num_pages)
-    income_offset = (income_page - 1) * LIST_PAGE_SIZE
-    income_entries = conn.execute(
-        f"""
-        SELECT
-            i.id,
-            i.category_id,
-            i.account_id,
-            i.notes,
-            i.amount,
-            i.received_at,
-            i.created_at,
-            c.name AS category_name,
-            a.name AS account_name
-        FROM income_entries i
-        JOIN income_categories c ON c.id = i.category_id
-        JOIN accounts a ON a.id = i.account_id
-        {income_where}
-        ORDER BY i.received_at DESC
-        LIMIT ? OFFSET ?
-        """,
-        (*income_where_params, LIST_PAGE_SIZE, income_offset),
-    ).fetchall()
+        expense_total = conn.execute(
+            f"SELECT COUNT(*) AS n FROM expenses e {expense_where}",
+            expense_where_params,
+        ).fetchone()["n"]
+        expense_num_pages = max(1, (expense_total + LIST_PAGE_SIZE - 1) // LIST_PAGE_SIZE)
+        expense_page = min(normalize_list_page(request.args.get("exp_page")), expense_num_pages)
+        expense_offset = (expense_page - 1) * LIST_PAGE_SIZE
+        expenses = conn.execute(
+            f"""
+            SELECT
+                e.id,
+                e.category_id,
+                e.account_id,
+                e.notes,
+                e.amount,
+                e.spent_at,
+                e.created_at,
+                c.name AS category_name,
+                a.name AS account_name
+            FROM expenses e
+            JOIN categories c ON c.id = e.category_id
+            JOIN accounts a ON a.id = e.account_id
+            {expense_where}
+            ORDER BY e.spent_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (*expense_where_params, LIST_PAGE_SIZE, expense_offset),
+        ).fetchall()
+    else:
+        expenses, expense_total, expense_num_pages, expense_page = _empty_paginated_list()
 
-    total_expenses = conn.execute(
-        """
-        SELECT COALESCE(-SUM(amount), 0) AS total
-        FROM expenses
-        WHERE user_id = ? AND date(spent_at) >= date(?) AND date(spent_at) < date(?)
-        """,
-        (uid, month_start_d, month_end_d),
-    ).fetchone()["total"]
-    total_income = conn.execute(
-        """
-        SELECT COALESCE(SUM(amount), 0) AS total
-        FROM income_entries
-        WHERE user_id = ? AND date(received_at) >= date(?) AND date(received_at) < date(?)
-        """,
-        (uid, month_start_d, month_end_d),
-    ).fetchone()["total"]
+    income_filter_month = None
+    income_filter_category_id = None
+    if load_income_list:
+        income_filter_month = resolve_list_month_filter("inc_month", "inc_cal_year", "inc_cal_month")
+        income_where = "WHERE i.user_id = ?"
+        income_where_params = [uid]
+        if income_filter_month:
+            ib = month_bounds_dates(income_filter_month)
+            income_where += " AND date(i.received_at) >= date(?) AND date(i.received_at) < date(?)"
+            income_where_params.extend([ib[0], ib[1]])
+        income_filter_category_id = normalize_optional_category_id(
+            request.args.get("inc_category") or request.form.get("inc_category")
+        )
+        if income_filter_category_id is not None:
+            if not conn.execute(
+                "SELECT 1 FROM income_categories WHERE id = ? AND user_id = ?",
+                (income_filter_category_id, uid),
+            ).fetchone():
+                income_filter_category_id = None
+            else:
+                income_where += " AND i.category_id = ?"
+                income_where_params.append(income_filter_category_id)
 
-    expense_breakdown = conn.execute(
-        """
-        SELECT c.name AS category_name, COALESCE(-SUM(e.amount), 0) AS total_amount
-        FROM expenses e
-        JOIN categories c ON c.id = e.category_id
-        WHERE e.user_id = ? AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)
-        GROUP BY c.name
-        ORDER BY total_amount DESC
-        """,
-        (uid, month_start_d, month_end_d),
-    ).fetchall()
+        income_total = conn.execute(
+            f"SELECT COUNT(*) AS n FROM income_entries i {income_where}",
+            income_where_params,
+        ).fetchone()["n"]
+        income_num_pages = max(1, (income_total + LIST_PAGE_SIZE - 1) // LIST_PAGE_SIZE)
+        income_page = min(normalize_list_page(request.args.get("inc_page")), income_num_pages)
+        income_offset = (income_page - 1) * LIST_PAGE_SIZE
+        income_entries = conn.execute(
+            f"""
+            SELECT
+                i.id,
+                i.category_id,
+                i.account_id,
+                i.notes,
+                i.amount,
+                i.received_at,
+                i.created_at,
+                c.name AS category_name,
+                a.name AS account_name
+            FROM income_entries i
+            JOIN income_categories c ON c.id = i.category_id
+            JOIN accounts a ON a.id = i.account_id
+            {income_where}
+            ORDER BY i.received_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (*income_where_params, LIST_PAGE_SIZE, income_offset),
+        ).fetchall()
+    else:
+        income_entries, income_total, income_num_pages, income_page = _empty_paginated_list()
 
-    income_breakdown = conn.execute(
-        """
-        SELECT c.name AS category_name, SUM(i.amount) AS total_amount
-        FROM income_entries i
-        JOIN income_categories c ON c.id = i.category_id
-        WHERE i.user_id = ? AND date(i.received_at) >= date(?) AND date(i.received_at) < date(?)
-        GROUP BY c.name
-        ORDER BY total_amount DESC
-        """,
-        (uid, month_start_d, month_end_d),
-    ).fetchall()
+    if load_home_month_stats:
+        total_expenses = conn.execute(
+            """
+            SELECT COALESCE(-SUM(amount), 0) AS total
+            FROM expenses
+            WHERE user_id = ? AND date(spent_at) >= date(?) AND date(spent_at) < date(?)
+            """,
+            (uid, month_start_d, month_end_d),
+        ).fetchone()["total"]
+        total_income = conn.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0) AS total
+            FROM income_entries
+            WHERE user_id = ? AND date(received_at) >= date(?) AND date(received_at) < date(?)
+            """,
+            (uid, month_start_d, month_end_d),
+        ).fetchone()["total"]
+    else:
+        total_expenses = 0.0
+        total_income = 0.0
+
+    if load_summary_breakdown:
+        expense_breakdown = conn.execute(
+            """
+            SELECT c.name AS category_name, COALESCE(-SUM(e.amount), 0) AS total_amount
+            FROM expenses e
+            JOIN categories c ON c.id = e.category_id
+            WHERE e.user_id = ? AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)
+            GROUP BY c.name
+            ORDER BY total_amount DESC
+            """,
+            (uid, month_start_d, month_end_d),
+        ).fetchall()
+
+        income_breakdown = conn.execute(
+            """
+            SELECT c.name AS category_name, SUM(i.amount) AS total_amount
+            FROM income_entries i
+            JOIN income_categories c ON c.id = i.category_id
+            WHERE i.user_id = ? AND date(i.received_at) >= date(?) AND date(i.received_at) < date(?)
+            GROUP BY c.name
+            ORDER BY total_amount DESC
+            """,
+            (uid, month_start_d, month_end_d),
+        ).fetchall()
+    else:
+        expense_breakdown = []
+        income_breakdown = []
 
     today_d = datetime.now().date()
     sel_y, sel_m = int(year_str), int(month_str)
-    if (today_d.year, today_d.month) == (sel_y, sel_m):
-        balance_cutoff_d = (today_d + timedelta(days=1)).isoformat()
-        balance_scope_hint = (
-            "Account balances use opening balance plus movements through today "
-            "(only while this month is selected)."
-        )
-    else:
-        balance_cutoff_d = month_end_d
-        balance_scope_hint = (
-            f"Account balances are through the end of {month_heading} "
-            "(opening balance plus movements up to then)."
-        )
+    if load_home_month_stats or load_transfer_panel:
+        if (today_d.year, today_d.month) == (sel_y, sel_m):
+            balance_cutoff_d = (today_d + timedelta(days=1)).isoformat()
+            balance_scope_hint = (
+                "Account balances use opening balance plus movements through today "
+                "(only while this month is selected)."
+            )
+        else:
+            balance_cutoff_d = month_end_d
+            balance_scope_hint = (
+                f"Account balances are through the end of {month_heading} "
+                "(opening balance plus movements up to then)."
+            )
 
-    account_balances = fetch_account_balances_through(conn, balance_cutoff_d, uid)
+        account_balances = fetch_account_balances_through(conn, balance_cutoff_d, uid)
+        accounts_total_balance = sum(float(r["current_balance"]) for r in account_balances)
+    else:
+        balance_scope_hint = ""
+        account_balances = []
+        accounts_total_balance = 0.0
+
     account_balance_by_id = {
         int(row["id"]): float(row["current_balance"]) for row in account_balances
     }
-    account_transfers = conn.execute(
-        """
-        SELECT
-            t.id,
-            t.amount,
-            t.transferred_at,
-            t.notes,
-            fa.name AS from_account_name,
-            ta.name AS to_account_name
-        FROM account_transfers t
-        JOIN accounts fa ON fa.id = t.from_account_id
-        JOIN accounts ta ON ta.id = t.to_account_id
-        WHERE t.user_id = ?
-        ORDER BY date(t.transferred_at) DESC, t.id DESC
-        LIMIT ?
-        """,
-        (uid, TRANSFER_LOG_LIMIT),
-    ).fetchall()
-    accounts_total_balance = sum(float(r["current_balance"]) for r in account_balances)
 
-    year_start_d = f"{year_filter:04d}-01-01"
-    year_end_d = f"{year_filter + 1:04d}-01-01"
-    expense_by_month = {
-        row["m"]: float(row["total"])
-        for row in conn.execute(
+    if load_transfer_panel:
+        account_transfers = conn.execute(
             """
-            SELECT CAST(strftime('%m', spent_at) AS INTEGER) AS m,
-                   COALESCE(-SUM(amount), 0) AS total
-            FROM expenses
-            WHERE user_id = ? AND date(spent_at) >= date(?) AND date(spent_at) < date(?)
-            GROUP BY m
+            SELECT
+                t.id,
+                t.amount,
+                t.transferred_at,
+                t.notes,
+                fa.name AS from_account_name,
+                ta.name AS to_account_name
+            FROM account_transfers t
+            JOIN accounts fa ON fa.id = t.from_account_id
+            JOIN accounts ta ON ta.id = t.to_account_id
+            WHERE t.user_id = ?
+            ORDER BY date(t.transferred_at) DESC, t.id DESC
+            LIMIT ?
             """,
-            (uid, year_start_d, year_end_d),
-        )
-    }
-    income_by_month = {
-        row["m"]: float(row["total"])
-        for row in conn.execute(
-            """
-            SELECT CAST(strftime('%m', received_at) AS INTEGER) AS m,
-                   COALESCE(SUM(amount), 0) AS total
-            FROM income_entries
-            WHERE user_id = ? AND date(received_at) >= date(?) AND date(received_at) < date(?)
-            GROUP BY m
-            """,
-            (uid, year_start_d, year_end_d),
-        )
-    }
+            (uid, TRANSFER_LOG_LIMIT),
+        ).fetchall()
+    else:
+        account_transfers = []
 
-    month_names = calendar.month_name
-    yearly_month_balances = monthly_total_balances_for_year(conn, year_filter, today_d, uid)
     yearly_rows = []
     yearly_total_income = 0.0
     yearly_total_expenses = 0.0
-    for month_num in range(1, 13):
-        inc = income_by_month.get(month_num, 0.0)
-        exp = expense_by_month.get(month_num, 0.0)
-        delta = inc - exp
-        yearly_total_income += inc
-        yearly_total_expenses += exp
-        yearly_rows.append(
-            {
-                "month_label": month_names[month_num],
-                "income": inc,
-                "expenses": exp,
-                "delta": delta,
-                "total_balance": yearly_month_balances[month_num - 1],
-            }
-        )
-    yearly_total_delta = yearly_total_income - yearly_total_expenses
+    yearly_total_delta = 0.0
+    if load_yearly_panel:
+        year_start_d = f"{year_filter:04d}-01-01"
+        year_end_d = f"{year_filter + 1:04d}-01-01"
+        expense_by_month = {
+            row["m"]: float(row["total"])
+            for row in conn.execute(
+                """
+                SELECT CAST(strftime('%m', spent_at) AS INTEGER) AS m,
+                       COALESCE(-SUM(amount), 0) AS total
+                FROM expenses
+                WHERE user_id = ? AND date(spent_at) >= date(?) AND date(spent_at) < date(?)
+                GROUP BY m
+                """,
+                (uid, year_start_d, year_end_d),
+            )
+        }
+        income_by_month = {
+            row["m"]: float(row["total"])
+            for row in conn.execute(
+                """
+                SELECT CAST(strftime('%m', received_at) AS INTEGER) AS m,
+                       COALESCE(SUM(amount), 0) AS total
+                FROM income_entries
+                WHERE user_id = ? AND date(received_at) >= date(?) AND date(received_at) < date(?)
+                GROUP BY m
+                """,
+                (uid, year_start_d, year_end_d),
+            )
+        }
+
+        month_names = calendar.month_name
+        yearly_month_balances = monthly_total_balances_for_year(conn, year_filter, today_d, uid)
+        for month_num in range(1, 13):
+            inc = income_by_month.get(month_num, 0.0)
+            exp = expense_by_month.get(month_num, 0.0)
+            delta = inc - exp
+            yearly_total_income += inc
+            yearly_total_expenses += exp
+            yearly_rows.append(
+                {
+                    "month_label": month_names[month_num],
+                    "income": inc,
+                    "expenses": exp,
+                    "delta": delta,
+                    "total_balance": yearly_month_balances[month_num - 1],
+                }
+            )
+        yearly_total_delta = yearly_total_income - yearly_total_expenses
     transfer_default_date = datetime.now().date().isoformat()
 
     investments_section = normalize_investments_section(request.args.get("investments_section"))
 
-    crypto_txs = conn.execute(
-        """
-        SELECT id, coin_id, coin_symbol, coin_name, tx_type, quantity,
-               price_per_unit, fee, exchange, transacted_at, notes
-        FROM crypto_transactions
-        WHERE user_id = ?
-        ORDER BY transacted_at DESC, id DESC
-        """,
-        (uid,),
-    ).fetchall()
-
-    crypto_holdings_raw = compute_crypto_holdings(crypto_txs)
-
-    force_refresh = request.args.get("refresh_prices") == "1"
-    coin_ids = [h["coin_id"] for h in crypto_holdings_raw]
-    crypto_prices = fetch_coingecko_prices(coin_ids, force=force_refresh) if coin_ids else {}
-
     crypto_total_value = 0.0
     crypto_total_invested = 0.0
-    for h in crypto_holdings_raw:
-        cid = h["coin_id"]
-        price_info = crypto_prices.get(cid)
-        if price_info:
-            h["current_price"] = price_info["price"]
-            h["change_24h"] = price_info.get("change_24h")
-            h["current_value"] = h["quantity"] * price_info["price"]
-            h["pnl"] = h["current_value"] - h["total_cost"]
-            h["pnl_pct"] = (h["pnl"] / h["total_cost"] * 100) if h["total_cost"] > 0 else 0
-            crypto_total_value += h["current_value"]
-        else:
-            h["current_price"] = None
-            h["change_24h"] = None
-            h["current_value"] = None
-            h["pnl"] = None
-            h["pnl_pct"] = 0
-        crypto_total_invested += h["total_cost"]
-
-    crypto_total_pnl = crypto_total_value - crypto_total_invested
-    crypto_total_pnl_pct = (crypto_total_pnl / crypto_total_invested * 100) if crypto_total_invested > 0 else 0
-
-    cache_age = time.time() - _price_cache["fetched_at"]
-    if _price_cache["fetched_at"] > 0 and cache_age < PRICE_CACHE_TTL:
-        mins = int(cache_age // 60)
-        secs = int(cache_age % 60)
-        crypto_prices_age = f"{mins}m {secs}s ago" if mins else f"{secs}s ago"
-    else:
-        crypto_prices_age = ""
-
-    stock_txs = conn.execute(
-        """
-        SELECT id, symbol, ticker, instrument_name, tx_type, quantity,
-               price_per_unit, fee, broker, transacted_at, notes
-        FROM stock_transactions
-        WHERE user_id = ?
-        ORDER BY transacted_at DESC, id DESC
-        """,
-        (uid,),
-    ).fetchall()
-
-    stock_holdings_raw = compute_stock_holdings(stock_txs)
-    stock_symbols = [h["symbol"] for h in stock_holdings_raw]
-    force_stock_refresh = request.args.get("refresh_stock_prices") == "1"
-    stock_prices = fetch_finnhub_quotes(stock_symbols, force=force_stock_refresh) if stock_symbols else {}
-
+    crypto_total_pnl = 0.0
+    crypto_total_pnl_pct = 0.0
+    crypto_prices_age = ""
     stock_total_value = 0.0
     stock_total_invested = 0.0
-    for h in stock_holdings_raw:
-        sym = h["symbol"]
-        price_info = stock_prices.get(sym)
-        if price_info:
-            h["current_price"] = price_info["price"]
-            h["change_24h"] = price_info.get("change_24h")
-            h["current_value"] = h["quantity"] * price_info["price"]
-            h["pnl"] = h["current_value"] - h["total_cost"]
-            h["pnl_pct"] = (h["pnl"] / h["total_cost"] * 100) if h["total_cost"] > 0 else 0
-            stock_total_value += h["current_value"]
-        else:
-            h["current_price"] = None
-            h["change_24h"] = None
-            h["current_value"] = None
-            h["pnl"] = None
-            h["pnl_pct"] = 0
-        stock_total_invested += h["total_cost"]
+    stock_total_pnl = 0.0
+    stock_total_pnl_pct = 0.0
+    stock_prices_age = ""
+    crypto_holdings_raw = []
+    crypto_txs = []
+    stock_holdings_raw = []
+    stock_txs = []
 
-    stock_total_pnl = stock_total_value - stock_total_invested
-    stock_total_pnl_pct = (stock_total_pnl / stock_total_invested * 100) if stock_total_invested > 0 else 0
+    if load_portfolio_txs:
+        crypto_txs = conn.execute(
+            """
+            SELECT id, coin_id, coin_symbol, coin_name, tx_type, quantity,
+                   price_per_unit, fee, exchange, transacted_at, notes
+            FROM crypto_transactions
+            WHERE user_id = ?
+            ORDER BY transacted_at DESC, id DESC
+            """,
+            (uid,),
+        ).fetchall()
 
-    stock_cache_age = time.time() - _stock_price_cache["fetched_at"]
-    if _stock_price_cache["fetched_at"] > 0 and stock_cache_age < PRICE_CACHE_TTL:
-        mins = int(stock_cache_age // 60)
-        secs = int(stock_cache_age % 60)
-        stock_prices_age = f"{mins}m {secs}s ago" if mins else f"{secs}s ago"
-    else:
-        stock_prices_age = ""
+        stock_txs = conn.execute(
+            """
+            SELECT id, symbol, ticker, instrument_name, tx_type, quantity,
+                   price_per_unit, fee, broker, transacted_at, notes
+            FROM stock_transactions
+            WHERE user_id = ?
+            ORDER BY transacted_at DESC, id DESC
+            """,
+            (uid,),
+        ).fetchall()
+
+    if load_investments_panel:
+        crypto_holdings_raw = compute_crypto_holdings(crypto_txs)
+
+        force_refresh = request.args.get("refresh_prices") == "1"
+        coin_ids = [h["coin_id"] for h in crypto_holdings_raw]
+        crypto_prices = fetch_coingecko_prices(coin_ids, force=force_refresh) if coin_ids else {}
+
+        for h in crypto_holdings_raw:
+            cid = h["coin_id"]
+            price_info = crypto_prices.get(cid)
+            if price_info:
+                h["current_price"] = price_info["price"]
+                h["change_24h"] = price_info.get("change_24h")
+                h["current_value"] = h["quantity"] * price_info["price"]
+                h["pnl"] = h["current_value"] - h["total_cost"]
+                h["pnl_pct"] = (h["pnl"] / h["total_cost"] * 100) if h["total_cost"] > 0 else 0
+                crypto_total_value += h["current_value"]
+            else:
+                h["current_price"] = None
+                h["change_24h"] = None
+                h["current_value"] = None
+                h["pnl"] = None
+                h["pnl_pct"] = 0
+            crypto_total_invested += h["total_cost"]
+
+        crypto_total_pnl = crypto_total_value - crypto_total_invested
+        crypto_total_pnl_pct = (
+            (crypto_total_pnl / crypto_total_invested * 100) if crypto_total_invested > 0 else 0
+        )
+
+        cache_age = time.time() - _price_cache["fetched_at"]
+        if _price_cache["fetched_at"] > 0 and cache_age < PRICE_CACHE_TTL:
+            mins = int(cache_age // 60)
+            secs = int(cache_age % 60)
+            crypto_prices_age = f"{mins}m {secs}s ago" if mins else f"{secs}s ago"
+
+        stock_holdings_raw = compute_stock_holdings(stock_txs)
+        stock_symbols = [h["symbol"] for h in stock_holdings_raw]
+        force_stock_refresh = request.args.get("refresh_stock_prices") == "1"
+        stock_prices = fetch_finnhub_quotes(stock_symbols, force=force_stock_refresh) if stock_symbols else {}
+
+        for h in stock_holdings_raw:
+            sym = h["symbol"]
+            price_info = stock_prices.get(sym)
+            if price_info:
+                h["current_price"] = price_info["price"]
+                h["change_24h"] = price_info.get("change_24h")
+                h["current_value"] = h["quantity"] * price_info["price"]
+                h["pnl"] = h["current_value"] - h["total_cost"]
+                h["pnl_pct"] = (h["pnl"] / h["total_cost"] * 100) if h["total_cost"] > 0 else 0
+                stock_total_value += h["current_value"]
+            else:
+                h["current_price"] = None
+                h["change_24h"] = None
+                h["current_value"] = None
+                h["pnl"] = None
+                h["pnl_pct"] = 0
+            stock_total_invested += h["total_cost"]
+
+        stock_total_pnl = stock_total_value - stock_total_invested
+        stock_total_pnl_pct = (
+            (stock_total_pnl / stock_total_invested * 100) if stock_total_invested > 0 else 0
+        )
+
+        stock_cache_age = time.time() - _stock_price_cache["fetched_at"]
+        if _stock_price_cache["fetched_at"] > 0 and stock_cache_age < PRICE_CACHE_TTL:
+            mins = int(stock_cache_age // 60)
+            secs = int(stock_cache_age % 60)
+            stock_prices_age = f"{mins}m {secs}s ago" if mins else f"{secs}s ago"
 
     reports_section = normalize_reports_section(request.args.get("reports_section"))
     report_account_id = normalize_report_account(request.args.get("report_account"), conn, uid)
@@ -2886,15 +2951,29 @@ def index():
         )
         stock_chart_spec = balance_line_chart_spec(stock_chart_rows)
 
-    user_integrations = integrations.get_user_integrations(conn, uid)
-    telegram_server = telegram_bot.server_config_for_form(conn)
-    telegram_link = telegram_bot.get_telegram_link(conn, uid)
-    telegram_link_code = telegram_bot.get_active_link_code(conn, uid)
-    telegram_cfg = telegram_bot.get_server_config(conn)
-    telegram_enabled = telegram_bot.is_configured(telegram_cfg)
-    telegram_bot_username = None
-    if telegram_enabled and settings_section == "integrations":
-        telegram_bot_username = telegram_bot.get_bot_username(telegram_cfg)
+    if load_settings_panel:
+        user_integrations = integrations.get_user_integrations(conn, uid)
+        telegram_server = telegram_bot.server_config_for_form(conn)
+        telegram_link = telegram_bot.get_telegram_link(conn, uid)
+        telegram_link_code = telegram_bot.get_active_link_code(conn, uid)
+        telegram_cfg = telegram_bot.get_server_config(conn)
+        telegram_enabled = telegram_bot.is_configured(telegram_cfg)
+        telegram_bot_username = None
+        if telegram_enabled and settings_section == "integrations":
+            telegram_bot_username = telegram_bot.get_bot_username(telegram_cfg)
+    else:
+        user_integrations = {}
+        telegram_server = {}
+        telegram_link = None
+        telegram_link_code = None
+        telegram_enabled = False
+        telegram_bot_username = None
+
+    form_options = {
+        "categories": _rows_to_form_options(categories),
+        "income_categories": _rows_to_form_options(income_categories),
+        "accounts": _rows_to_form_options(accounts),
+    }
 
     conn.commit()
     conn.close()
@@ -2973,6 +3052,7 @@ def index():
         stock_total_pnl_pct=stock_total_pnl_pct,
         stock_prices_age=stock_prices_age,
         finnhub_configured=bool(FINNHUB_API_KEY),
+        form_options=form_options,
     )
 
 

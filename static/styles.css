@@ -799,6 +799,7 @@ table.yearly-table {
     border-color: var(--border);
 }
 
+.side-menu a.menu-item,
 .side-menu button.menu-item {
     display: flex;
     align-items: center;
@@ -807,6 +808,14 @@ table.yearly-table {
     font-size: 0.88rem;
     font-weight: 600;
     line-height: 1.25;
+    text-decoration: none;
+    border-radius: 8px;
+    border: 1px solid transparent;
+}
+
+.side-menu a.menu-sub-item {
+    text-decoration: none;
+    display: block;
 }
 
 input, select, button {
