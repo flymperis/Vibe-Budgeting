@@ -466,44 +466,11 @@
                         Entries appear as normal expenses or income with a “[Recurring]” note when you open the app on or after that date.
                     </p>
 
-                    <h3>Add rule</h3>
-                    <form action="{{ url_for('add_recurring') }}" class="panel-add-form recurring-add-form" method="post">
-                        <input name="month" type="hidden" value="{{ month_filter }}">
-                        <input name="next_panel" type="hidden" value="recurring">
-                        <label class="month-label" for="recurring-category-choice">Category</label>
-                        <select id="recurring-category-choice" name="category_choice" required autocomplete="off">
-                            <optgroup label="Expense">
-                                {% for category in categories %}
-                                    <option value="e-{{ category.id }}">{{ category.name }}</option>
-                                {% endfor %}
-                            </optgroup>
-                            <optgroup label="Income">
-                                {% for category in income_categories %}
-                                    <option value="i-{{ category.id }}">{{ category.name }}</option>
-                                {% endfor %}
-                            </optgroup>
-                        </select>
-                        <label class="month-label" for="recurring-amount">Amount (positive)</label>
-                        <input id="recurring-amount" min="0.01" name="amount" placeholder="Amount per month" required step="0.01" type="number">
-                        <label class="month-label" for="recurring-account">Account</label>
-                        <select id="recurring-account" name="account_id" required>
-                            {% for account in accounts %}
-                                <option value="{{ account.id }}">{{ account.name }}</option>
-                            {% endfor %}
-                        </select>
-                        <label class="month-label" for="recurring-dom">Day of month</label>
-                        <input id="recurring-dom" max="31" min="1" name="day_of_month" required type="number" value="1">
-                        <label class="checkbox-inline recurring-enabled-label">
-                            <input checked data-recurring-indefinite-toggle name="indefinitely" type="checkbox" value="1"> Indefinitely
-                        </label>
-                        <div data-recurring-months-wrap hidden>
-                            <label class="month-label" for="recurring-months">Run for how many months</label>
-                            <input id="recurring-months" data-recurring-months-input min="1" name="months_to_run" placeholder="e.g. 12" type="number">
-                        </div>
-                        <label class="month-label" for="recurring-notes">Notes (optional)</label>
-                        <textarea id="recurring-notes" name="notes" placeholder="e.g. Rent, Salary, Subscription" rows="2"></textarea>
-                        <button type="submit">Add recurring rule</button>
-                    </form>
+                    <div class="home-quick-bar recurring-quick-bar">
+                        <button id="recurring-btn-add" type="button" class="btn-home-quick btn-home-quick-recurring" aria-expanded="false" aria-controls="recurring-modal-add">
+                            + Add rule
+                        </button>
+                    </div>
 
                     <h3>Your rules</h3>
                     {% if recurring_entries %}
@@ -1874,7 +1841,9 @@
         <div class="home-modal-dialog home-modal-dialog-expense">
             <div class="home-modal-header">
                 <h3 id="home-modal-expense-title" class="home-modal-title">New expense</h3>
-                <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">&times;</button>
+                <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
             </div>
             <form action="/expenses/add" class="panel-add-form home-quick-form" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
@@ -1902,7 +1871,9 @@
         <div class="home-modal-dialog home-modal-dialog-income">
             <div class="home-modal-header">
                 <h3 id="home-modal-income-title" class="home-modal-title">New income</h3>
-                <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">&times;</button>
+                <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
             </div>
             <form action="/income/add" class="panel-add-form home-quick-form" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
@@ -1921,6 +1892,55 @@
                     {% endfor %}
                 </select>
                 <button type="submit">Add income</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="recurring-modal-add" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="recurring-modal-add-title">
+        <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close recurring rule dialog"></button>
+        <div class="home-modal-dialog home-modal-dialog-recurring">
+            <div class="home-modal-header">
+                <h3 id="recurring-modal-add-title" class="home-modal-title">New recurring rule</h3>
+                <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <form action="{{ url_for('add_recurring') }}" class="panel-add-form recurring-add-form home-quick-form" method="post">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                <input name="next_panel" type="hidden" value="recurring">
+                <label class="month-label" for="recurring-category-choice">Category</label>
+                <select id="recurring-category-choice" name="category_choice" required autocomplete="off">
+                    <optgroup label="Expense">
+                        {% for category in categories %}
+                            <option value="e-{{ category.id }}">{{ category.name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    <optgroup label="Income">
+                        {% for category in income_categories %}
+                            <option value="i-{{ category.id }}">{{ category.name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                </select>
+                <label class="month-label" for="recurring-amount">Amount (positive)</label>
+                <input id="recurring-amount" min="0.01" name="amount" placeholder="Amount per month" required step="0.01" type="number">
+                <label class="month-label" for="recurring-account">Account</label>
+                <select id="recurring-account" name="account_id" required>
+                    {% for account in accounts %}
+                        <option value="{{ account.id }}">{{ account.name }}</option>
+                    {% endfor %}
+                </select>
+                <label class="month-label" for="recurring-dom">Day of month</label>
+                <input id="recurring-dom" max="31" min="1" name="day_of_month" required type="number" value="1">
+                <label class="checkbox-inline recurring-enabled-label">
+                    <input checked data-recurring-indefinite-toggle name="indefinitely" type="checkbox" value="1"> Indefinitely
+                </label>
+                <div data-recurring-months-wrap hidden>
+                    <label class="month-label" for="recurring-months">Run for how many months</label>
+                    <input id="recurring-months" data-recurring-months-input min="1" name="months_to_run" placeholder="e.g. 12" type="number">
+                </div>
+                <label class="month-label" for="recurring-notes">Notes (optional)</label>
+                <textarea id="recurring-notes" name="notes" placeholder="e.g. Rent, Salary, Subscription" rows="2"></textarea>
+                <button type="submit">Add recurring rule</button>
             </form>
         </div>
     </div>
@@ -2424,22 +2444,20 @@
             })();
 
             (function setupHomeQuickModals() {
-                const modalExp = document.getElementById("home-modal-expense");
-                const modalInc = document.getElementById("home-modal-income");
-                const btnExp = document.getElementById("home-btn-expense");
-                const btnInc = document.getElementById("home-btn-income");
-                if (!modalExp || !modalInc || !btnExp || !btnInc) {
+                const modalConfigs = [
+                    { modal: document.getElementById("home-modal-expense"), button: document.getElementById("home-btn-expense") },
+                    { modal: document.getElementById("home-modal-income"), button: document.getElementById("home-btn-income") },
+                    { modal: document.getElementById("recurring-modal-add"), button: document.getElementById("recurring-btn-add") },
+                ].filter(function (entry) {
+                    return entry.modal && entry.button;
+                });
+                if (!modalConfigs.length) {
                     return;
                 }
 
-                const modals = [
-                    { modal: modalExp, button: btnExp },
-                    { modal: modalInc, button: btnInc },
-                ];
-
                 function focusFirstField(modal) {
                     const field = modal.querySelector(
-                        "textarea, input:not([type='hidden']), select, button[type='submit']"
+                        "textarea, input:not([type='hidden']):not([type='checkbox']), select, button[type='submit']"
                     );
                     if (field) {
                         field.focus();
@@ -2447,7 +2465,7 @@
                 }
 
                 function closeAll() {
-                    modals.forEach(function (entry) {
+                    modalConfigs.forEach(function (entry) {
                         entry.modal.hidden = true;
                         entry.modal.setAttribute("aria-hidden", "true");
                         entry.button.setAttribute("aria-expanded", "false");
@@ -2466,20 +2484,14 @@
                     focusFirstField(modal);
                 }
 
-                btnExp.addEventListener("click", function () {
-                    if (modalExp.hidden) {
-                        openModal(modalExp, btnExp);
-                    } else {
-                        closeAll();
-                    }
-                });
-
-                btnInc.addEventListener("click", function () {
-                    if (modalInc.hidden) {
-                        openModal(modalInc, btnInc);
-                    } else {
-                        closeAll();
-                    }
+                modalConfigs.forEach(function (entry) {
+                    entry.button.addEventListener("click", function () {
+                        if (entry.modal.hidden) {
+                            openModal(entry.modal, entry.button);
+                        } else {
+                            closeAll();
+                        }
+                    });
                 });
 
                 document.querySelectorAll("[data-home-modal-close]").forEach(function (el) {

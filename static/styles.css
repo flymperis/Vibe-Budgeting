@@ -1104,6 +1104,46 @@ body.home-modal-open {
     border-top: 4px solid rgba(21, 128, 61, 0.8);
 }
 
+.home-modal-dialog-recurring {
+    border-top: 4px solid rgba(79, 70, 229, 0.75);
+}
+
+:root[data-theme="dark"] .home-modal-dialog-recurring {
+    border-top-color: rgba(129, 140, 248, 0.85);
+}
+
+.recurring-quick-bar {
+    grid-template-columns: 1fr;
+    max-width: 14rem;
+}
+
+.btn-home-quick-recurring {
+    background: rgba(79, 70, 229, 0.11);
+}
+
+:root[data-theme="dark"] .btn-home-quick-recurring {
+    background: rgba(129, 140, 248, 0.12);
+}
+
+.home-modal-dialog .recurring-add-form {
+    align-items: stretch;
+}
+
+.home-modal-dialog .recurring-add-form .month-label,
+.home-modal-dialog .recurring-add-form select,
+.home-modal-dialog .recurring-add-form input:not([type="hidden"]),
+.home-modal-dialog .recurring-add-form textarea,
+.home-modal-dialog .recurring-add-form button {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+}
+
+.home-modal-dialog .recurring-add-form textarea {
+    min-width: 0;
+    flex: 0 1 auto;
+}
+
 .home-modal-header {
     display: flex;
     align-items: center;
@@ -1118,19 +1158,29 @@ body.home-modal-open {
 }
 
 .home-modal-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex: 0 0 auto;
     width: 2rem;
     height: 2rem;
+    padding: 0;
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface-alt);
     color: var(--text);
-    font-size: 1.35rem;
-    line-height: 1;
     cursor: pointer;
 }
 
+.home-modal-close svg {
+    display: block;
+    flex: 0 0 auto;
+    width: 1.75rem;
+    height: 1.75rem;
+}
+
 .home-modal-close:hover {
+    background: var(--surface-alt);
     filter: brightness(1.03);
 }
 
