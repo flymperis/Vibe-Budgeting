@@ -2289,6 +2289,21 @@ form + form {
         padding-bottom: calc(var(--bottom-nav-h) + 1.5rem);
     }
 
+    /* .app-layout sets align-items: start so the desktop grid does not stretch
+       the sidebar vertically. Once it flips to a flex column on mobile the same
+       property governs WIDTH instead, so every panel shrank to fit its own
+       content - Expenses came out wider than Income purely because its amount
+       placeholder is longer. Stretch them all to the same width. */
+    .app-layout {
+        align-items: stretch;
+    }
+
+    .panel-shell,
+    .panel {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
     /* --- Transaction tables become cards -------------------------------- */
 
     .entries-table-wrap,
