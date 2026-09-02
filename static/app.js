@@ -819,10 +819,19 @@
             open(group);
         });
 
+        // Picking a section is the end of the interaction, so dismiss.
+        panel.addEventListener("click", function (event) {
+            if (event.target.closest(".menu-sub-item")) {
+                clearTimeout(hoverTimer);
+                closeAll(null);
+            }
+        });
+
         // Hover opens too, after a short delay so that sweeping the pointer
         // across the bar to reach a further item doesn't flash open every menu
-        // it passes over. There is no mouseleave handler on purpose: the menu
-        // stays put until dismissed, so you can move into it and keep clicking.
+        // it passes over. There is no mouseleave handler on purpose: moving
+        // off the group must not close the menu, or it would be impossible to
+        // reach the items inside it.
         group.addEventListener("mouseenter", function () {
             clearTimeout(hoverTimer);
             hoverTimer = setTimeout(function () {
