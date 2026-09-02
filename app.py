@@ -86,8 +86,42 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _resolve_secret_key():
+    """FLASK_SECRET_KEY if set; otherwise a random key persisted next to the
+    DB so sessions survive restarts, instead of a hardcoded fallback value."""
+    env_key = os.environ.get("FLASK_SECRET_KEY", "").strip()
+    if env_key:
+        return env_key
+
+    key_path = os.path.join(os.path.dirname(DB_PATH) or ".", "secret_key")
+    try:
+        with open(key_path, "r", encoding="utf-8") as f:
+            existing = f.read().strip()
+        if existing:
+            return existing
+    except FileNotFoundError:
+        pass
+
+    generated = secrets.token_hex(32)
+    os.makedirs(os.path.dirname(key_path) or ".", exist_ok=True)
+    try:
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(generated)
+    except FileExistsError:
+        with open(key_path, "r", encoding="utf-8") as f:
+            generated = f.read().strip()
+    print(
+        f"[vibe-budgeting] WARNING: FLASK_SECRET_KEY not set; generated and "
+        f"persisted a random key at {key_path!r}. Set FLASK_SECRET_KEY "
+        "explicitly in production (see README).",
+        file=sys.stderr,
+    )
+    return generated
+
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-change-me")
+app.secret_key = _resolve_secret_key()
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
