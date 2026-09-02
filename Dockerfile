@@ -14,4 +14,9 @@ COPY . .
 EXPOSE 5000
 
 # --preload: init_db() runs once in the master; without it each worker imports app and races on SQLite.
-CMD ["gunicorn", "--preload", "-w", "2", "-b", "0.0.0.0:5000", "-c", "gunicorn.conf.py", "app:app"]
+# Single worker + threads (not -w 2): the in-memory price caches (_price_cache,
+# _stock_price_cache) live per-process, so multiple worker processes would each
+# keep their own cache, doubling external price-API calls and making the
+# "prices fetched Xs ago" display inconsistent between requests. One process
+# with threads keeps the cache correct while still handling concurrent requests.
+CMD ["gunicorn", "--preload", "-w", "1", "--worker-class", "gthread", "--threads", "4", "-b", "0.0.0.0:5000", "-c", "gunicorn.conf.py", "app:app"]

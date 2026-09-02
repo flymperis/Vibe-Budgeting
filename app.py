@@ -911,6 +911,28 @@ def migrate_schema(conn):
     migrate_stock_month_prices(conn)
     integrations.migrate_user_integrations(conn)
     telegram_bot.migrate_telegram(conn)
+    migrate_add_indexes(conn)
+
+
+def migrate_add_indexes(conn):
+    """Additive only (IF NOT EXISTS) — safe to run against an existing populated DB.
+
+    Every route below filters/sorts on these user_id + date columns; without
+    indexes those queries full-scan as history grows.
+    """
+    conn.executescript(
+        """
+        CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses(user_id, spent_at);
+        CREATE INDEX IF NOT EXISTS idx_income_entries_user_date ON income_entries(user_id, received_at);
+        CREATE INDEX IF NOT EXISTS idx_stock_transactions_user_date ON stock_transactions(user_id, transacted_at);
+        CREATE INDEX IF NOT EXISTS idx_crypto_transactions_user_date ON crypto_transactions(user_id, transacted_at);
+        CREATE INDEX IF NOT EXISTS idx_account_transfers_user_date ON account_transfers(user_id, transferred_at);
+        CREATE INDEX IF NOT EXISTS idx_recurring_entries_user ON recurring_entries(user_id);
+        CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
+        CREATE INDEX IF NOT EXISTS idx_income_categories_user ON income_categories(user_id);
+        CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
+        """
+    )
 
 
 def migrate_users_multitenancy(conn):
