@@ -1,6 +1,7 @@
 import re
 
 import app as vb_app
+import config
 
 from .conftest import csrf_token, register_and_login
 
@@ -27,7 +28,7 @@ def test_logout_requires_csrf_then_succeeds(client):
 
 def test_dashboard_loads_every_panel(client):
     register_and_login(client, "carol")
-    for panel in sorted(vb_app.ALLOWED_PANELS):
+    for panel in sorted(config.ALLOWED_PANELS):
         resp = client.get(f"/?panel={panel}")
         assert resp.status_code == 200, f"panel={panel} failed to load"
 

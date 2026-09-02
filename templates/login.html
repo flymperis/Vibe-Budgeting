@@ -22,7 +22,7 @@
             {% endif %}
         {% endwith %}
 
-        <form method="post" action="{{ url_for('login') }}" class="auth-form">
+        <form method="post" action="{{ url_for('auth.login') }}" class="auth-form">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="next" value="{{ next }}">
             <label>
@@ -37,7 +37,7 @@
         </form>
 
         {% if allow_registration %}
-        <p class="auth-footer"><a href="{{ url_for('register') }}">Create an account</a></p>
+        <p class="auth-footer"><a href="{{ url_for('auth.register') }}">Create an account</a></p>
         {% endif %}
     </main>
 </body>

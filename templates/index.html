@@ -58,25 +58,25 @@
 
     {% macro expense_list_url(page, mf, exp_fm, exp_cat) -%}
     {%- if exp_fm and exp_cat -%}
-    {{ url_for('index', panel='expenses', month=mf, exp_month=exp_fm, exp_category=exp_cat, exp_page=page) }}
+    {{ url_for('dashboard.index', panel='expenses', month=mf, exp_month=exp_fm, exp_category=exp_cat, exp_page=page) }}
     {%- elif exp_fm -%}
-    {{ url_for('index', panel='expenses', month=mf, exp_month=exp_fm, exp_page=page) }}
+    {{ url_for('dashboard.index', panel='expenses', month=mf, exp_month=exp_fm, exp_page=page) }}
     {%- elif exp_cat -%}
-    {{ url_for('index', panel='expenses', month=mf, exp_category=exp_cat, exp_page=page) }}
+    {{ url_for('dashboard.index', panel='expenses', month=mf, exp_category=exp_cat, exp_page=page) }}
     {%- else -%}
-    {{ url_for('index', panel='expenses', month=mf, exp_page=page) }}
+    {{ url_for('dashboard.index', panel='expenses', month=mf, exp_page=page) }}
     {%- endif -%}
     {%- endmacro %}
 
     {% macro income_list_url(page, mf, inc_fm, inc_cat) -%}
     {%- if inc_fm and inc_cat -%}
-    {{ url_for('index', panel='income', month=mf, inc_month=inc_fm, inc_category=inc_cat, inc_page=page) }}
+    {{ url_for('dashboard.index', panel='income', month=mf, inc_month=inc_fm, inc_category=inc_cat, inc_page=page) }}
     {%- elif inc_fm -%}
-    {{ url_for('index', panel='income', month=mf, inc_month=inc_fm, inc_page=page) }}
+    {{ url_for('dashboard.index', panel='income', month=mf, inc_month=inc_fm, inc_page=page) }}
     {%- elif inc_cat -%}
-    {{ url_for('index', panel='income', month=mf, inc_category=inc_cat, inc_page=page) }}
+    {{ url_for('dashboard.index', panel='income', month=mf, inc_category=inc_cat, inc_page=page) }}
     {%- else -%}
-    {{ url_for('index', panel='income', month=mf, inc_page=page) }}
+    {{ url_for('dashboard.index', panel='income', month=mf, inc_page=page) }}
     {%- endif -%}
     {%- endmacro %}
 
@@ -125,7 +125,7 @@
             {% if session_username %}
             <div class="header-user">
                 <span class="header-user-name">{{ session_username }}</span>
-                <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+                <form method="post" action="{{ url_for('auth.logout') }}" class="inline-form">
                     <button type="submit" class="btn-secondary">Log out</button>
                 </form>
             </div>
@@ -209,11 +209,11 @@
                     </div>
 
                     <p class="home-more-links muted">
-                        <a href="{{ url_for('index', panel='expenses', month=month_filter) }}">Expense list</a>
+                        <a href="{{ url_for('dashboard.index', panel='expenses', month=month_filter) }}">Expense list</a>
                         ·
-                        <a href="{{ url_for('index', panel='income', month=month_filter) }}">Income list</a>
+                        <a href="{{ url_for('dashboard.index', panel='income', month=month_filter) }}">Income list</a>
                         ·
-                        <a href="{{ url_for('index', panel='summary', month=month_filter) }}">Consolidated breakdown</a>
+                        <a href="{{ url_for('dashboard.index', panel='summary', month=month_filter) }}">Consolidated breakdown</a>
                     </p>
                 </section>
 
@@ -245,7 +245,7 @@
                     </form>
 
                     <h2>Expenses</h2>
-                    <form action="{{ url_for('index') }}" class="list-month-filter month-picker list-entries-filter-form" method="get">
+                    <form action="{{ url_for('dashboard.index') }}" class="list-month-filter month-picker list-entries-filter-form" method="get">
                         <input name="panel" type="hidden" value="expenses">
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <input name="exp_page" type="hidden" value="1">
@@ -262,16 +262,16 @@
                         <button type="submit">Apply</button>
                         {% if expense_filter_month %}
                             {% if expense_filter_category_id %}
-                                <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter, exp_category=expense_filter_category_id) }}">All months</a>
+                                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='expenses', month=month_filter, exp_category=expense_filter_category_id) }}">All months</a>
                             {% else %}
-                                <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter) }}">All months</a>
+                                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='expenses', month=month_filter) }}">All months</a>
                             {% endif %}
                         {% endif %}
                         {% if expense_filter_category_id %}
                             {% if expense_filter_month %}
-                                <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter, exp_month=expense_filter_month) }}">All categories</a>
+                                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='expenses', month=month_filter, exp_month=expense_filter_month) }}">All categories</a>
                             {% else %}
-                                <a class="btn-secondary" href="{{ url_for('index', panel='expenses', month=month_filter) }}">All categories</a>
+                                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='expenses', month=month_filter) }}">All categories</a>
                             {% endif %}
                         {% endif %}
                     </form>
@@ -366,7 +366,7 @@
                     </form>
 
                     <h2>Income Entries</h2>
-                    <form action="{{ url_for('index') }}" class="list-month-filter month-picker list-entries-filter-form" method="get">
+                    <form action="{{ url_for('dashboard.index') }}" class="list-month-filter month-picker list-entries-filter-form" method="get">
                         <input name="panel" type="hidden" value="income">
                         <input name="month" type="hidden" value="{{ month_filter }}">
                         <input name="inc_page" type="hidden" value="1">
@@ -383,16 +383,16 @@
                         <button type="submit">Apply</button>
                         {% if income_filter_month %}
                             {% if income_filter_category_id %}
-                                <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter, inc_category=income_filter_category_id) }}">All months</a>
+                                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='income', month=month_filter, inc_category=income_filter_category_id) }}">All months</a>
                             {% else %}
-                                <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter) }}">All months</a>
+                                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='income', month=month_filter) }}">All months</a>
                             {% endif %}
                         {% endif %}
                         {% if income_filter_category_id %}
                             {% if income_filter_month %}
-                                <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter, inc_month=income_filter_month) }}">All categories</a>
+                                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='income', month=month_filter, inc_month=income_filter_month) }}">All categories</a>
                             {% else %}
-                                <a class="btn-secondary" href="{{ url_for('index', panel='income', month=month_filter) }}">All categories</a>
+                                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='income', month=month_filter) }}">All categories</a>
                             {% endif %}
                         {% endif %}
                     </form>
@@ -476,7 +476,7 @@
                     {% if recurring_entries %}
                         <div class="list-stack recurring-rules-stack">
                             {% for rule in recurring_entries %}
-                                <form action="{{ url_for('edit_recurring', recurring_id=rule.id) }}" class="inline-form recurring-rule-form" method="post">
+                                <form action="{{ url_for('recurring.edit_recurring', recurring_id=rule.id) }}" class="inline-form recurring-rule-form" method="post">
                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                     <input name="next_panel" type="hidden" value="recurring">
                                     <div class="recurring-rule-header">
@@ -521,7 +521,7 @@
                                         <input name="enabled" type="checkbox" value="1" {% if rule.enabled %}checked{% endif %}> Active
                                     </label>
                                     <button type="submit">Save</button>
-                                    <button class="btn-danger" formaction="{{ url_for('delete_recurring', recurring_id=rule.id) }}" formmethod="post" type="submit">Delete</button>
+                                    <button class="btn-danger" formaction="{{ url_for('recurring.delete_recurring', recurring_id=rule.id) }}" formmethod="post" type="submit">Delete</button>
                                 </form>
                             {% endfor %}
                         </div>
@@ -559,7 +559,7 @@
                         </div>
                     {% endif %}
                     {% if accounts %}
-                        <form action="{{ url_for('add_transfer') }}" class="panel-add-form transfer-add-form" method="post">
+                        <form action="{{ url_for('accounts.add_transfer') }}" class="panel-add-form transfer-add-form" method="post">
                             <input name="month" type="hidden" value="{{ month_filter }}">
                             <input name="next_panel" type="hidden" value="transfer">
                             <label class="transfer-field-label" for="transfer-from">From account</label>
@@ -600,7 +600,7 @@
                                         <td class="transfer-amt-col">{{ "%.2f"|format(row.amount) }}</td>
                                         <td>{{ row.notes }}</td>
                                         <td class="transfer-actions">
-                                            <form action="{{ url_for('delete_transfer', transfer_id=row.id) }}" method="post">
+                                            <form action="{{ url_for('accounts.delete_transfer', transfer_id=row.id) }}" method="post">
                                                 <input name="month" type="hidden" value="{{ month_filter }}">
                                                 <input name="next_panel" type="hidden" value="transfer">
                                                 <button class="btn-icon btn-icon-delete" type="submit" title="Delete transfer" aria-label="Delete transfer">
@@ -925,7 +925,7 @@
                                 </div>
 
                                 <div class="crypto-refresh-row">
-                                    <a class="btn-secondary" href="{{ url_for('index', panel='investments', investments_section='crypto', refresh_prices=1, month=month_filter) }}">Refresh Prices</a>
+                                    <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='investments', investments_section='crypto', refresh_prices=1, month=month_filter) }}">Refresh Prices</a>
                                     {% if crypto_prices_age %}
                                         <span class="muted crypto-prices-age">Updated {{ crypto_prices_age }}</span>
                                     {% endif %}
@@ -1174,7 +1174,7 @@
                                 </div>
 
                                 <div class="crypto-refresh-row">
-                                    <a class="btn-secondary" href="{{ url_for('index', panel='investments', investments_section='stocks', refresh_stock_prices=1, month=month_filter) }}">Refresh Prices</a>
+                                    <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='investments', investments_section='stocks', refresh_stock_prices=1, month=month_filter) }}">Refresh Prices</a>
                                     {% if stock_prices_age %}
                                         <span class="muted crypto-prices-age">Updated {{ stock_prices_age }}</span>
                                     {% endif %}
@@ -1509,7 +1509,7 @@
                                     Required for Telegram. Every message is parsed by Ollama only
                                     (expenses and income). Unknown items → Other. No regex fallback.
                                 </p>
-                                <form action="{{ url_for('save_integrations') }}" class="integrations-form" method="post" id="integrations-ai-form">
+                                <form action="{{ url_for('settings.save_integrations') }}" class="integrations-form" method="post" id="integrations-ai-form">
                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                     <input name="next_panel" type="hidden" value="settings">
                                     <input name="settings_section" type="hidden" value="integrations">
@@ -1560,7 +1560,7 @@
 
                                     <div class="integrations-actions">
                                         <button type="submit">Save</button>
-                                        <button class="btn-secondary" formaction="{{ url_for('test_integrations') }}" formmethod="post" type="submit">Test connection</button>
+                                        <button class="btn-secondary" formaction="{{ url_for('settings.test_integrations') }}" formmethod="post" type="submit">Test connection</button>
                                         <button class="btn-secondary" id="ai-load-models" type="button">Load models</button>
                                     </div>
                                 </form>
@@ -1570,7 +1570,7 @@
                                     Private polling mode — works with Tailscale only, nothing exposed to the public internet.
                                     The app checks Telegram for new messages every few seconds (outbound connection only).
                                 </p>
-                                <form action="{{ url_for('save_telegram_server') }}" class="integrations-form" method="post">
+                                <form action="{{ url_for('settings.save_telegram_server') }}" class="integrations-form" method="post">
                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                     <input name="next_panel" type="hidden" value="settings">
                                     <input name="settings_section" type="hidden" value="integrations">
@@ -1587,7 +1587,7 @@
 
                                     <div class="integrations-actions">
                                         <button type="submit">Save Telegram settings</button>
-                                        <button class="btn-secondary" formaction="{{ url_for('test_telegram_server') }}" formmethod="post" type="submit">Test bot token</button>
+                                        <button class="btn-secondary" formaction="{{ url_for('settings.test_telegram_server') }}" formmethod="post" type="submit">Test bot token</button>
                                     </div>
                                 </form>
 
@@ -1602,7 +1602,7 @@
                                             {% if telegram_link.telegram_username %}(@{{ telegram_link.telegram_username }}){% endif %}
                                             since {{ telegram_link.linked_at[:10] if telegram_link.linked_at else '—' }}
                                         </p>
-                                        <form action="{{ url_for('telegram_default_account') }}" class="integrations-form" method="post">
+                                        <form action="{{ url_for('settings.telegram_default_account') }}" class="integrations-form" method="post">
                                             <input name="month" type="hidden" value="{{ month_filter }}">
                                             <input name="next_panel" type="hidden" value="settings">
                                             <input name="settings_section" type="hidden" value="integrations">
@@ -1617,7 +1617,7 @@
                                                 <button type="submit">Save default account</button>
                                             </div>
                                         </form>
-                                        <form action="{{ url_for('telegram_unlink') }}" method="post">
+                                        <form action="{{ url_for('settings.telegram_unlink') }}" method="post">
                                             <input name="month" type="hidden" value="{{ month_filter }}">
                                             <input name="next_panel" type="hidden" value="settings">
                                             <input name="settings_section" type="hidden" value="integrations">
@@ -1632,7 +1632,7 @@
                                                 — send <code>/link {{ telegram_link_code.code }}</code> to the bot.
                                             </p>
                                         {% endif %}
-                                        <form action="{{ url_for('telegram_generate_code') }}" method="post">
+                                        <form action="{{ url_for('settings.telegram_generate_code') }}" method="post">
                                             <input name="month" type="hidden" value="{{ month_filter }}">
                                             <input name="next_panel" type="hidden" value="settings">
                                             <input name="settings_section" type="hidden" value="integrations">
@@ -1651,7 +1651,7 @@
                                     Use it for backups or before editing offline.
                                 </p>
                                 <p class="migration-actions">
-                                    <a class="btn-secondary" href="{{ url_for('export_excel') }}">Download full export (.xlsx)</a>
+                                    <a class="btn-secondary" href="{{ url_for('data_io.export_excel') }}">Download full export (.xlsx)</a>
                                 </p>
                             </div>
 
@@ -1664,11 +1664,11 @@
                                     Category and account names used on movement rows are created automatically if missing (after applying the category and account sheets).
                                 </p>
                                 <p class="migration-actions">
-                                    <a class="btn-secondary" href="{{ url_for('export_migration_template') }}">Download migration template (.xlsx)</a>
+                                    <a class="btn-secondary" href="{{ url_for('data_io.export_migration_template') }}">Download migration template (.xlsx)</a>
                                 </p>
 
                                 <h3>Import from Excel</h3>
-                                <form action="{{ url_for('import_excel') }}" class="migration-import-form" enctype="multipart/form-data" method="post">
+                                <form action="{{ url_for('data_io.import_excel') }}" class="migration-import-form" enctype="multipart/form-data" method="post">
                                     <input name="month" type="hidden" value="{{ month_filter }}">
                                     <input name="next_panel" type="hidden" value="settings">
                                     <input name="settings_section" type="hidden" value="migration">
@@ -1905,7 +1905,7 @@
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
             </div>
-            <form action="{{ url_for('add_recurring') }}" class="panel-add-form recurring-add-form home-quick-form" method="post">
+            <form action="{{ url_for('recurring.add_recurring') }}" class="panel-add-form recurring-add-form home-quick-form" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
                 <input name="next_panel" type="hidden" value="recurring">
                 <label class="month-label" for="recurring-category-choice">Category</label>

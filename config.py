@@ -1,0 +1,62 @@
+from werkzeug.security import check_password_hash, generate_password_hash
+import os
+import re
+import secrets
+
+
+EXPORT_FORMAT_VERSION = 1
+
+LIST_PAGE_SIZE = 75
+
+TRANSFER_LOG_LIMIT = 10
+
+ALLOW_REGISTRATION = os.environ.get("ALLOW_REGISTRATION", "true").lower() in ("1", "true", "yes")
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
+
+_DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(16))
+
+SHEET_META = "_meta"
+
+SHEET_ACCOUNTS = "Accounts"
+
+SHEET_EXPENSE_CATEGORIES = "ExpenseCategories"
+
+SHEET_INCOME_CATEGORIES = "IncomeCategories"
+
+SHEET_EXPENSES = "Expenses"
+
+SHEET_INCOME = "Income"
+
+ALLOWED_PANELS = {
+    "home",
+    "expenses",
+    "income",
+    "recurring",
+    "transfer",
+    "summary",
+    "yearly",
+    "reports",
+    "investments",
+    "settings",
+}
+
+SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migration", "integrations"}
+
+INVESTMENTS_SECTIONS = {"crypto", "stocks"}
+
+REPORTS_SECTIONS = {"bank", "crypto", "stocks"}
+
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "").strip()
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+CSRF_FIELD_NAME = "_csrf_token"  # noqa: S105 - form field name, not a secret
+
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+
+_CSRF_EXEMPT_ENDPOINTS = frozenset({"static"})

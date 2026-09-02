@@ -1,4 +1,6 @@
 import app as vb_app
+import config
+import integrations
 
 from .conftest import csrf_token, register_and_login
 
@@ -13,7 +15,7 @@ def _user_id(username):
 
 def test_settings_sections_load(client):
     register_and_login(client, "settingstester")
-    for section in sorted(vb_app.SETTINGS_SECTIONS):
+    for section in sorted(config.SETTINGS_SECTIONS):
         resp = client.get(f"/?panel=settings&settings_section={section}")
         assert resp.status_code == 200, f"settings_section={section} failed to load"
 
@@ -123,7 +125,7 @@ def test_integrations_save(client):
     assert resp.status_code == 200
 
     conn = vb_app.get_connection()
-    saved = vb_app.integrations.get_user_integrations(conn, uid)
+    saved = integrations.get_user_integrations(conn, uid)
     conn.close()
     assert saved["ai_enabled"] is True
     assert saved["ai_base_url"] == "http://127.0.0.1:11434"
