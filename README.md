@@ -42,6 +42,8 @@ the calls to the price APIs. Threads still handle concurrent requests.
 | `excel_io.py` | Workbook export and import |
 | `routes/` | One blueprint per feature area |
 | `templates/panels/` | One partial per UI panel |
+| `static/src/input.css` | Tailwind + daisyUI source (theme definitions) |
+| `static/tailwind.css` | Compiled CSS — committed, served as-is |
 
 ## Development
 
@@ -53,6 +55,27 @@ python -m venv .venv
 
 The tests run against a temporary SQLite file and stub out every external price
 lookup, so they never touch a real database or the network.
+
+### Styling
+
+The theme lives in `static/src/input.css` (Tailwind v4 + daisyUI 5) and compiles
+to `static/tailwind.css`, which is **committed**. Deploys therefore need no Node
+and no build step — the Dockerfile just copies the compiled file like any other
+static asset. You only need the toolchain to *change* the theme:
+
+```bash
+curl -sLo tools/tailwindcss.exe https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-windows-x64.exe
+tools/tailwindcss.exe -i static/src/input.css -o static/tailwind.css --minify
+```
+
+`tools/daisyui.mjs` and `tools/daisyui-theme.mjs` are committed; the binary is
+gitignored because it is ~110 MB. On Linux/macOS swap the release asset name
+(`tailwindcss-linux-x64`, `tailwindcss-macos-arm64`, …) and drop the `.exe`.
+
+daisyUI components are namespaced `d-*` (`d-btn`, `d-card`). The prefix exists
+because daisyUI's unprefixed names collide with classes this app already
+uses — `.card`, `.stats` and `.btn-secondary` all mean something else in
+`styles.css`.
 
 ## Integrations (Ollama + Telegram)
 

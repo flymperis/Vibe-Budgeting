@@ -9,3 +9,8 @@ budget-data/
 venv/
 secret_key
 *.db
+
+# Dev-only CSS toolchain. The compiled static/tailwind.css IS committed, so
+# deploys need none of this — see README for how to re-download the binary.
+tools/tailwindcss
+tools/tailwindcss.exe

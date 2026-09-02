@@ -1,0 +1,161 @@
+/* ==========================================================================
+   Tailwind + daisyUI source. Compiled to static/tailwind.css, which IS
+   committed — the server never runs this, so deploys need no Node toolchain.
+
+   Rebuild after editing:
+       tools/tailwindcss.exe -i static/src/input.css -o static/tailwind.css --minify
+
+   Preflight (Tailwind's CSS reset) is deliberately NOT imported yet. The
+   existing styles.css still owns element-level styling, and dropping preflight
+   on top of it would strip button/table/heading defaults it relies on. It gets
+   enabled once the panels are migrated to daisyUI components.
+   ========================================================================== */
+
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source "../../templates";
+@source "../../static/app.js";
+
+/* Namespaced as d-* on purpose. daisyUI's unprefixed component classes collide
+   with names this app already uses — .card, .stats and .btn-secondary all exist
+   in styles.css with different meanings, and an unprefixed daisyUI would
+   silently restyle them. The prefix also makes it obvious at a glance which
+   markup has been migrated: d-btn is daisyUI, btn-secondary is still legacy. */
+@plugin "../../tools/daisyui.mjs" {
+    themes: false;
+    logs: false;
+    prefix: "d-";
+}
+
+/* --------------------------------------------------------------------------
+   Palette sampled from rooftop.ltd: mint accent on warm charcoal, Roboto,
+   9px controls / 13.5px cards. Theme names are "light" and "dark" to match
+   what app.js already writes to <html data-theme>, so theme switching needs
+   no JS change.
+   -------------------------------------------------------------------------- */
+
+@plugin "../../tools/daisyui-theme.mjs" {
+    name: "light";
+    default: true;
+    color-scheme: light;
+
+    --color-base-100: #ffffff;
+    --color-base-200: #f5f7f6;
+    --color-base-300: #e4eae7;
+    --color-base-content: #1a1d1c;
+
+    --color-primary: #6dd0af;
+    --color-primary-content: #06251c;
+    --color-secondary: #2fa37f;
+    --color-secondary-content: #ffffff;
+    --color-accent: #6dd0af;
+    --color-accent-content: #06251c;
+    --color-neutral: #2b2a2a;
+    --color-neutral-content: #f5f7f6;
+
+    --color-info: #2563eb;
+    --color-info-content: #ffffff;
+    --color-success: #15803d;
+    --color-success-content: #ffffff;
+    --color-warning: #b45309;
+    --color-warning-content: #ffffff;
+    --color-error: #b91c1c;
+    --color-error-content: #ffffff;
+
+    --radius-selector: 0.5rem;
+    --radius-field: 0.5rem;
+    --radius-box: 0.85rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
+
+@plugin "../../tools/daisyui-theme.mjs" {
+    name: "dark";
+    prefersdark: true;
+    color-scheme: dark;
+
+    --color-base-100: #262626;
+    --color-base-200: #2b2a2a;
+    --color-base-300: #383838;
+    --color-base-content: #ededed;
+
+    --color-primary: #6dd0af;
+    --color-primary-content: #06251c;
+    --color-secondary: #3ba07f;
+    --color-secondary-content: #ffffff;
+    --color-accent: #6dd0af;
+    --color-accent-content: #06251c;
+    --color-neutral: #383838;
+    --color-neutral-content: #ededed;
+
+    --color-info: #60a5fa;
+    --color-info-content: #06251c;
+    --color-success: #4ade80;
+    --color-success-content: #06251c;
+    --color-warning: #fbbf24;
+    --color-warning-content: #241a04;
+    --color-error: #f87171;
+    --color-error-content: #2a0a0a;
+
+    --radius-selector: 0.5rem;
+    --radius-field: 0.5rem;
+    --radius-box: 0.85rem;
+    --size-selector: 0.25rem;
+    --size-field: 0.25rem;
+    --border: 1px;
+    --depth: 1;
+    --noise: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Bridge: the app's existing semantic variables, re-pointed at the palette
+   above. styles.css consumes these, so all ~2600 lines of current CSS pick up
+   the new theme without being touched. Panels get migrated to real daisyUI
+   components after this; the bridge is what keeps the app coherent meanwhile.
+   -------------------------------------------------------------------------- */
+
+@layer base {
+    :root,
+    :root[data-theme="light"] {
+        --bg: #f5f7f6;
+        --text: #1a1d1c;
+        --surface: #ffffff;
+        --surface-alt: #f0f4f2;
+        --border-c: #dde5e1;
+        --muted: #5f6b66;
+        --tab: #eaf4f0;
+        --tab-text: #147054;
+        /* Darker than the brand mint on purpose: this is the value that ends up
+           behind white text, and #6dd0af / #178a66 only reach 1.6:1 / 4.32:1.
+           #16805e clears WCAG AA at 4.90:1. */
+        --accent: #16805e;
+        --accent-hover: #12654c;
+        --accent-content: #ffffff;
+    }
+
+    :root[data-theme="dark"] {
+        --bg: #262626;
+        --text: #ededed;
+        --surface: #2b2a2a;
+        --surface-alt: #333232;
+        --border-c: #4a4a4a;
+        --muted: #a8a8a8;
+        --tab: #333232;
+        --tab-text: #6dd0af;
+        --accent: #6dd0af;
+        --accent-hover: #8fdcc2;
+        /* Mint is a light colour, so text sitting on it has to go dark here —
+           white on #6dd0af is about 1.6:1. */
+        --accent-content: #06251c;
+    }
+
+    html {
+        font-family: Roboto, system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+}

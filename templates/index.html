@@ -7,12 +7,17 @@
     <title>Vibe Budgeting.</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link rel="alternate icon" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap">
+    {# tailwind.css first: it defines the theme variables styles.css consumes. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body data-month-filter="{{ month_filter }}" data-year-filter="{{ year_filter }}" data-report-year="{{ report_year }}">
     {% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart %}
 
-    <main class="container">
+    <main class="app-container">
         <div class="header-row">
             <div class="brand-lockup">
                 <svg class="app-logo" viewBox="0 0 74 44" aria-hidden="true" focusable="false">
