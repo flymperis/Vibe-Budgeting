@@ -17,13 +17,42 @@ Optional environment variables (set under `environment:` in `docker-compose.yml`
 
 | Variable | Purpose |
 |----------|---------|
-| `FLASK_SECRET_KEY` | Strong random string for sessions in production. |
+| `FLASK_SECRET_KEY` | Strong random string for sessions in production. If unset, a random key is generated on first boot and stored next to the database as `secret_key`. |
 | `VB_SECURE_COOKIES` | `true` to mark the session cookie `Secure` (set only when served over HTTPS). |
 | `ALLOW_REGISTRATION` | `true` or `false` — allow `/register`. |
 | `DATABASE_PATH` | Default `/app/data/database.db` (see `Dockerfile`). |
 | `FINNHUB_API_KEY` | Free key from [finnhub.io](https://finnhub.io) — live stock/ETF prices in **Investments → Stocks**. |
 
 Stack: Flask app served by Gunicorn in the container; SQLite database file on the mounted volume.
+
+Gunicorn runs **one worker with four threads**, not multiple worker processes: the live
+price caches live in process memory, so a second worker would keep its own copy and double
+the calls to the price APIs. Threads still handle concurrent requests.
+
+## Layout
+
+| Path | Contents |
+|------|----------|
+| `app.py` | Flask app setup, CSRF/login hooks, blueprint registration, boot |
+| `config.py` | Constants, panel and section definitions |
+| `db.py` | Connection, schema, migrations |
+| `prices.py` | Finnhub / CoinGecko / yfinance lookups and their caches |
+| `finance.py` | Balances, charts, holdings, recurring entry application |
+| `helpers.py` | Normalizers, panel resolution, ownership checks |
+| `excel_io.py` | Workbook export and import |
+| `routes/` | One blueprint per feature area |
+| `templates/panels/` | One partial per UI panel |
+
+## Development
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q
+```
+
+The tests run against a temporary SQLite file and stub out every external price
+lookup, so they never touch a real database or the network.
 
 ## Integrations (Ollama + Telegram)
 

@@ -7,3 +7,4 @@ budget-data/
 .env
 .venv/
 venv/
+secret_key
