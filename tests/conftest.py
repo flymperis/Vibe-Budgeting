@@ -23,12 +23,15 @@ def app():
 
 @pytest.fixture(autouse=True)
 def no_external_price_calls(monkeypatch):
-    """The dashboard fetches live prices whenever a user holds stocks or crypto.
-    Stub those out so tests never reach the network. The live quote helpers are
-    patched where the dashboard binds them; the month-close helpers are patched
-    in prices, where ensure_*_month_price looks them up."""
-    monkeypatch.setattr(dashboard, "fetch_finnhub_quotes", lambda symbols, force=False: {})
-    monkeypatch.setattr(dashboard, "fetch_coingecko_prices", lambda coin_ids, force=False: {})
+    """The dashboard and the reports panel fetch live prices whenever a user
+    holds stocks or crypto. Stub those out so tests never reach the network.
+    The quote helpers need patching both in prices (where ensure_*_month_price
+    calls them) and in dashboard (which imported them by name)."""
+    no_quotes = lambda symbols, force=False: {}  # noqa: E731
+    monkeypatch.setattr(prices, "fetch_finnhub_quotes", no_quotes)
+    monkeypatch.setattr(prices, "fetch_coingecko_prices", no_quotes)
+    monkeypatch.setattr(dashboard, "fetch_finnhub_quotes", no_quotes)
+    monkeypatch.setattr(dashboard, "fetch_coingecko_prices", no_quotes)
     monkeypatch.setattr(prices, "fetch_stock_month_close_usd", lambda symbol, price_date_iso: None)
     monkeypatch.setattr(prices, "fetch_coingecko_history_eur", lambda coin_id, price_date: None)
 

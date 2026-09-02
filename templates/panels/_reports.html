@@ -1,0 +1,152 @@
+{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart %}
+<section class="panel {% if active_panel == 'reports' %}active{% endif %}" id="panel-reports">
+    <div class="reports-body">
+        <div class="reports-section {% if reports_section == 'bank' %}active{% endif %}" id="reports-bank">
+            <h2>Bank balance — {{ report_account_label }}</h2>
+            <p class="muted small-hint">
+                Account balance at the end of each month{% if report_account_id is none %} (all accounts combined){% endif %};
+                the current month uses movements through today.
+                Hover a point for balance and month-to-month change (Δ).
+            </p>
+            <p class="muted small-hint reports-live-balance-hint">
+                Balance through today (same rule as Home): <strong>{{ "%.2f"|format(report_live_balance) }}</strong>
+                — when {{ report_year }} is the current year, the <strong>{{ report_today_month }}</strong> point should match this value.
+            </p>
+            <form action="/" class="year-picker reports-year-picker" method="get">
+                <input name="panel" type="hidden" value="reports">
+                <input name="reports_section" type="hidden" value="bank">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                <label class="month-label" for="reports-year-select">Year</label>
+                <select id="reports-year-select" class="year-shell-select" name="report_year" required autocomplete="off">
+                    {% for yi in range(2000, 2101) %}
+                        <option value="{{ yi }}" {% if yi == report_year %}selected{% endif %}>{{ yi }}</option>
+                    {% endfor %}
+                </select>
+                <label class="month-label" for="reports-account-select">Account</label>
+                <select id="reports-account-select" class="year-shell-select" name="report_account" autocomplete="off">
+                    <option value="all" {% if report_account_id is none %}selected{% endif %}>All</option>
+                    {% for acc in accounts %}
+                        <option value="{{ acc.id }}" {% if report_account_id is not none and report_account_id|int == acc.id|int %}selected{% endif %}>{{ acc.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Apply</button>
+            </form>
+            <script>
+                (function () {
+                    const form = document.querySelector("#reports-bank .reports-year-picker");
+                    if (!form) return;
+                    const yearSel = document.getElementById("reports-year-select");
+                    const acctSel = document.getElementById("reports-account-select");
+                    function submitReportsBank() { form.requestSubmit(); }
+                    if (yearSel) yearSel.addEventListener("change", submitReportsBank);
+                    if (acctSel) acctSel.addEventListener("change", submitReportsBank);
+                })();
+            </script>
+            {{ reports_balance_chart(
+                report_chart_spec,
+                "Bank balance by month for " ~ report_year,
+                "Bank balance by month for " ~ report_year
+            ) }}
+
+            <h3 class="reports-expenses-table-title">Expenses table</h3>
+    <p class="muted small-hint">
+        Sum of recorded expense amounts by category and calendar month for {{ report_year }}
+        (same signs as in your ledger; typically spending is negative).
+        The <strong>Avg</strong> column divides the row total by the count of months with a non-zero amount in that row;
+        the Grand Total row uses months whose column sum is non-zero.
+    </p>
+    {% if reports_expenses_table.rows %}
+        <div class="reports-expenses-table-wrap">
+            <table class="reports-expenses-table">
+                <thead>
+                    <tr>
+                        <th scope="col" class="reports-expenses-cat-col">Category</th>
+                        {% for mh in reports_expenses_table.month_headers %}
+                            <th scope="col" class="reports-expenses-num-col">{{ mh }}</th>
+                        {% endfor %}
+                        <th scope="col" class="reports-expenses-num-col reports-expenses-total-col">Total</th>
+                        <th scope="col" class="reports-expenses-num-col reports-expenses-avg-col">Avg</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for erow in reports_expenses_table.rows %}
+                        <tr>
+                            <th scope="row" class="reports-expenses-cat-col">{{ erow.name }}</th>
+                            {% for v in erow.months %}
+                                <td class="reports-expenses-num-col">{% if v != 0 %}{{ "%.2f"|format(v) }}{% endif %}</td>
+                            {% endfor %}
+                            <td class="reports-expenses-num-col reports-expenses-total-col">{{ "%.2f"|format(erow.total) }}</td>
+                            <td class="reports-expenses-num-col reports-expenses-avg-col">{% if erow.avg is not none %}{{ "%.2f"|format(erow.avg) }}{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="reports-expenses-grand-row">
+                        <th scope="row" class="reports-expenses-cat-col">Grand Total</th>
+                        {% for tv in reports_expenses_table.month_totals %}
+                            <td class="reports-expenses-num-col">{{ "%.2f"|format(tv) }}</td>
+                        {% endfor %}
+                        <td class="reports-expenses-num-col reports-expenses-total-col">{{ "%.2f"|format(reports_expenses_table.grand_total) }}</td>
+                        <td class="reports-expenses-num-col reports-expenses-avg-col" {% if reports_expenses_table.avg_monthly_total is not none %}title="Grand total divided by {{ reports_expenses_table.active_month_count }} month{% if reports_expenses_table.active_month_count != 1 %}s{% endif %} with non-zero column total"{% endif %}>{% if reports_expenses_table.avg_monthly_total is not none %}{{ "%.2f"|format(reports_expenses_table.avg_monthly_total) }}{% endif %}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    {% else %}
+        <p class="muted reports-expenses-empty">No expenses recorded in {{ report_year }}.</p>
+    {% endif %}
+        </div>
+
+        <div class="reports-section {% if reports_section == 'crypto' %}active{% endif %}" id="reports-crypto">
+            <h2>Crypto portfolio</h2>
+            <p class="muted small-hint">
+                Portfolio value (EUR) at each month-end: holdings from your transactions ×
+                <strong>month-end price</strong> (stored after first load; CoinGecko history for past months).
+                The current month uses today’s price. Hover a point for value and Δ.
+            </p>
+            <form action="/" class="year-picker reports-year-picker" method="get">
+                <input name="panel" type="hidden" value="reports">
+                <input name="reports_section" type="hidden" value="crypto">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                <label class="month-label" for="reports-crypto-year-select">Year</label>
+                <select id="reports-crypto-year-select" class="year-shell-select" name="report_year" required autocomplete="off">
+                    {% for yi in range(2000, 2101) %}
+                        <option value="{{ yi }}" {% if yi == report_year %}selected{% endif %}>{{ yi }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Apply</button>
+            </form>
+            {{ reports_balance_chart(
+                crypto_chart_spec,
+                "Crypto portfolio value by month for " ~ report_year,
+                "Crypto portfolio value by month for " ~ report_year
+            ) }}
+        </div>
+
+        <div class="reports-section {% if reports_section == 'stocks' %}active{% endif %}" id="reports-stocks">
+            <h2>Stocks portfolio</h2>
+            <p class="muted small-hint">
+                Portfolio value (USD) at each month-end: shares from your transactions ×
+                <strong>month-end close</strong> (stored after first load; Yahoo/yfinance for past months).
+                The current month uses the latest quote. Hover a point for value and Δ.
+            </p>
+            <form action="/" class="year-picker reports-year-picker" method="get">
+                <input name="panel" type="hidden" value="reports">
+                <input name="reports_section" type="hidden" value="stocks">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                <label class="month-label" for="reports-stocks-year-select">Year</label>
+                <select id="reports-stocks-year-select" class="year-shell-select" name="report_year" required autocomplete="off">
+                    {% for yi in range(2000, 2101) %}
+                        <option value="{{ yi }}" {% if yi == report_year %}selected{% endif %}>{{ yi }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">Apply</button>
+            </form>
+            {{ reports_balance_chart(
+                stock_chart_spec,
+                "Stocks portfolio value by month for " ~ report_year,
+                "Stocks portfolio value by month for " ~ report_year
+            ) }}
+        </div>
+    </div>
+</section>

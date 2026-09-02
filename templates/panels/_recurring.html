@@ -1,0 +1,70 @@
+<section class="panel {% if active_panel == 'recurring' %}active{% endif %}" id="panel-recurring">
+    <h2>Recurring Entries</h2>
+    <p class="muted small-hint">
+        Each rule posts automatically once per calendar month on the day you choose (or the last day of the month if that day does not exist).
+        Entries appear as normal expenses or income with a “[Recurring]” note when you open the app on or after that date.
+    </p>
+
+    <div class="home-quick-bar recurring-quick-bar">
+        <button id="recurring-btn-add" type="button" class="btn-home-quick btn-home-quick-recurring" aria-expanded="false" aria-controls="recurring-modal-add">
+            + Add rule
+        </button>
+    </div>
+
+    <h3>Your rules</h3>
+    {% if recurring_entries %}
+        <div class="list-stack recurring-rules-stack">
+            {% for rule in recurring_entries %}
+                <form action="{{ url_for('recurring.edit_recurring', recurring_id=rule.id) }}" class="inline-form recurring-rule-form" method="post">
+                    <input name="month" type="hidden" value="{{ month_filter }}">
+                    <input name="next_panel" type="hidden" value="recurring">
+                    <div class="recurring-rule-header">
+                        <span class="recurring-rule-badge {% if rule.entry_type == 'expense' %}recurring-rule-expense{% else %}recurring-rule-income{% endif %}">{{ rule.entry_type }}</span>
+                        {% if not rule.enabled %}<span class="muted recurring-rule-paused">paused</span>{% endif %}
+                        <span class="muted recurring-rule-duration">
+                            {% if rule.months_to_run %}
+                                {{ rule.months_to_run }} month{% if rule.months_to_run != 1 %}s{% endif %}
+                            {% else %}
+                                indefinitely
+                            {% endif %}
+                        </span>
+                    </div>
+                    <select name="category_choice" required autocomplete="off" aria-label="Category">
+                        <optgroup label="Expense">
+                            {% for category in categories %}
+                                <option value="e-{{ category.id }}" {% if rule.entry_type == 'expense' and category.id == rule.category_id %}selected{% endif %}>{{ category.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Income">
+                            {% for category in income_categories %}
+                                <option value="i-{{ category.id }}" {% if rule.entry_type == 'income' and category.id == rule.category_id %}selected{% endif %}>{{ category.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    </select>
+                    <input min="0.01" name="amount" required step="0.01" type="number" value="{{ '%.2f'|format(rule.amount) }}" aria-label="Amount">
+                    <select name="account_id" required aria-label="Account">
+                        {% for account in accounts %}
+                            <option value="{{ account.id }}" {% if account.id == rule.account_id %}selected{% endif %}>{{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <input max="31" min="1" name="day_of_month" required type="number" value="{{ rule.day_of_month }}" aria-label="Day of month">
+                    <label class="checkbox-inline recurring-enabled-label">
+                        <input data-recurring-indefinite-toggle name="indefinitely" type="checkbox" value="1" {% if not rule.months_to_run %}checked{% endif %}> Indefinitely
+                    </label>
+                    <div data-recurring-months-wrap {% if not rule.months_to_run %}hidden{% endif %}>
+                        <label class="sr-only">Run for how many months</label>
+                        <input data-recurring-months-input min="1" name="months_to_run" placeholder="Months" type="number" value="{{ rule.months_to_run or '' }}" aria-label="Run for how many months">
+                    </div>
+                    <input name="notes" placeholder="Notes" type="text" value="{{ rule.notes }}">
+                    <label class="checkbox-inline recurring-enabled-label">
+                        <input name="enabled" type="checkbox" value="1" {% if rule.enabled %}checked{% endif %}> Active
+                    </label>
+                    <button type="submit">Save</button>
+                    <button class="btn-danger" formaction="{{ url_for('recurring.delete_recurring', recurring_id=rule.id) }}" formmethod="post" type="submit">Delete</button>
+                </form>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="muted">No recurring rules yet.</p>
+    {% endif %}
+</section>
