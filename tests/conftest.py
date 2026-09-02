@@ -19,6 +19,17 @@ def app():
     yield vb_app.app
 
 
+@pytest.fixture(autouse=True)
+def no_external_price_calls(monkeypatch):
+    """The dashboard fetches live prices whenever a user holds stocks or crypto.
+    Stub those out so tests never reach the network."""
+    monkeypatch.setattr(vb_app, "fetch_finnhub_quotes", lambda symbols, force=False: {})
+    monkeypatch.setattr(vb_app, "fetch_coingecko_prices", lambda coin_ids, force=False: {})
+    # Reports render month-by-month history, which otherwise hits yfinance/CoinGecko.
+    monkeypatch.setattr(vb_app, "fetch_stock_month_close_usd", lambda symbol, price_date_iso: None)
+    monkeypatch.setattr(vb_app, "fetch_coingecko_history_eur", lambda coin_id, price_date: None)
+
+
 @pytest.fixture
 def client(app):
     return app.test_client()
