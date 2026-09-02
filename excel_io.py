@@ -1,9 +1,59 @@
+import re
 from datetime import datetime, timedelta, timezone
 from openpyxl import Workbook, load_workbook
 
-from config import EXPORT_FORMAT_VERSION, SHEET_ACCOUNTS, SHEET_EXPENSES, SHEET_EXPENSE_CATEGORIES, SHEET_INCOME, SHEET_INCOME_CATEGORIES, SHEET_META
+from config import EXPORT_FORMAT_VERSION, SHEET_ACCOUNTS, SHEET_CRYPTO, SHEET_EXPENSES, SHEET_EXPENSE_CATEGORIES, SHEET_INCOME, SHEET_INCOME_CATEGORIES, SHEET_META, SHEET_RECURRING, SHEET_STOCKS, SHEET_TRANSFERS
 from db import get_connection
 from helpers import _lookup_account_id, _lookup_category_id
+
+# Column order for the sheets added in format version 2. Used for both the
+# export and the header-only migration template so the two cannot drift.
+TRANSFER_COLUMNS = [
+    "from_account_name",
+    "to_account_name",
+    "amount",
+    "transferred_at",
+    "notes",
+    "created_at",
+]
+STOCK_COLUMNS = [
+    "symbol",
+    "ticker",
+    "instrument_name",
+    "tx_type",
+    "quantity",
+    "price_per_unit",
+    "fee",
+    "broker",
+    "transacted_at",
+    "notes",
+    "created_at",
+]
+CRYPTO_COLUMNS = [
+    "coin_id",
+    "coin_symbol",
+    "coin_name",
+    "tx_type",
+    "quantity",
+    "price_per_unit",
+    "fee",
+    "exchange",
+    "transacted_at",
+    "notes",
+    "created_at",
+]
+RECURRING_COLUMNS = [
+    "entry_type",
+    "amount",
+    "category_name",
+    "account_name",
+    "day_of_month",
+    "months_to_run",
+    "notes",
+    "enabled",
+    "created_at",
+    "applied_months",
+]
 
 
 def _normalize_header_key(value):
@@ -170,6 +220,81 @@ def _build_export_workbook(conn, user_id):
             ]
         )
 
+    ws_tr = wb.create_sheet(SHEET_TRANSFERS)
+    ws_tr.append(TRANSFER_COLUMNS)
+    for row in conn.execute(
+        """
+        SELECT fa.name AS from_account_name, ta.name AS to_account_name,
+               t.amount, t.transferred_at, t.notes, t.created_at
+        FROM account_transfers t
+        JOIN accounts fa ON fa.id = t.from_account_id
+        JOIN accounts ta ON ta.id = t.to_account_id
+        WHERE t.user_id = ?
+        ORDER BY t.transferred_at ASC, t.id ASC
+        """,
+        (uid,),
+    ):
+        ws_tr.append([row[c] for c in TRANSFER_COLUMNS])
+
+    ws_st = wb.create_sheet(SHEET_STOCKS)
+    ws_st.append(STOCK_COLUMNS)
+    for row in conn.execute(
+        """
+        SELECT symbol, ticker, instrument_name, tx_type, quantity, price_per_unit,
+               fee, broker, transacted_at, notes, created_at
+        FROM stock_transactions
+        WHERE user_id = ?
+        ORDER BY transacted_at ASC, id ASC
+        """,
+        (uid,),
+    ):
+        ws_st.append([row[c] for c in STOCK_COLUMNS])
+
+    ws_cr = wb.create_sheet(SHEET_CRYPTO)
+    ws_cr.append(CRYPTO_COLUMNS)
+    for row in conn.execute(
+        """
+        SELECT coin_id, coin_symbol, coin_name, tx_type, quantity, price_per_unit,
+               fee, exchange, transacted_at, notes, created_at
+        FROM crypto_transactions
+        WHERE user_id = ?
+        ORDER BY transacted_at ASC, id ASC
+        """,
+        (uid,),
+    ):
+        ws_cr.append([row[c] for c in CRYPTO_COLUMNS])
+
+    ws_rec = wb.create_sheet(SHEET_RECURRING)
+    ws_rec.append(RECURRING_COLUMNS)
+    for row in conn.execute(
+        """
+        SELECT r.id, r.entry_type, r.amount,
+               COALESCE(c.name, ic.name) AS category_name,
+               a.name AS account_name, r.day_of_month, r.months_to_run,
+               r.notes, r.enabled, r.created_at
+        FROM recurring_entries r
+        JOIN accounts a ON a.id = r.account_id
+        LEFT JOIN categories c ON r.entry_type = 'expense' AND c.id = r.category_id
+        LEFT JOIN income_categories ic ON r.entry_type = 'income' AND ic.id = r.category_id
+        WHERE r.user_id = ?
+        ORDER BY r.id ASC
+        """,
+        (uid,),
+    ):
+        # The months a rule has already posted travel with it. Without them,
+        # apply_recurring_entries would re-post every month back to created_at
+        # on the first page load after an import, duplicating the rows the
+        # Expenses/Income sheets just restored.
+        applied = [
+            str(m["ym"])
+            for m in conn.execute(
+                "SELECT ym FROM recurring_applied WHERE recurring_id = ? ORDER BY ym",
+                (row["id"],),
+            )
+        ]
+        values = [row[c] for c in RECURRING_COLUMNS if c != "applied_months"]
+        ws_rec.append(values + [",".join(applied)])
+
     return wb
 
 def _build_migration_template_workbook():
@@ -197,6 +322,11 @@ def _build_migration_template_workbook():
 
     ws_inc = wb.create_sheet(SHEET_INCOME)
     ws_inc.append(["notes", "amount", "category_name", "account_name", "received_at", "created_at"])
+
+    wb.create_sheet(SHEET_TRANSFERS).append(TRANSFER_COLUMNS)
+    wb.create_sheet(SHEET_STOCKS).append(STOCK_COLUMNS)
+    wb.create_sheet(SHEET_CRYPTO).append(CRYPTO_COLUMNS)
+    wb.create_sheet(SHEET_RECURRING).append(RECURRING_COLUMNS)
 
     return wb
 
@@ -272,6 +402,187 @@ def _collect_import_movements(expense_rows, income_rows):
 
     return insert_expenses, insert_income, errors
 
+def _required_text(row, key, sheet, row_num, errors):
+    value = row.get(key)
+    if value is None or not str(value).strip():
+        errors.append(f"{sheet} row {row_num}: missing {key}")
+        return None
+    return str(value).strip()
+
+
+def _parse_excel_number(row, key, sheet, row_num, errors, *, default=None, minimum=None):
+    raw = row.get(key)
+    if raw is None or str(raw).strip() == "":
+        if default is None:
+            errors.append(f"{sheet} row {row_num}: missing {key}")
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        errors.append(f"{sheet} row {row_num}: invalid {key}")
+        return None
+    if minimum is not None and value < minimum:
+        errors.append(f"{sheet} row {row_num}: {key} must be >= {minimum}")
+        return None
+    return value
+
+
+def _parse_tx_type(row, sheet, row_num, errors):
+    value = str(row.get("tx_type") or "").strip().lower()
+    if value not in ("buy", "sell"):
+        errors.append(f"{sheet} row {row_num}: tx_type must be 'buy' or 'sell'")
+        return None
+    return value
+
+
+def _optional_text(row, key):
+    value = row.get(key)
+    return "" if value is None else str(value).strip()
+
+
+def _collect_import_transfers(rows):
+    errors = []
+    out = []
+    for idx, row in enumerate(rows, start=2):
+        from_name = _required_text(row, "from_account_name", SHEET_TRANSFERS, idx, errors)
+        to_name = _required_text(row, "to_account_name", SHEET_TRANSFERS, idx, errors)
+        amount = _parse_excel_number(row, "amount", SHEET_TRANSFERS, idx, errors, minimum=0)
+        if from_name and to_name and from_name == to_name:
+            errors.append(f"{SHEET_TRANSFERS} row {idx}: from and to accounts must differ")
+        if amount is not None and amount <= 0:
+            errors.append(f"{SHEET_TRANSFERS} row {idx}: amount must be positive")
+        try:
+            transferred_at = _parse_excel_movement_date(
+                row.get("transferred_at"), SHEET_TRANSFERS, idx, "transferred_at"
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        created_at = None
+        if row.get("created_at") not in (None, ""):
+            try:
+                created_at = _optional_created_at(row.get("created_at"), SHEET_TRANSFERS, idx)
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+        if from_name and to_name and amount:
+            out.append(
+                (from_name, to_name, abs(amount), transferred_at, _optional_text(row, "notes"), created_at)
+            )
+    return out, errors
+
+
+def _collect_import_investments(rows, sheet, columns, id_fields):
+    """Stocks and crypto differ only in their identifying/venue columns."""
+    errors = []
+    out = []
+    for idx, row in enumerate(rows, start=2):
+        ids = [_required_text(row, field, sheet, idx, errors) for field in id_fields]
+        tx_type = _parse_tx_type(row, sheet, idx, errors)
+        quantity = _parse_excel_number(row, "quantity", sheet, idx, errors, minimum=0)
+        price = _parse_excel_number(row, "price_per_unit", sheet, idx, errors, minimum=0)
+        fee = _parse_excel_number(row, "fee", sheet, idx, errors, default=0.0, minimum=0)
+        if quantity is not None and quantity <= 0:
+            errors.append(f"{sheet} row {idx}: quantity must be positive")
+        try:
+            transacted_at = _parse_excel_movement_date(
+                row.get("transacted_at"), sheet, idx, "transacted_at"
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+            continue
+        created_at = None
+        if row.get("created_at") not in (None, ""):
+            try:
+                created_at = _optional_created_at(row.get("created_at"), sheet, idx)
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+        venue_field = columns[7]  # "broker" for stocks, "exchange" for crypto
+        if all(ids) and tx_type and quantity and price is not None:
+            out.append(
+                tuple(ids)
+                + (
+                    tx_type,
+                    quantity,
+                    price,
+                    fee or 0.0,
+                    _optional_text(row, venue_field),
+                    transacted_at,
+                    _optional_text(row, "notes"),
+                    created_at,
+                )
+            )
+    return out, errors
+
+
+def _parse_applied_months(raw, sheet, row_num, errors):
+    if raw is None or not str(raw).strip():
+        return []
+    months = []
+    for chunk in str(raw).split(","):
+        ym = chunk.strip()
+        if not ym:
+            continue
+        if not re.fullmatch(r"\d{4}-\d{2}", ym):
+            errors.append(f"{sheet} row {row_num}: invalid applied_months entry {ym!r}")
+            continue
+        months.append(ym)
+    return months
+
+
+def _collect_import_recurring(rows):
+    errors = []
+    out = []
+    for idx, row in enumerate(rows, start=2):
+        entry_type = str(row.get("entry_type") or "").strip().lower()
+        if entry_type not in ("expense", "income"):
+            errors.append(f"{SHEET_RECURRING} row {idx}: entry_type must be 'expense' or 'income'")
+            continue
+        amount = _parse_excel_number(row, "amount", SHEET_RECURRING, idx, errors, minimum=0)
+        if amount is not None and amount <= 0:
+            errors.append(f"{SHEET_RECURRING} row {idx}: amount must be positive")
+        cat_name = _required_text(row, "category_name", SHEET_RECURRING, idx, errors)
+        acc_name = _required_text(row, "account_name", SHEET_RECURRING, idx, errors)
+        day = _parse_excel_number(row, "day_of_month", SHEET_RECURRING, idx, errors)
+        if day is not None and not 1 <= int(day) <= 31:
+            errors.append(f"{SHEET_RECURRING} row {idx}: day_of_month must be 1-31")
+            day = None
+        months_to_run = None
+        if row.get("months_to_run") not in (None, ""):
+            months_to_run = _parse_excel_number(
+                row, "months_to_run", SHEET_RECURRING, idx, errors, minimum=1
+            )
+            if months_to_run is not None:
+                months_to_run = int(months_to_run)
+        enabled_raw = row.get("enabled")
+        enabled = 1 if enabled_raw in (None, "") else int(bool(float(enabled_raw)))
+        created_at = None
+        if row.get("created_at") not in (None, ""):
+            try:
+                created_at = _optional_created_at(row.get("created_at"), SHEET_RECURRING, idx)
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+        applied = _parse_applied_months(row.get("applied_months"), SHEET_RECURRING, idx, errors)
+        if amount and cat_name and acc_name and day is not None:
+            out.append(
+                (
+                    entry_type,
+                    abs(amount),
+                    cat_name,
+                    acc_name,
+                    int(day),
+                    months_to_run,
+                    _optional_text(row, "notes"),
+                    enabled,
+                    created_at,
+                    applied,
+                )
+            )
+    return out, errors
+
+
 def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
     errors = []
     required_sheets = {
@@ -294,14 +605,40 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
     insert_expenses, insert_income, parse_errors = _collect_import_movements(
         expense_rows, income_rows
     )
+
+    # Sheets added in format version 2. Absent in version 1 workbooks, so each
+    # one is optional and simply yields nothing when the sheet is not there.
+    def _rows_of(sheet_name):
+        return _sheet_as_dicts(wb[sheet_name]) if sheet_name in wb.sheetnames else []
+
+    insert_transfers, transfer_errors = _collect_import_transfers(_rows_of(SHEET_TRANSFERS))
+    insert_stocks, stock_errors = _collect_import_investments(
+        _rows_of(SHEET_STOCKS), SHEET_STOCKS, STOCK_COLUMNS, ("symbol", "ticker", "instrument_name")
+    )
+    insert_crypto, crypto_errors = _collect_import_investments(
+        _rows_of(SHEET_CRYPTO), SHEET_CRYPTO, CRYPTO_COLUMNS, ("coin_id", "coin_symbol", "coin_name")
+    )
+    insert_recurring, recurring_errors = _collect_import_recurring(_rows_of(SHEET_RECURRING))
+
+    parse_errors = (
+        parse_errors + transfer_errors + stock_errors + crypto_errors + recurring_errors
+    )
     if parse_errors:
         return parse_errors
 
-    expense_cats_from_movements = {row[2] for row in insert_expenses}
-    income_cats_from_movements = {row[2] for row in insert_income}
-    accounts_from_movements = {row[3] for row in insert_expenses} | {
-        row[3] for row in insert_income
+    expense_cats_from_movements = {row[2] for row in insert_expenses} | {
+        row[2] for row in insert_recurring if row[0] == "expense"
     }
+    income_cats_from_movements = {row[2] for row in insert_income} | {
+        row[2] for row in insert_recurring if row[0] == "income"
+    }
+    accounts_from_movements = (
+        {row[3] for row in insert_expenses}
+        | {row[3] for row in insert_income}
+        | {row[0] for row in insert_transfers}
+        | {row[1] for row in insert_transfers}
+        | {row[3] for row in insert_recurring}
+    )
 
     conn = get_connection()
     uid = int(user_id)
@@ -376,6 +713,17 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
         if replace_movements:
             conn.execute("DELETE FROM expenses WHERE user_id = ?", (uid,))
             conn.execute("DELETE FROM income_entries WHERE user_id = ?", (uid,))
+            conn.execute("DELETE FROM account_transfers WHERE user_id = ?", (uid,))
+            conn.execute("DELETE FROM stock_transactions WHERE user_id = ?", (uid,))
+            conn.execute("DELETE FROM crypto_transactions WHERE user_id = ?", (uid,))
+            conn.execute(
+                """
+                DELETE FROM recurring_applied
+                WHERE recurring_id IN (SELECT id FROM recurring_entries WHERE user_id = ?)
+                """,
+                (uid,),
+            )
+            conn.execute("DELETE FROM recurring_entries WHERE user_id = ?", (uid,))
 
         for notes, amount, cat_name, acc_name, spent_at, created_at in insert_expenses:
             category_id = _lookup_category_id(conn, cat_name, uid, expense=True)
@@ -436,6 +784,101 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
                     """,
                     (uid, notes, amount, category_id, account_id, received_at),
                 )
+
+        for from_name, to_name, amount, transferred_at, notes, created_at in insert_transfers:
+            from_id = _lookup_account_id(conn, from_name, uid)
+            to_id = _lookup_account_id(conn, to_name, uid)
+            if from_id is None or to_id is None:
+                errors.append(
+                    f"{SHEET_TRANSFERS}: unknown account "
+                    f"{from_name if from_id is None else to_name!r}"
+                )
+                continue
+            if created_at:
+                conn.execute(
+                    """
+                    INSERT INTO account_transfers
+                        (user_id, from_account_id, to_account_id, amount, transferred_at, notes, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (uid, from_id, to_id, amount, transferred_at, notes, created_at),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO account_transfers
+                        (user_id, from_account_id, to_account_id, amount, transferred_at, notes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (uid, from_id, to_id, amount, transferred_at, notes),
+                )
+
+        for symbol, ticker, name, tx_type, qty, price, fee, broker, at, notes, created_at in insert_stocks:
+            conn.execute(
+                """
+                INSERT INTO stock_transactions
+                    (user_id, symbol, ticker, instrument_name, tx_type, quantity,
+                     price_per_unit, fee, broker, transacted_at, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (uid, symbol, ticker, name, tx_type, qty, price, fee, broker, at, notes),
+            )
+
+        for cid, csym, cname, tx_type, qty, price, fee, exchange, at, notes, created_at in insert_crypto:
+            conn.execute(
+                """
+                INSERT INTO crypto_transactions
+                    (user_id, coin_id, coin_symbol, coin_name, tx_type, quantity,
+                     price_per_unit, fee, exchange, transacted_at, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (uid, cid, csym, cname, tx_type, qty, price, fee, exchange, at, notes),
+            )
+
+        for (
+            entry_type, amount, cat_name, acc_name, day, months_to_run,
+            notes, enabled, created_at, applied_months,
+        ) in insert_recurring:
+            category_id = _lookup_category_id(conn, cat_name, uid, expense=entry_type == "expense")
+            account_id = _lookup_account_id(conn, acc_name, uid)
+            if category_id is None or account_id is None:
+                errors.append(
+                    f"{SHEET_RECURRING}: unknown "
+                    + (f"category {cat_name!r}" if category_id is None else f"account {acc_name!r}")
+                )
+                continue
+            if created_at:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO recurring_entries
+                        (user_id, entry_type, amount, category_id, account_id, day_of_month,
+                         months_to_run, notes, enabled, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (uid, entry_type, amount, category_id, account_id, day,
+                     months_to_run, notes, enabled, created_at),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO recurring_entries
+                        (user_id, entry_type, amount, category_id, account_id, day_of_month,
+                         months_to_run, notes, enabled)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (uid, entry_type, amount, category_id, account_id, day,
+                     months_to_run, notes, enabled),
+                )
+            rule_id = cursor.lastrowid
+            for ym in applied_months:
+                conn.execute(
+                    "INSERT OR IGNORE INTO recurring_applied (recurring_id, ym) VALUES (?, ?)",
+                    (rule_id, ym),
+                )
+
+        if errors:
+            conn.rollback()
+            return errors
 
         conn.commit()
         return []

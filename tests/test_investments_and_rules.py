@@ -318,7 +318,12 @@ def test_transfer_between_accounts(client):
 
     conn = vb_app.get_connection()
     row = conn.execute(
-        "SELECT id, amount FROM account_transfers WHERE notes = 'to savings'"
+        """
+        SELECT t.id, t.amount FROM account_transfers t
+        JOIN users u ON u.id = t.user_id
+        WHERE u.username = ? AND t.notes = 'to savings'
+        """,
+        ("transfertester",),
     ).fetchone()
     conn.close()
     assert row is not None

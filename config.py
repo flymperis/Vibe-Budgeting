@@ -4,7 +4,9 @@ import re
 import secrets
 
 
-EXPORT_FORMAT_VERSION = 1
+# 2 added the Transfers/Stocks/Crypto/Recurring sheets. Version 1 workbooks
+# still import: the sheets added in 2 are optional on the way in.
+EXPORT_FORMAT_VERSION = 2
 
 LIST_PAGE_SIZE = 75
 
@@ -27,6 +29,14 @@ SHEET_INCOME_CATEGORIES = "IncomeCategories"
 SHEET_EXPENSES = "Expenses"
 
 SHEET_INCOME = "Income"
+
+SHEET_TRANSFERS = "Transfers"
+
+SHEET_STOCKS = "Stocks"
+
+SHEET_CRYPTO = "Crypto"
+
+SHEET_RECURRING = "Recurring"
 
 ALLOWED_PANELS = {
     "home",

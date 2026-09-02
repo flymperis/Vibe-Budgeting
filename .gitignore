@@ -8,3 +8,4 @@ budget-data/
 .venv/
 venv/
 secret_key
+*.db
