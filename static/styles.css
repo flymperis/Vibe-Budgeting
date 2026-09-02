@@ -856,11 +856,13 @@ table.yearly-table {
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
 }
 
-/* Hover deliberately does NOT appear here. The panel is absolutely positioned,
-   so it is outside the group's hover box, and the gap below the button is too
-   — a CSS hover rule closed the menu the moment you moved towards it. Opening
-   is driven by script instead, and nothing closes on mouse-out. */
-.menu-group:focus-within > .menu-sub-items,
+/* Visibility is driven solely by .is-open, which the script owns.
+   Neither :hover nor :focus-within belongs here. :hover closed the menu the
+   moment you moved towards it, because the panel is absolutely positioned and
+   sits outside the group's hover box along with the gap under the button.
+   :focus-within then kept the menu open after a selection, since clicking a
+   button leaves focus on it — the script removed .is-open but CSS overruled it.
+   Keyboard opening is handled by a focusin listener instead. */
 .menu-group.is-open > .menu-sub-items {
     display: grid;
     gap: 0.1rem;
@@ -932,7 +934,6 @@ table.yearly-table {
     transition: transform 0.15s ease;
 }
 
-.menu-group:focus-within > .menu-item .menu-item-inner::after,
 .menu-group.is-open > .menu-item .menu-item-inner::after {
     transform: translateY(1px) rotate(-135deg);
 }

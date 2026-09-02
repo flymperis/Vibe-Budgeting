@@ -779,6 +779,9 @@
     alignPanels();
 
     var hoverTimer = null;
+    // Set briefly after a selection. Closing moves focus back to the trigger,
+    // which fires focusin and would otherwise reopen the menu immediately.
+    var suppressUntil = 0;
 
     function closeAll(except) {
         groups.forEach(function (group) {
@@ -794,6 +797,9 @@
     }
 
     function open(group) {
+        if (Date.now() < suppressUntil) {
+            return;
+        }
         closeAll(group);
         group.classList.add("is-open");
         var btn = group.querySelector(".menu-item");
@@ -819,12 +825,24 @@
             open(group);
         });
 
-        // Picking a section is the end of the interaction, so dismiss.
+        // Picking a section is the end of the interaction, so dismiss. Focus
+        // goes back to the trigger rather than staying on a button that is
+        // about to be hidden, and the suppression window stops that focus
+        // change from reopening what we just closed.
         panel.addEventListener("click", function (event) {
-            if (event.target.closest(".menu-sub-item")) {
-                clearTimeout(hoverTimer);
-                closeAll(null);
+            if (!event.target.closest(".menu-sub-item")) {
+                return;
             }
+            clearTimeout(hoverTimer);
+            closeAll(null);
+            suppressUntil = Date.now() + 400;
+            button.focus();
+        });
+
+        // Keyboard equivalent of hover, now that :focus-within no longer opens
+        // the menu in CSS.
+        group.addEventListener("focusin", function () {
+            open(group);
         });
 
         // Hover opens too, after a short delay so that sweeping the pointer
