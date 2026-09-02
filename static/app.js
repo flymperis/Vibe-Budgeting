@@ -735,3 +735,107 @@
         }
     });
 })();
+
+/* Top-bar dropdowns (Reports / Investments / Settings).
+   CSS already opens these on hover and keyboard focus; this adds click, which
+   is what touch and trackpad-tap users get, plus the usual dismissal rules.
+   Panel switching itself is untouched — the existing .menu-item and
+   .menu-sub-item handlers still do that. */
+(function () {
+    var groups = document.querySelectorAll(".menu-group");
+    if (!groups.length) {
+        return;
+    }
+
+    /* Decide which side each dropdown opens towards. Measured rather than
+       assumed, because CSS opens these on hover too — there is no script
+       running at that moment to fix an overhang after the fact. */
+    function alignPanels() {
+        if (window.innerWidth <= 900) {
+            return; // chip row on mobile, not a popover
+        }
+        groups.forEach(function (group) {
+            var panel = group.querySelector(".menu-sub-items");
+            if (!panel) {
+                return;
+            }
+            panel.classList.remove("align-right");
+            var restore = panel.getAttribute("style") || "";
+            panel.style.display = "grid";
+            panel.style.visibility = "hidden";
+            var width = panel.offsetWidth;
+            panel.setAttribute("style", restore);
+            if (group.getBoundingClientRect().left + width > document.documentElement.clientWidth - 8) {
+                panel.classList.add("align-right");
+            }
+        });
+    }
+
+    var alignTimer = null;
+    window.addEventListener("resize", function () {
+        clearTimeout(alignTimer);
+        alignTimer = setTimeout(alignPanels, 120);
+    });
+    alignPanels();
+
+    function closeAll(except) {
+        groups.forEach(function (group) {
+            if (group === except) {
+                return;
+            }
+            group.classList.remove("is-open");
+            var btn = group.querySelector(".menu-item");
+            if (btn) {
+                btn.setAttribute("aria-expanded", "false");
+            }
+        });
+    }
+
+    groups.forEach(function (group) {
+        var button = group.querySelector(".menu-item");
+        var panel = group.querySelector(".menu-sub-items");
+        if (!button || !panel) {
+            return;
+        }
+
+        button.setAttribute("aria-haspopup", "true");
+        button.setAttribute("aria-expanded", "false");
+
+        button.addEventListener("click", function () {
+            // The panel-switching handler has already run; only the open state
+            // is ours to manage.
+            var willOpen = !group.classList.contains("is-open");
+            closeAll(group);
+            group.classList.toggle("is-open", willOpen);
+            button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+        });
+
+        // Choosing a section closes the menu.
+        panel.addEventListener("click", function (event) {
+            if (event.target.closest(".menu-sub-item")) {
+                closeAll(null);
+            }
+        });
+    });
+
+    document.addEventListener("click", function (event) {
+        if (!event.target.closest(".menu-group")) {
+            closeAll(null);
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") {
+            return;
+        }
+        var open = document.querySelector(".menu-group.is-open");
+        if (!open) {
+            return;
+        }
+        closeAll(null);
+        var btn = open.querySelector(".menu-item");
+        if (btn) {
+            btn.focus();
+        }
+    });
+})();

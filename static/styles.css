@@ -746,16 +746,13 @@ table.yearly-table {
     font-weight: 600;
 }
 
+/* The navigation moved out of this grid and above it, so the layout is a
+   single column now. The mobile block still flips it to a flex column. */
 .app-layout {
-    display: grid;
-    grid-template-columns: 230px 1fr;
-    gap: 1rem;
-    align-items: start;
+    display: block;
 }
 
 .panel-shell {
-    grid-column: 2;
-    grid-row: 1;
     background: var(--surface);
     border: 1px solid var(--border-c);
     border-radius: 10px;
@@ -773,26 +770,34 @@ table.yearly-table {
     content-visibility: visible;
 }
 
+/* Horizontal top bar. It sticks to the top of the viewport so navigation stays
+   reachable on the long panels (Yearly, Investments) without scrolling back. */
 .side-menu {
-    grid-column: 1;
-    grid-row: 1;
-    display: grid;
-    gap: 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.15rem;
     background: var(--surface);
     border: 1px solid var(--border-c);
-    border-radius: 10px;
-    padding: 0.75rem;
+    border-radius: 12px;
+    padding: 0.35rem;
     position: sticky;
-    top: 1rem;
-    align-self: start;
+    top: 0.5rem;
+    z-index: 40;
+    margin-bottom: 1rem;
 }
 
 .menu-item {
-    width: 100%;
+    width: auto;
     text-align: left;
-    background: var(--surface-alt);
+    background: transparent;
+    border-color: transparent;
     color: var(--tab-text);
-    white-space: normal;
+    white-space: nowrap;
+}
+
+.menu-item:hover {
+    background: var(--surface-alt);
 }
 
 .menu-item-inner {
@@ -823,32 +828,61 @@ table.yearly-table {
     color: var(--accent-content);
 }
 
+/* Anchor for the dropdown. On mobile this reverts to display: contents so the
+   sub-items can become a flat chip row instead. */
 .menu-group {
-    display: contents;
+    position: relative;
+    display: inline-flex;
 }
 
+/* Dropdown panel. Visibility is driven by hover, keyboard focus, or the
+   .is-open class the script toggles on click — deliberately NOT by .active,
+   which marks the *current* section and would leave the menu hanging open. */
 .menu-sub-items {
     display: none;
-    grid-column: 1 / -1;
-    padding: 0 0 0 0.35rem;
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    min-width: 12rem;
+    padding: 0.3rem;
+    background: var(--surface);
+    border: 1px solid var(--border-c);
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+    z-index: 50;
 }
 
-.menu-sub-items.active {
+:root[data-theme="dark"] .menu-sub-items {
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.menu-group:hover > .menu-sub-items,
+.menu-group:focus-within > .menu-sub-items,
+.menu-group.is-open > .menu-sub-items {
     display: grid;
-    gap: 0.25rem;
+    gap: 0.1rem;
+}
+
+/* Groups near the right edge open leftwards, or the panel pushes the page
+   wider — the Settings menu overhung the viewport by 12px. Applied by script,
+   which measures rather than guessing which items are close to the edge. */
+.menu-sub-items.align-right {
+    left: auto;
+    right: 0;
 }
 
 .menu-sub-item {
     width: 100%;
     text-align: left;
-    padding: 0.35rem 0.55rem 0.35rem 1.6rem;
-    font-size: 0.82rem;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.85rem;
     font-weight: 600;
     background: transparent;
     color: var(--muted);
     border: 1px solid transparent;
     border-radius: 6px;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 .menu-sub-item:hover {
@@ -866,10 +900,39 @@ table.yearly-table {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    padding: 0.45rem 0.55rem;
-    font-size: 0.88rem;
+    padding: 0.5rem 0.5rem;
+    font-size: 0.86rem;
     font-weight: 600;
     line-height: 1.25;
+}
+
+.side-menu .menu-item-inner {
+    gap: 0.35rem;
+}
+
+.side-menu .menu-item-icon {
+    width: 1.05rem;
+    height: 1.05rem;
+}
+
+/* Caret marking the items that open a dropdown. */
+.menu-group > .menu-item .menu-item-inner::after {
+    content: "";
+    flex-shrink: 0;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-left: 0.1rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    opacity: 0.65;
+    transition: transform 0.15s ease;
+}
+
+.menu-group:hover > .menu-item .menu-item-inner::after,
+.menu-group:focus-within > .menu-item .menu-item-inner::after,
+.menu-group.is-open > .menu-item .menu-item-inner::after {
+    transform: translateY(1px) rotate(-135deg);
 }
 
 input, select, button {
@@ -2327,6 +2390,10 @@ form + form {
 .more-sheet-grid .menu-item {
     width: 100%;
     min-height: 48px;
+    /* .menu-item went transparent for the top bar; in the sheet these are
+       standalone tiles and still need a surface. */
+    background: var(--surface-alt);
+    border-color: var(--border-c);
 }
 
 @media (max-width: 900px) {
@@ -2632,8 +2699,16 @@ form + form {
         display: contents;
     }
 
+    /* Undo the desktop dropdown: here these are a flat chip row, not a popover. */
     .side-menu .menu-sub-items {
         display: none;
+        position: static;
+        min-width: 0;
+        padding: 0;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
     }
 
     .side-menu .menu-sub-items.active {
