@@ -139,6 +139,31 @@
         --accent-content: #ffffff;
     }
 
+    /* The dark values appear twice on purpose.
+       daisyUI's own theme is declared prefersdark, so on a dark-mode OS it
+       flips --color-* AND color-scheme (which paints the canvas) via a media
+       query, with no data-theme needed. Pages that don't load app.js — the
+       login and register screens — never get a data-theme attribute, so
+       without the media-query copy below their content stayed light while the
+       canvas around it went dark, splitting the page in two.
+       The attribute copy has to come after, so an explicit choice still beats
+       the OS preference. */
+    @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+            --bg: #262626;
+            --text: #ededed;
+            --surface: #2b2a2a;
+            --surface-alt: #333232;
+            --border-c: #4a4a4a;
+            --muted: #a8a8a8;
+            --tab: #333232;
+            --tab-text: #6dd0af;
+            --accent: #6dd0af;
+            --accent-hover: #8fdcc2;
+            --accent-content: #06251c;
+        }
+    }
+
     :root[data-theme="dark"] {
         --bg: #262626;
         --text: #ededed;
@@ -153,6 +178,21 @@
         /* Mint is a light colour, so text sitting on it has to go dark here —
            white on #6dd0af is about 1.6:1. */
         --accent-content: #06251c;
+    }
+
+    /* Light is the explicit choice, so it must also override the media query. */
+    :root[data-theme="light"] {
+        --bg: #f5f7f6;
+        --text: #1a1d1c;
+        --surface: #ffffff;
+        --surface-alt: #f0f4f2;
+        --border-c: #dde5e1;
+        --muted: #5f6b66;
+        --tab: #eaf4f0;
+        --tab-text: #147054;
+        --accent: #16805e;
+        --accent-hover: #12654c;
+        --accent-content: #ffffff;
     }
 
     html {

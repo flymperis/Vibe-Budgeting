@@ -4,6 +4,13 @@
    below still reads the same variable names — they just resolve to the mint
    and charcoal theme instead of the old purple one. */
 
+/* Tailwind gives <html> its own background, so body's no longer propagates to
+   the canvas — without this, overscrolling on a phone reveals a white strip
+   behind a dark page. */
+html {
+    background: var(--bg);
+}
+
 body {
     margin: 0;
     background: var(--bg);
@@ -95,9 +102,75 @@ h1 {
     color: var(--muted);
 }
 
+/* The auth pages are their own layout — no .app-container, so the mobile rule
+   that stretches the container to full width doesn't reach them. */
 .auth-panel {
-    max-width: 22rem;
-    padding-top: 3rem;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 1.5rem 1rem;
+    margin: 0;
+    max-width: none;
+    box-sizing: border-box;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 23rem;
+    box-sizing: border-box;
+    padding: 1.75rem 1.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border-c);
+    border-radius: 1rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.07);
+}
+
+:root[data-theme="dark"] .auth-card {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.auth-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1.35rem;
+}
+
+.auth-brand .app-logo {
+    width: 3.1rem;
+}
+
+.auth-brand-name {
+    font-weight: 800;
+    font-size: 1.05rem;
+    letter-spacing: -0.02em;
+}
+
+.auth-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.3rem;
+}
+
+.auth-card .small-hint {
+    margin: 0 0 1.25rem;
+    color: var(--muted);
+}
+
+.auth-card .auth-footer {
+    margin-bottom: 0;
+}
+
+.auth-card .auth-form input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.auth-card .auth-form button[type="submit"] {
+    width: 100%;
+    margin-top: 0.35rem;
+    min-height: 44px;
 }
 
 .auth-form {
@@ -115,6 +188,25 @@ h1 {
 .auth-footer {
     margin-top: 1rem;
     font-size: 0.95rem;
+}
+
+/* Anchors had no colour of their own outside .home-more-links, so they fell
+   back to the UA blue/purple — most visible on the login page. */
+a {
+    color: var(--accent);
+    text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    text-underline-offset: 0.15em;
+}
+
+a:hover {
+    color: var(--accent-hover);
+    text-decoration-color: currentColor;
+}
+
+a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
 }
 
 h2 {

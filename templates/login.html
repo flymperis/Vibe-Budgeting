@@ -11,11 +11,29 @@
     {# tailwind.css first: it defines the theme variables styles.css consumes. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    {# These pages don't load app.js, so they'd otherwise ignore the theme the
+       user picked in the app. Same rule as app.js, inlined here so it runs
+       before first paint and doesn't flash the wrong theme. #}
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem("theme");
+                var dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+                document.documentElement.setAttribute("data-theme", saved || (dark ? "dark" : "light"));
+            } catch (e) { /* private mode: fall back to the CSS media query */ }
+        })();
+    </script>
 </head>
 <body>
-    <main class="app-container auth-panel">
-        <h1 class="brand-title">Log in</h1>
-        <p class="small-hint">Vibe Budgeting.</p>
+    {% from "_macros.html" import app_logo %}
+    <main class="auth-panel">
+      <div class="auth-card">
+        <div class="auth-brand">
+            {{ app_logo() }}
+            <span class="auth-brand-name">Vibe Budgeting.</span>
+        </div>
+        <h1 class="auth-title">Log in</h1>
+        <p class="small-hint">Welcome back.</p>
 
         {% with flashes = get_flashed_messages(with_categories=true) %}
             {% if flashes %}
@@ -44,6 +62,7 @@
         {% if allow_registration %}
         <p class="auth-footer"><a href="{{ url_for('auth.register') }}">Create an account</a></p>
         {% endif %}
+      </div>
     </main>
 </body>
 </html>
