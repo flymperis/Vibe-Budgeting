@@ -2515,6 +2515,89 @@ form + form {
         min-height: 44px;
     }
 
+    /* The month selects carry min-width: 11rem from the desktop picker, which
+       is wider than a half-width grid column here, so they overflowed their
+       field and overlapped the year select next to them. */
+    .list-cal-picker .list-cal-month,
+    .list-cal-picker .list-cal-year,
+    .shell-cal-picker .shell-cal-month,
+    .shell-cal-picker .shell-cal-year,
+    .list-category-filter-select {
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    .cal-dropdown-field {
+        min-width: 0;
+        box-sizing: border-box;
+    }
+
+    /* --- Sub-sections stay reachable without the side menu ---------------
+       Settings/Reports/Investments sub-pages live inside .side-menu, which is
+       hidden on mobile in favour of the bottom bar. Without this, Settings
+       showed only Appearance and the other six sections were unreachable.
+       Keep the aside in the flow, hide its top-level buttons, and show the
+       active group as a horizontal row of chips above the panel. */
+    .side-menu {
+        display: block;
+        background: none;
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+        margin: 0 0 0.5rem;
+        position: static;
+        width: auto;
+        max-width: none;
+    }
+
+    .side-menu button.menu-item,
+    .side-menu .menu-item-icon {
+        display: none;
+    }
+
+    .side-menu .menu-group {
+        display: contents;
+    }
+
+    .side-menu .menu-sub-items {
+        display: none;
+    }
+
+    .side-menu .menu-sub-items.active {
+        display: flex;
+        gap: 0.4rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 0.15rem 0.1rem 0.35rem;
+        scrollbar-width: none;
+    }
+
+    .side-menu .menu-sub-items.active::-webkit-scrollbar {
+        display: none;
+    }
+
+    .side-menu button.menu-sub-item {
+        flex: 0 0 auto;
+        width: auto;
+        min-height: 40px;
+        padding: 0.45rem 0.85rem;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 0.85rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .side-menu button.menu-sub-item.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+    }
+
     /* --- Touch targets and iOS zoom -------------------------------------- */
 
     input:not([type="hidden"]),
