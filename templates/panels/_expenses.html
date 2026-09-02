@@ -65,11 +65,11 @@
         <tbody>
             {% for expense in expenses %}
                 <tr>
-                    <td>{{ expense.category_name }}</td>
-                    <td>{{ expense.account_name }}</td>
-                    <td class="cell-amount">{{ "%.2f"|format(expense.amount) }}</td>
-                    <td class="cell-notes">{{ expense.notes }}</td>
-                    <td class="cell-date">{{ expense.spent_at|txn_day }}</td>
+                    <td data-label="Category">{{ expense.category_name }}</td>
+                    <td data-label="Account">{{ expense.account_name }}</td>
+                    <td class="cell-amount {{ expense.amount|amount_class }}" data-label="Amount">{{ expense.amount|money }}</td>
+                    <td class="cell-notes" data-label="Notes">{{ expense.notes }}</td>
+                    <td class="cell-date" data-label="Date">{{ expense.spent_at|txn_day }}</td>
                     <td class="cell-actions">
                         <div class="action-stack">
                             <details class="edit-details lazy-edit-details" data-edit-kind="expense" data-edit-id="{{ expense.id }}" data-edit-payload='{{ {"notes": expense.notes, "amount": expense.amount, "category_id": expense.category_id, "account_id": expense.account_id, "spent_at": expense.spent_at|txn_day}|tojson }}'>

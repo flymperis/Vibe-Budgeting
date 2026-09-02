@@ -9,7 +9,7 @@
                 Hover a point for balance and month-to-month change (Δ).
             </p>
             <p class="muted small-hint reports-live-balance-hint">
-                Balance through today (same rule as Home): <strong>{{ "%.2f"|format(report_live_balance) }}</strong>
+                Balance through today (same rule as Home): <strong>{{ report_live_balance|money }}</strong>
                 — when {{ report_year }} is the current year, the <strong>{{ report_today_month }}</strong> point should match this value.
             </p>
             <form action="/" class="year-picker reports-year-picker" method="get">
@@ -73,10 +73,10 @@
                         <tr>
                             <th scope="row" class="reports-expenses-cat-col">{{ erow.name }}</th>
                             {% for v in erow.months %}
-                                <td class="reports-expenses-num-col">{% if v != 0 %}{{ "%.2f"|format(v) }}{% endif %}</td>
+                                <td class="reports-expenses-num-col">{% if v != 0 %}{{ v|money }}{% endif %}</td>
                             {% endfor %}
-                            <td class="reports-expenses-num-col reports-expenses-total-col">{{ "%.2f"|format(erow.total) }}</td>
-                            <td class="reports-expenses-num-col reports-expenses-avg-col">{% if erow.avg is not none %}{{ "%.2f"|format(erow.avg) }}{% endif %}</td>
+                            <td class="reports-expenses-num-col reports-expenses-total-col">{{ erow.total|money }}</td>
+                            <td class="reports-expenses-num-col reports-expenses-avg-col">{% if erow.avg is not none %}{{ erow.avg|money }}{% endif %}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -84,10 +84,10 @@
                     <tr class="reports-expenses-grand-row">
                         <th scope="row" class="reports-expenses-cat-col">Grand Total</th>
                         {% for tv in reports_expenses_table.month_totals %}
-                            <td class="reports-expenses-num-col">{{ "%.2f"|format(tv) }}</td>
+                            <td class="reports-expenses-num-col">{{ tv|money }}</td>
                         {% endfor %}
-                        <td class="reports-expenses-num-col reports-expenses-total-col">{{ "%.2f"|format(reports_expenses_table.grand_total) }}</td>
-                        <td class="reports-expenses-num-col reports-expenses-avg-col" {% if reports_expenses_table.avg_monthly_total is not none %}title="Grand total divided by {{ reports_expenses_table.active_month_count }} month{% if reports_expenses_table.active_month_count != 1 %}s{% endif %} with non-zero column total"{% endif %}>{% if reports_expenses_table.avg_monthly_total is not none %}{{ "%.2f"|format(reports_expenses_table.avg_monthly_total) }}{% endif %}</td>
+                        <td class="reports-expenses-num-col reports-expenses-total-col">{{ reports_expenses_table.grand_total|money }}</td>
+                        <td class="reports-expenses-num-col reports-expenses-avg-col" {% if reports_expenses_table.avg_monthly_total is not none %}title="Grand total divided by {{ reports_expenses_table.active_month_count }} month{% if reports_expenses_table.active_month_count != 1 %}s{% endif %} with non-zero column total"{% endif %}>{% if reports_expenses_table.avg_monthly_total is not none %}{{ reports_expenses_table.avg_monthly_total|money }}{% endif %}</td>
                     </tr>
                 </tfoot>
             </table>

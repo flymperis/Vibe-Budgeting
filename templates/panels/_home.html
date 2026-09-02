@@ -14,15 +14,15 @@
     <div class="stats consolidated-summary-cards home-summary-cards">
         <div class="card">
             <p>Income</p>
-            <strong>{{ "%.2f"|format(total_income) }}</strong>
+            <strong>{{ total_income|money }}</strong>
         </div>
         <div class="card">
             <p>Expenses</p>
-            <strong>{{ "%.2f"|format(total_expenses) }}</strong>
+            <strong>{{ total_expenses|money }}</strong>
         </div>
         <div class="card">
             <p>Net</p>
-            <strong>{{ "%.2f"|format(net_balance) }}</strong>
+            <strong class="{{ net_balance|amount_class }}">{{ net_balance|money }}</strong>
         </div>
     </div>
 
@@ -46,7 +46,7 @@
                 {% for account in account_balances %}
                     <tr>
                         <td>{{ account.name }}</td>
-                        <td>{{ "%.2f"|format(account.current_balance) }}</td>
+                        <td class="{{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</td>
                     </tr>
                 {% else %}
                     <tr><td colspan="2">No accounts yet.</td></tr>
@@ -56,7 +56,7 @@
             <tfoot>
                 <tr class="home-balances-total-row">
                     <th scope="row">Total (all accounts)</th>
-                    <td>{{ "%.2f"|format(accounts_total_balance) }}</td>
+                    <td class="{{ accounts_total_balance|amount_class }}">{{ accounts_total_balance|money }}</td>
                 </tr>
             </tfoot>
             {% endif %}

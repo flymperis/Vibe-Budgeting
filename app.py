@@ -111,6 +111,43 @@ def txn_day_filter(raw):
     return coerce_txn_day(raw)
 
 
+@app.template_filter("money")
+def money_filter(value, currency="€", signed=False):
+    """1527.08 -> '1.527,08 €'. Stocks are quoted in USD, so pass '$' there.
+
+    Returns an em dash for missing values: several investment columns are None
+    until a live price has been fetched.
+    """
+    if value is None or value == "":
+        return "—"
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return "—"
+
+    sign = "-" if amount < 0 else ("+" if signed and amount > 0 else "")
+    # 1234.5 -> '1,234.50' -> '1.234,50' (dot thousands, comma decimals)
+    digits = f"{abs(amount):,.2f}".replace(",", "\x00").replace(".", ",").replace("\x00", ".")
+    if currency == "$":
+        return f"{sign}${digits}"
+    return f"{sign}{digits} {currency}" if currency else f"{sign}{digits}"
+
+
+@app.template_filter("amount_class")
+def amount_class_filter(value):
+    """CSS class for colouring an amount. Sign stays visible in the text too,
+    so colour is never the only carrier of meaning."""
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return "amount-zero"
+    if amount > 0:
+        return "amount-pos"
+    if amount < 0:
+        return "amount-neg"
+    return "amount-zero"
+
+
 def arm_telegram_poller() -> None:
     global _telegram_poller_armed
     if _telegram_poller_armed:

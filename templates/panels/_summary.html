@@ -12,15 +12,15 @@
     <div class="stats consolidated-summary-cards">
         <div class="card">
             <p>Total Income</p>
-            <strong>{{ "%.2f"|format(total_income) }}</strong>
+            <strong>{{ total_income|money }}</strong>
         </div>
         <div class="card">
             <p>Total Expenses</p>
-            <strong>{{ "%.2f"|format(total_expenses) }}</strong>
+            <strong>{{ total_expenses|money }}</strong>
         </div>
         <div class="card consolidated-net-card">
             <p>Net Balance</p>
-            <strong>{{ "%.2f"|format(accounts_total_balance) }}</strong>
+            <strong>{{ accounts_total_balance|money }}</strong>
             <p class="muted consolidated-net-card-hint">Sum of the per-account balances (Balances column).</p>
         </div>
     </div>
@@ -36,7 +36,7 @@
                     {% for row in income_breakdown %}
                         <tr>
                             <td>{{ row.category_name }}</td>
-                            <td>{{ "%.2f"|format(row.total_amount) }}</td>
+                            <td>{{ row.total_amount|money }}</td>
                         </tr>
                     {% else %}
                         <tr><td colspan="2">No income for this month.</td></tr>
@@ -55,7 +55,7 @@
                     {% for row in expense_breakdown %}
                         <tr>
                             <td>{{ row.category_name }}</td>
-                            <td>{{ "%.2f"|format(row.total_amount) }}</td>
+                            <td>{{ row.total_amount|money }}</td>
                         </tr>
                     {% else %}
                         <tr><td colspan="2">No expenses for this month.</td></tr>
@@ -74,7 +74,7 @@
                     {% for account in account_balances %}
                         <tr>
                             <td>{{ account.name }}</td>
-                            <td>{{ "%.2f"|format(account.current_balance) }}</td>
+                            <td>{{ account.current_balance|money }}</td>
                         </tr>
                     {% else %}
                         <tr><td colspan="2">No accounts yet.</td></tr>

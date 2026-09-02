@@ -26,17 +26,17 @@
                 {% for row in yearly_rows %}
                     <tr>
                         <th scope="row">{{ row.month_label }}</th>
-                        <td>{{ "%.2f"|format(row.income) }}</td>
-                        <td>{{ "%.2f"|format(row.expenses) }}</td>
-                        <td class="{% if row.delta > 0 %}delta-positive{% elif row.delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ "%.2f"|format(row.delta) }}</td>
-                        <td>{{ "%.2f"|format(row.total_balance) }}</td>
+                        <td>{{ row.income|money }}</td>
+                        <td>{{ row.expenses|money }}</td>
+                        <td class="{% if row.delta > 0 %}delta-positive{% elif row.delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ row.delta|money }}</td>
+                        <td>{{ row.total_balance|money }}</td>
                     </tr>
                 {% endfor %}
                 <tr class="yearly-totals-row">
                     <th scope="row">Total</th>
-                    <td>{{ "%.2f"|format(yearly_total_income) }}</td>
-                    <td>{{ "%.2f"|format(yearly_total_expenses) }}</td>
-                    <td class="{% if yearly_total_delta > 0 %}delta-positive{% elif yearly_total_delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ "%.2f"|format(yearly_total_delta) }}</td>
+                    <td>{{ yearly_total_income|money }}</td>
+                    <td>{{ yearly_total_expenses|money }}</td>
+                    <td class="{% if yearly_total_delta > 0 %}delta-positive{% elif yearly_total_delta < 0 %}delta-negative{% else %}delta-neutral{% endif %}">{{ yearly_total_delta|money }}</td>
                     <td class="muted">—</td>
                 </tr>
             </tbody>

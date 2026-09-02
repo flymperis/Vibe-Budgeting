@@ -13,14 +13,14 @@
                     {% for account in account_balances %}
                         <tr>
                             <td>{{ account.name }}</td>
-                            <td>{{ "%.2f"|format(account.current_balance) }}</td>
+                            <td class="{{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
                 <tfoot>
                     <tr class="home-balances-total-row">
                         <th scope="row">Total (all accounts)</th>
-                        <td>{{ "%.2f"|format(accounts_total_balance) }}</td>
+                        <td class="{{ accounts_total_balance|amount_class }}">{{ accounts_total_balance|money }}</td>
                     </tr>
                 </tfoot>
             </table>
@@ -62,11 +62,11 @@
             <tbody>
                 {% for row in account_transfers %}
                     <tr>
-                        <td>{{ row.transferred_at|txn_day }}</td>
-                        <td>{{ row.from_account_name }}</td>
-                        <td>{{ row.to_account_name }}</td>
-                        <td class="transfer-amt-col">{{ "%.2f"|format(row.amount) }}</td>
-                        <td>{{ row.notes }}</td>
+                        <td data-label="Date">{{ row.transferred_at|txn_day }}</td>
+                        <td data-label="From">{{ row.from_account_name }}</td>
+                        <td data-label="To">{{ row.to_account_name }}</td>
+                        <td class="transfer-amt-col" data-label="Amount">{{ row.amount|money }}</td>
+                        <td data-label="Notes">{{ row.notes }}</td>
                         <td class="transfer-actions">
                             <form action="{{ url_for('accounts.delete_transfer', transfer_id=row.id) }}" method="post">
                                 <input name="month" type="hidden" value="{{ month_filter }}">

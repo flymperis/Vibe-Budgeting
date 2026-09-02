@@ -6,16 +6,16 @@
                 <div class="stats crypto-summary-cards">
                     <div class="card">
                         <p>Portfolio Value</p>
-                        <strong>{{ "%.2f"|format(crypto_total_value) }} €</strong>
+                        <strong>{{ crypto_total_value|money }}</strong>
                     </div>
                     <div class="card">
                         <p>Total Invested</p>
-                        <strong>{{ "%.2f"|format(crypto_total_invested) }} €</strong>
+                        <strong>{{ crypto_total_invested|money }}</strong>
                     </div>
                     <div class="card">
                         <p>P&L</p>
                         <strong class="{% if crypto_total_pnl >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">
-                            {{ "%+.2f"|format(crypto_total_pnl) }} €
+                            {{ crypto_total_pnl|money("€", true) }} 
                             {% if crypto_total_invested > 0 %}({{ "%+.1f"|format(crypto_total_pnl_pct) }}%){% endif %}
                         </strong>
                     </div>
@@ -45,15 +45,15 @@
                         <tbody>
                             {% for h in crypto_holdings %}
                             <tr>
-                                <td>
+                                <td data-label="Coin">
                                     <strong>{{ h.coin_symbol }}</strong>
                                     <span class="muted crypto-coin-name">{{ h.coin_name }}</span>
                                 </td>
-                                <td class="crypto-num-col">{{ "%.6g"|format(h.quantity) }}</td>
-                                <td class="crypto-num-col">{{ "%.2f"|format(h.avg_buy_price) }}</td>
-                                <td class="crypto-num-col">
+                                <td class="crypto-num-col" data-label="Quantity">{{ "%.6g"|format(h.quantity) }}</td>
+                                <td class="crypto-num-col" data-label="Avg Buy">{{ h.avg_buy_price|money }}</td>
+                                <td class="crypto-num-col" data-label="Price">
                                     {% if h.current_price is not none %}
-                                        {{ "%.2f"|format(h.current_price) }}
+                                        {{ h.current_price|money }}
                                         {% if h.change_24h is not none %}
                                             <span class="crypto-change {% if h.change_24h >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">{{ "%+.1f"|format(h.change_24h) }}%</span>
                                         {% endif %}
@@ -61,12 +61,12 @@
                                         <span class="muted">N/A</span>
                                     {% endif %}
                                 </td>
-                                <td class="crypto-num-col">
-                                    {% if h.current_value is not none %}{{ "%.2f"|format(h.current_value) }}{% else %}<span class="muted">N/A</span>{% endif %}
+                                <td class="crypto-num-col" data-label="Value">
+                                    {% if h.current_value is not none %}{{ h.current_value|money }}{% else %}<span class="muted">N/A</span>{% endif %}
                                 </td>
-                                <td class="crypto-num-col {% if h.pnl is not none and h.pnl >= 0 %}crypto-pnl-positive{% elif h.pnl is not none %}crypto-pnl-negative{% endif %}">
+                                <td class="crypto-num-col {% if h.pnl is not none and h.pnl >= 0 %}crypto-pnl-positive{% elif h.pnl is not none %}crypto-pnl-negative{% endif %}" data-label="P&L">
                                     {% if h.pnl is not none %}
-                                        {{ "%+.2f"|format(h.pnl) }}
+                                        {{ h.pnl|money("€", true) }}
                                         <span class="crypto-change">({{ "%+.1f"|format(h.pnl_pct) }}%)</span>
                                     {% else %}
                                         <span class="muted">N/A</span>
@@ -159,14 +159,14 @@
                         <tbody>
                             {% for tx in crypto_transactions %}
                             <tr>
-                                <td class="cell-date">{{ tx.transacted_at|txn_day }}</td>
-                                <td><span class="crypto-tx-badge crypto-tx-{{ tx.tx_type }}">{{ tx.tx_type|upper }}</span></td>
-                                <td><strong>{{ tx.coin_symbol|upper }}</strong></td>
-                                <td class="crypto-num-col">{{ "%.6g"|format(tx.quantity) }}</td>
-                                <td class="crypto-num-col">{{ "%.2f"|format(tx.price_per_unit) }}</td>
-                                <td class="crypto-num-col">{{ "%.2f"|format(tx.fee) }}</td>
-                                <td class="crypto-num-col">{{ "%.2f"|format(tx.quantity * tx.price_per_unit + tx.fee) }}</td>
-                                <td>{{ tx.exchange }}</td>
+                                <td class="cell-date" data-label="Date">{{ tx.transacted_at|txn_day }}</td>
+                                <td data-label="Type"><span class="crypto-tx-badge crypto-tx-{{ tx.tx_type }}">{{ tx.tx_type|upper }}</span></td>
+                                <td data-label="Coin"><strong>{{ tx.coin_symbol|upper }}</strong></td>
+                                <td class="crypto-num-col" data-label="Qty">{{ "%.6g"|format(tx.quantity) }}</td>
+                                <td class="crypto-num-col" data-label="Price">{{ tx.price_per_unit|money }}</td>
+                                <td class="crypto-num-col" data-label="Fee">{{ tx.fee|money }}</td>
+                                <td class="crypto-num-col" data-label="Total">{{ (tx.quantity * tx.price_per_unit + tx.fee)|money }}</td>
+                                <td data-label="Exchange">{{ tx.exchange }}</td>
                                 <td class="cell-actions">
                                     <div class="action-stack">
                                         <details class="edit-details">
@@ -255,16 +255,16 @@
                 <div class="stats crypto-summary-cards">
                     <div class="card">
                         <p>Portfolio Value</p>
-                        <strong>${{ "%.2f"|format(stock_total_value) }}</strong>
+                        <strong>{{ stock_total_value|money("$") }}</strong>
                     </div>
                     <div class="card">
                         <p>Total Invested</p>
-                        <strong>${{ "%.2f"|format(stock_total_invested) }}</strong>
+                        <strong>{{ stock_total_invested|money("$") }}</strong>
                     </div>
                     <div class="card">
                         <p>P&L</p>
                         <strong class="{% if stock_total_pnl >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">
-                            {{ "%+.2f"|format(stock_total_pnl) }} $
+                            {{ stock_total_pnl|money("$", true) }} 
                             {% if stock_total_invested > 0 %}({{ "%+.1f"|format(stock_total_pnl_pct) }}%){% endif %}
                         </strong>
                     </div>
@@ -294,16 +294,16 @@
                         <tbody>
                             {% for h in stock_holdings %}
                             <tr>
-                                <td>
+                                <td data-label="Instrument">
                                     <strong>{{ h.ticker }}</strong>
                                     <span class="muted crypto-coin-name">{{ h.instrument_name }}</span>
                                     <span class="muted crypto-coin-name">{{ h.symbol }}</span>
                                 </td>
-                                <td class="crypto-num-col">{{ "%.4g"|format(h.quantity) }}</td>
-                                <td class="crypto-num-col">${{ "%.2f"|format(h.avg_buy_price) }}</td>
-                                <td class="crypto-num-col">
+                                <td class="crypto-num-col" data-label="Shares">{{ "%.4g"|format(h.quantity) }}</td>
+                                <td class="crypto-num-col" data-label="Avg Buy">{{ h.avg_buy_price|money("$") }}</td>
+                                <td class="crypto-num-col" data-label="Price">
                                     {% if h.current_price is not none %}
-                                        ${{ "%.2f"|format(h.current_price) }}
+                                        {{ h.current_price|money("$") }}
                                         {% if h.change_24h is not none %}
                                             <span class="crypto-change {% if h.change_24h >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">{{ "%+.1f"|format(h.change_24h) }}%</span>
                                         {% endif %}
@@ -311,12 +311,12 @@
                                         <span class="muted">N/A</span>
                                     {% endif %}
                                 </td>
-                                <td class="crypto-num-col">
-                                    {% if h.current_value is not none %}${{ "%.2f"|format(h.current_value) }}{% else %}<span class="muted">N/A</span>{% endif %}
+                                <td class="crypto-num-col" data-label="Value">
+                                    {% if h.current_value is not none %}{{ h.current_value|money("$") }}{% else %}<span class="muted">N/A</span>{% endif %}
                                 </td>
-                                <td class="crypto-num-col {% if h.pnl is not none and h.pnl >= 0 %}crypto-pnl-positive{% elif h.pnl is not none %}crypto-pnl-negative{% endif %}">
+                                <td class="crypto-num-col {% if h.pnl is not none and h.pnl >= 0 %}crypto-pnl-positive{% elif h.pnl is not none %}crypto-pnl-negative{% endif %}" data-label="P&L">
                                     {% if h.pnl is not none %}
-                                        {{ "%+.2f"|format(h.pnl) }} $
+                                        {{ h.pnl|money("$", true) }} 
                                         <span class="crypto-change">({{ "%+.1f"|format(h.pnl_pct) }}%)</span>
                                     {% else %}
                                         <span class="muted">N/A</span>
@@ -409,14 +409,14 @@
                         <tbody>
                             {% for tx in stock_transactions %}
                             <tr>
-                                <td class="cell-date">{{ tx.transacted_at|txn_day }}</td>
-                                <td><span class="crypto-tx-badge crypto-tx-{{ tx.tx_type }}">{{ tx.tx_type|upper }}</span></td>
-                                <td><strong>{{ tx.ticker }}</strong> <span class="muted">{{ tx.symbol }}</span></td>
-                                <td class="crypto-num-col">{{ "%.4g"|format(tx.quantity) }}</td>
-                                <td class="crypto-num-col">{{ "%.2f"|format(tx.price_per_unit) }}</td>
-                                <td class="crypto-num-col">{{ "%.2f"|format(tx.fee) }}</td>
-                                <td class="crypto-num-col">{{ "%.2f"|format(tx.quantity * tx.price_per_unit + tx.fee) }}</td>
-                                <td>{{ tx.broker }}</td>
+                                <td class="cell-date" data-label="Date">{{ tx.transacted_at|txn_day }}</td>
+                                <td data-label="Type"><span class="crypto-tx-badge crypto-tx-{{ tx.tx_type }}">{{ tx.tx_type|upper }}</span></td>
+                                <td data-label="Symbol"><strong>{{ tx.ticker }}</strong> <span class="muted">{{ tx.symbol }}</span></td>
+                                <td class="crypto-num-col" data-label="Shares">{{ "%.4g"|format(tx.quantity) }}</td>
+                                <td class="crypto-num-col" data-label="Price">{{ tx.price_per_unit|money }}</td>
+                                <td class="crypto-num-col" data-label="Fee">{{ tx.fee|money }}</td>
+                                <td class="crypto-num-col" data-label="Total">{{ (tx.quantity * tx.price_per_unit + tx.fee)|money("$") }}</td>
+                                <td data-label="Broker">{{ tx.broker }}</td>
                                 <td class="cell-actions">
                                     <div class="action-stack">
                                         <details class="edit-details">

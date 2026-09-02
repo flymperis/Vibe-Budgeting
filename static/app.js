@@ -1,7 +1,10 @@
 (function () {
     const root = document.documentElement;
     const themeToggle = document.getElementById("theme-dark-toggle");
-    const menuButtons = document.querySelectorAll(".menu-item");
+    // Side menu (desktop), "More" sheet entries, and the bottom tab bar
+    // (mobile) all drive the same panels, so they share one handler and stay
+    // in sync via data-target.
+    const menuButtons = document.querySelectorAll(".menu-item, .bottom-nav-item[data-target]");
     const panels = document.querySelectorAll(".panel");
     const savedTheme = localStorage.getItem("theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -312,8 +315,11 @@
     menuButtons.forEach(function (menuButton) {
         menuButton.addEventListener("click", function () {
             const target = menuButton.getAttribute("data-target");
+            // Compare by target, not identity: the same panel is reachable
+            // from the side menu, the bottom bar and the "More" sheet, and all
+            // of them should light up together.
             menuButtons.forEach(function (item) {
-                item.classList.toggle("active", item === menuButton);
+                item.classList.toggle("active", item.getAttribute("data-target") === target);
             });
             panels.forEach(function (panel) {
                 panel.classList.toggle("active", panel.id === target);
@@ -321,7 +327,10 @@
 
             subMenuGroups.forEach(function (group) {
                 const parentBtn = group.previousElementSibling;
-                group.classList.toggle("active", parentBtn && parentBtn === menuButton);
+                group.classList.toggle(
+                    "active",
+                    parentBtn && parentBtn.getAttribute("data-target") === target
+                );
             });
 
             const panelMap = {
@@ -555,6 +564,82 @@
                 closeAll();
             }
         });
+    })();
+
+    (function setupMoreSheet() {
+        const sheet = document.getElementById("more-sheet");
+        const trigger = document.getElementById("more-nav-btn");
+        if (!sheet || !trigger) {
+            return;
+        }
+
+        const MORE_PANELS = [
+            "panel-recurring",
+            "panel-transfer",
+            "panel-summary",
+            "panel-yearly",
+            "panel-investments",
+            "panel-settings",
+        ];
+
+        function close() {
+            sheet.hidden = true;
+            sheet.setAttribute("aria-hidden", "true");
+            trigger.setAttribute("aria-expanded", "false");
+            document.body.classList.remove("home-modal-open");
+        }
+
+        function open() {
+            sheet.hidden = false;
+            sheet.setAttribute("aria-hidden", "false");
+            trigger.setAttribute("aria-expanded", "true");
+            document.body.classList.add("home-modal-open");
+            const first = sheet.querySelector(".menu-item");
+            if (first) {
+                first.focus();
+            }
+        }
+
+        trigger.addEventListener("click", function () {
+            if (sheet.hidden) {
+                open();
+            } else {
+                close();
+            }
+        });
+
+        sheet.querySelectorAll("[data-more-sheet-close]").forEach(function (el) {
+            el.addEventListener("click", close);
+        });
+
+        // tapping the dimmed backdrop closes the sheet
+        sheet.addEventListener("click", function (event) {
+            if (event.target === sheet) {
+                close();
+            }
+        });
+
+        // picking a panel closes the sheet; the shared menu handler has
+        // already switched panels by the time this runs
+        sheet.querySelectorAll(".menu-item").forEach(function (item) {
+            item.addEventListener("click", close);
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && !sheet.hidden) {
+                close();
+            }
+        });
+
+        // Keep "More" highlighted whenever one of its panels is the active one.
+        function syncMoreActive() {
+            const active = document.querySelector(".panel.active");
+            trigger.classList.toggle("active", !!active && MORE_PANELS.indexOf(active.id) !== -1);
+        }
+        document.querySelectorAll(".menu-item, .bottom-nav-item[data-target]").forEach(function (item) {
+            item.addEventListener("click", syncMoreActive);
+        });
+        syncMoreActive();
     })();
 
     (function setupAiModelLoader() {
