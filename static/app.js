@@ -778,6 +778,8 @@
     });
     alignPanels();
 
+    var hoverTimer = null;
+
     function closeAll(except) {
         groups.forEach(function (group) {
             if (group === except) {
@@ -791,6 +793,15 @@
         });
     }
 
+    function open(group) {
+        closeAll(group);
+        group.classList.add("is-open");
+        var btn = group.querySelector(".menu-item");
+        if (btn) {
+            btn.setAttribute("aria-expanded", "true");
+        }
+    }
+
     groups.forEach(function (group) {
         var button = group.querySelector(".menu-item");
         var panel = group.querySelector(".menu-sub-items");
@@ -801,20 +812,26 @@
         button.setAttribute("aria-haspopup", "true");
         button.setAttribute("aria-expanded", "false");
 
+        // Open only — never toggle shut. Clicking the item also switches panel
+        // (handled elsewhere), and closing the menu you just aimed at would
+        // undo the point of clicking it.
         button.addEventListener("click", function () {
-            // The panel-switching handler has already run; only the open state
-            // is ours to manage.
-            var willOpen = !group.classList.contains("is-open");
-            closeAll(group);
-            group.classList.toggle("is-open", willOpen);
-            button.setAttribute("aria-expanded", willOpen ? "true" : "false");
+            open(group);
         });
 
-        // Choosing a section closes the menu.
-        panel.addEventListener("click", function (event) {
-            if (event.target.closest(".menu-sub-item")) {
-                closeAll(null);
-            }
+        // Hover opens too, after a short delay so that sweeping the pointer
+        // across the bar to reach a further item doesn't flash open every menu
+        // it passes over. There is no mouseleave handler on purpose: the menu
+        // stays put until dismissed, so you can move into it and keep clicking.
+        group.addEventListener("mouseenter", function () {
+            clearTimeout(hoverTimer);
+            hoverTimer = setTimeout(function () {
+                open(group);
+            }, 110);
+        });
+
+        group.addEventListener("mouseleave", function () {
+            clearTimeout(hoverTimer);
         });
     });
 

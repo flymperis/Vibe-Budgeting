@@ -856,7 +856,10 @@ table.yearly-table {
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
 }
 
-.menu-group:hover > .menu-sub-items,
+/* Hover deliberately does NOT appear here. The panel is absolutely positioned,
+   so it is outside the group's hover box, and the gap below the button is too
+   — a CSS hover rule closed the menu the moment you moved towards it. Opening
+   is driven by script instead, and nothing closes on mouse-out. */
 .menu-group:focus-within > .menu-sub-items,
 .menu-group.is-open > .menu-sub-items {
     display: grid;
@@ -929,7 +932,6 @@ table.yearly-table {
     transition: transform 0.15s ease;
 }
 
-.menu-group:hover > .menu-item .menu-item-inner::after,
 .menu-group:focus-within > .menu-item .menu-item-inner::after,
 .menu-group.is-open > .menu-item .menu-item-inner::after {
     transform: translateY(1px) rotate(-135deg);
