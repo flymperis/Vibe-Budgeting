@@ -7,7 +7,7 @@ import time
 
 from config import ALLOWED_PANELS, FINNHUB_API_KEY, LIST_PAGE_SIZE, TRANSFER_LOG_LIMIT
 from db import get_connection
-from finance import _empty_expense_pivot, account_balance_at_cutoff, apply_recurring_entries, balance_line_chart_spec, build_monthly_chart_rows, compute_crypto_holdings, compute_stock_holdings, expense_pivot_for_report_year, fetch_account_balances_through, monthly_crypto_portfolio_values_for_year, monthly_stock_portfolio_values_for_year, monthly_total_balances_for_year, portfolio_baseline_before_year
+from finance import _empty_expense_pivot, account_balance_at_cutoff, apply_recurring_entries, balance_line_chart_spec, build_monthly_chart_rows, cash_flow_chart_spec, category_spend_ranking, compute_crypto_holdings, compute_stock_holdings, expense_pivot_for_report_year, fetch_account_balances_through, monthly_cash_flow_for_year, monthly_crypto_portfolio_values_for_year, monthly_stock_portfolio_values_for_year, monthly_total_balances_for_year, portfolio_baseline_before_year
 from helpers import month_bounds_dates, normalize_investments_section, normalize_list_page, normalize_optional_category_id, normalize_report_account, normalize_reports_section, normalize_settings_section, normalize_year, resolve_list_month_filter, resolve_month_filter_from_request
 from prices import PRICE_CACHE_TTL, _price_cache, _stock_price_cache, fetch_coingecko_prices, fetch_finnhub_quotes
 
@@ -438,6 +438,11 @@ def index():
     crypto_chart_spec = balance_line_chart_spec([])
     stock_chart_spec = balance_line_chart_spec([])
     reports_expenses_table = _empty_expense_pivot()
+    reports_cash_flow = None
+    reports_cash_flow_spec = cash_flow_chart_spec([])
+    reports_categories = None
+    reports_crypto_value = 0.0
+    reports_stock_value = 0.0
     if active_panel == "reports":
         jan1_this_year = f"{report_year:04d}-01-01"
         prev_balance_total = account_balance_at_cutoff(
@@ -455,6 +460,9 @@ def index():
         )
         report_chart_spec = balance_line_chart_spec(report_balance_rows)
         reports_expenses_table = expense_pivot_for_report_year(conn, report_year, uid)
+        reports_cash_flow = monthly_cash_flow_for_year(conn, report_year, uid)
+        reports_cash_flow_spec = cash_flow_chart_spec(reports_cash_flow["months"])
+        reports_categories = category_spend_ranking(conn, report_year, uid)
 
         crypto_baseline = portfolio_baseline_before_year(
             conn, crypto_txs, report_year, today_d, compute_crypto_holdings, "coin_id", "crypto"
@@ -477,6 +485,19 @@ def index():
             stock_monthly, report_year, baseline=stock_baseline
         )
         stock_chart_spec = balance_line_chart_spec(stock_chart_rows)
+
+        # Portfolio value as at the end of the reported year, or as at today
+        # when that year is still running — taking the last element would report
+        # an unreached December for the current year.
+        # Crypto is EUR and stocks are USD; the app has no FX rate, so these are
+        # never summed into a single figure.
+        asset_idx = (today_d.month - 1) if report_year == today_d.year else 11
+        reports_crypto_value = (
+            crypto_monthly[asset_idx] if len(crypto_monthly) > asset_idx else 0.0
+        )
+        reports_stock_value = (
+            stock_monthly[asset_idx] if len(stock_monthly) > asset_idx else 0.0
+        )
 
     user_integrations = integrations.get_user_integrations(conn, uid)
     telegram_server = telegram_bot.server_config_for_form(conn)
@@ -544,10 +565,16 @@ def index():
         report_account_label=report_account_label,
         report_live_balance=report_live_balance,
         report_today_month=calendar.month_name[today_d.month],
+        report_current_year=today_d.year,
         report_chart_spec=report_chart_spec,
         crypto_chart_spec=crypto_chart_spec,
         stock_chart_spec=stock_chart_spec,
         reports_expenses_table=reports_expenses_table,
+        reports_cash_flow=reports_cash_flow,
+        reports_cash_flow_spec=reports_cash_flow_spec,
+        reports_categories=reports_categories,
+        reports_crypto_value=reports_crypto_value,
+        reports_stock_value=reports_stock_value,
         recurring_entries=recurring_entries,
         investments_section=investments_section,
         crypto_holdings=crypto_holdings_raw,

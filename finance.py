@@ -427,6 +427,258 @@ def expense_pivot_for_report_year(conn, year: int, user_id: int) -> dict:
         "avg_monthly_total": avg_monthly_total,
     }
 
+def monthly_cash_flow_for_year(conn, year: int, user_id: int) -> dict:
+    """Income, spending and net per calendar month, plus the year's savings rate.
+
+    Expense amounts are stored signed — negative is spending, positive is a
+    refund — so the monthly expense figure is already net of refunds and the
+    net is simply income + expenses. Real ledgers contain both signs, which is
+    why this does not take absolute values anywhere.
+    """
+    uid = int(user_id)
+    y0 = f"{year:04d}-01-01"
+    y1 = f"{year + 1:04d}-01-01"
+
+    income_by_month = [0.0] * 12
+    expense_by_month = [0.0] * 12
+
+    for row in conn.execute(
+        """
+        SELECT CAST(strftime('%m', received_at) AS INTEGER) AS m, SUM(amount) AS total
+        FROM income_entries
+        WHERE user_id = ? AND date(received_at) >= date(?) AND date(received_at) < date(?)
+        GROUP BY m
+        """,
+        (uid, y0, y1),
+    ).fetchall():
+        m = int(row["m"])
+        if 1 <= m <= 12:
+            income_by_month[m - 1] = float(row["total"] or 0.0)
+
+    for row in conn.execute(
+        """
+        SELECT CAST(strftime('%m', spent_at) AS INTEGER) AS m, SUM(amount) AS total
+        FROM expenses
+        WHERE user_id = ? AND date(spent_at) >= date(?) AND date(spent_at) < date(?)
+        GROUP BY m
+        """,
+        (uid, y0, y1),
+    ).fetchall():
+        m = int(row["m"])
+        if 1 <= m <= 12:
+            expense_by_month[m - 1] = float(row["total"] or 0.0)
+
+    months = []
+    for i in range(12):
+        income = income_by_month[i]
+        expenses = expense_by_month[i]
+        months.append(
+            {
+                "month": i + 1,
+                "label": calendar.month_name[i + 1],
+                "short": calendar.month_abbr[i + 1],
+                "income": income,
+                "expenses": expenses,
+                "net": income + expenses,
+            }
+        )
+
+    total_income = sum(income_by_month)
+    total_expenses = sum(expense_by_month)
+    total_net = total_income + total_expenses
+    # Only meaningful against income actually received; without it the ratio
+    # would divide by zero or invert sign on a spend-only year.
+    savings_rate = (total_net / total_income * 100.0) if total_income > 0 else None
+    active = [m for m in months if m["income"] or m["expenses"]]
+
+    best = max(active, key=lambda m: m["net"]) if active else None
+    worst = min(active, key=lambda m: m["net"]) if active else None
+
+    return {
+        "months": months,
+        "total_income": total_income,
+        "total_expenses": total_expenses,
+        "total_net": total_net,
+        "savings_rate": savings_rate,
+        "active_month_count": len(active),
+        "avg_income": (total_income / len(active)) if active else None,
+        "avg_expenses": (total_expenses / len(active)) if active else None,
+        "avg_net": (total_net / len(active)) if active else None,
+        "best_month": best,
+        "worst_month": worst,
+    }
+
+def category_spend_ranking(conn, year: int, user_id: int) -> dict:
+    """Expense categories for the year, biggest outflow first, against last year.
+
+    Ranking is by outflow, so a category that nets positive (refunds exceeded
+    spending) sorts last rather than topping the list. Share is computed against
+    total outflow only, so refund categories cannot push the shares past 100%.
+    """
+    uid = int(user_id)
+
+    def totals_for(y):
+        out = {}
+        for row in conn.execute(
+            """
+            SELECT c.name AS name, SUM(e.amount) AS total
+            FROM expenses e
+            JOIN categories c ON c.id = e.category_id AND c.user_id = e.user_id
+            WHERE e.user_id = ? AND date(e.spent_at) >= date(?) AND date(e.spent_at) < date(?)
+            GROUP BY c.name
+            """,
+            (uid, f"{y:04d}-01-01", f"{y + 1:04d}-01-01"),
+        ).fetchall():
+            out[str(row["name"])] = float(row["total"] or 0.0)
+        return out
+
+    current = totals_for(year)
+    previous = totals_for(year - 1)
+
+    outflow_total = sum(-v for v in current.values() if v < 0)
+
+    rows = []
+    for name, total in current.items():
+        prev = previous.get(name)
+        outflow = -total if total < 0 else 0.0
+        rows.append(
+            {
+                "name": name,
+                "total": total,
+                "prev_total": prev,
+                # None when there is nothing to compare against, so the template
+                # can say "new" instead of showing a meaningless +100%.
+                "delta": (total - prev) if prev is not None else None,
+                "share": (outflow / outflow_total * 100.0) if outflow_total > 0 else 0.0,
+            }
+        )
+
+    rows.sort(key=lambda r: r["total"])
+    return {
+        "rows": rows,
+        "outflow_total": outflow_total,
+        "prev_year": year - 1,
+        "has_previous": bool(previous),
+    }
+
+def cash_flow_chart_spec(months: list, *, width: float = 720, height: float = 300) -> dict:
+    """Income above the axis, spending below it, net as a line across the top.
+
+    A shared zero baseline is the point: it makes months where spending
+    outran income readable at a glance, which a balance line cannot show.
+    """
+    ml, mr, mt, mb = 58.0, 18.0, 24.0, 46.0
+    pw = width - ml - mr
+    ph = height - mt - mb
+    month_label_y = height - 12.0
+
+    empty = {
+        "w": width,
+        "h": height,
+        "bars": [],
+        "net_points": "",
+        "net_dots": [],
+        "month_labels": [],
+        "y_ticks": [],
+        "zero_y": mt + ph,
+        "plot_ml": ml,
+        "plot_mt": mt,
+        "plot_pw": pw,
+        "plot_ph": ph,
+        "month_label_y": month_label_y,
+    }
+    if not months or not any(m["income"] or m["expenses"] for m in months):
+        return empty
+
+    incomes = [float(m["income"]) for m in months]
+    expenses = [float(m["expenses"]) for m in months]
+    nets = [float(m["net"]) for m in months]
+
+    y_hi = max([0.0] + incomes + nets)
+    y_lo = min([0.0] + expenses + nets)
+    span = y_hi - y_lo
+    if span <= 0:
+        return empty
+    pad = span * 0.08
+    y_max = y_hi + pad
+    y_min = y_lo - pad
+    y_rng = y_max - y_min
+
+    def y_of(v):
+        return mt + ph - ((v - y_min) / y_rng) * ph
+
+    zero_y = y_of(0.0)
+    slot = pw / 12.0
+    bar_w = min(slot * 0.32, 18.0)
+    gap = 2.0
+
+    bars = []
+    net_pts = []
+    net_dots = []
+    month_labels = []
+
+    for i, m in enumerate(months):
+        centre = ml + slot * (i + 0.5)
+        income = float(m["income"])
+        expense = float(m["expenses"])
+        net = float(m["net"])
+
+        if income:
+            top = y_of(income)
+            bars.append({
+                "x": round(centre - bar_w - gap / 2, 1),
+                "y": round(min(top, zero_y), 1),
+                "w": round(bar_w, 1),
+                "h": round(abs(zero_y - top), 1),
+                "kind": "income",
+                "title": f"{m['label']} income: {income:,.2f}",
+            })
+        if expense:
+            bottom = y_of(expense)
+            bars.append({
+                "x": round(centre + gap / 2, 1),
+                "y": round(min(bottom, zero_y), 1),
+                "w": round(bar_w, 1),
+                "h": round(abs(bottom - zero_y), 1),
+                "kind": "expense",
+                "title": f"{m['label']} spending: {expense:,.2f}",
+            })
+
+        # Only months with activity get a net point. Without this the line runs
+        # flat along zero through the rest of the year, which reads as "broke
+        # even" rather than "hasn't happened yet".
+        if income or expense:
+            ny = y_of(net)
+            net_pts.append(f"{centre:.1f},{ny:.1f}")
+            net_dots.append({
+                "cx": round(centre, 1),
+                "cy": round(ny, 1),
+                "title": f"{m['label']} net: {net:+,.2f}",
+            })
+        month_labels.append({"x": round(centre, 1), "text": m["short"]})
+
+    y_ticks = [
+        {"x": 4, "y": round(mt + 8, 1), "text": f"{y_max:,.0f}"},
+        {"x": 4, "y": round(zero_y, 1), "text": "0"},
+        {"x": 4, "y": round(mt + ph - 4, 1), "text": f"{y_min:,.0f}"},
+    ]
+
+    return {
+        "w": width,
+        "h": height,
+        "bars": bars,
+        "net_points": " ".join(net_pts),
+        "net_dots": net_dots,
+        "month_labels": month_labels,
+        "y_ticks": y_ticks,
+        "zero_y": round(zero_y, 1),
+        "plot_ml": ml,
+        "plot_mt": mt,
+        "plot_pw": pw,
+        "plot_ph": ph,
+        "month_label_y": month_label_y,
+    }
+
 def compute_crypto_holdings(transactions):
     holdings: dict = {}
     for tx in transactions:

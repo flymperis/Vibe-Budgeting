@@ -188,18 +188,20 @@
         }
         if (panelKey === "reports") {
             const activeReportsSub = document.querySelector('.menu-sub-item.active[data-target="panel-reports"]');
-            const reportsSecKey = activeReportsSub ? activeReportsSub.getAttribute("data-section-key") : "bank";
+            const reportsSecKey = activeReportsSub ? activeReportsSub.getAttribute("data-section-key") : "overview";
             params.set("reports_section", reportsSecKey);
+            // Every report section carries its own year picker; they are kept
+            // in step by the server, so whichever is on screen is authoritative.
             const reportsYear =
-                document.getElementById("reports-year-select") ||
-                document.getElementById("reports-crypto-year-select") ||
-                document.getElementById("reports-stocks-year-select");
+                document.getElementById("reports-year-" + reportsSecKey) ||
+                document.querySelector(".reports-section.active select[name='report_year']") ||
+                document.querySelector("select[name='report_year']");
             const fallbackReportYear = document.body.dataset.reportYear || "";
             const ry = reportsYear && reportsYear.value ? reportsYear.value : String(fallbackReportYear);
             if (ry) {
                 params.set("report_year", ry);
             }
-            const reportAccount = document.getElementById("reports-account-select");
+            const reportAccount = document.querySelector("select[name='report_account']");
             if (reportAccount && reportAccount.value) {
                 params.set("report_account", reportAccount.value);
             } else {
@@ -881,5 +883,24 @@
         if (btn) {
             btn.focus();
         }
+    });
+})();
+
+/* Report filters apply on change.
+   Replaces an inline <script> that lived in the reports template and only knew
+   about the bank section's two selects; this covers every section's pickers. */
+(function () {
+    document.querySelectorAll(".reports-autosubmit").forEach(function (select) {
+        select.addEventListener("change", function () {
+            var form = select.closest("form");
+            if (!form) {
+                return;
+            }
+            if (typeof form.requestSubmit === "function") {
+                form.requestSubmit();
+            } else {
+                form.submit();
+            }
+        });
     });
 })();

@@ -55,7 +55,16 @@ SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migrat
 
 INVESTMENTS_SECTIONS = {"crypto", "stocks"}
 
-REPORTS_SECTIONS = {"bank", "crypto", "stocks"}
+REPORTS_SECTIONS = {"overview", "spending", "investments"}
+
+# Old section names, kept so existing links and bookmarks still land somewhere
+# sensible: the bank chart now lives on Overview, and the two portfolio charts
+# share the Investments section instead of a tab each.
+LEGACY_REPORTS_SECTIONS = {
+    "bank": "overview",
+    "crypto": "investments",
+    "stocks": "investments",
+}
 
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "").strip()
 

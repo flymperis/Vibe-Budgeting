@@ -2778,3 +2778,276 @@ form + form {
         font-size: 1.15rem;
     }
 }
+
+/* ==========================================================================
+   Reports
+   ========================================================================== */
+
+.reports-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.reports-head h2 {
+    margin: 0;
+}
+
+.reports-head .reports-year-picker {
+    margin-bottom: 0;
+}
+
+/* --- Headline numbers ---------------------------------------------------- */
+
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.7rem;
+    margin: 1rem 0 1.25rem;
+}
+
+.kpi {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.85rem 0.9rem;
+    background: var(--surface-alt);
+    border: 1px solid var(--border-c);
+    border-radius: 12px;
+}
+
+.kpi-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.kpi-value {
+    font-size: 1.4rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+.kpi-sub {
+    font-size: 0.78rem;
+    color: var(--muted);
+}
+
+/* --- Asset mix ----------------------------------------------------------- */
+
+.asset-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem;
+    margin: 0.75rem 0;
+}
+
+.asset-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.75rem 0.85rem;
+    background: var(--surface-alt);
+    border: 1px solid var(--border-c);
+    border-radius: 12px;
+}
+
+.asset-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.asset-value {
+    font-size: 1.2rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.asset-note {
+    font-size: 0.72rem;
+    color: var(--muted);
+}
+
+/* --- Cash flow chart ----------------------------------------------------- */
+
+.cashflow-chart {
+    width: 100%;
+    height: auto;
+}
+
+.cashflow-zero-line {
+    stroke: var(--muted);
+    stroke-width: 1;
+    opacity: 0.5;
+}
+
+.cashflow-bar-income {
+    fill: var(--pos);
+}
+
+.cashflow-bar-expense {
+    fill: var(--neg);
+}
+
+.cashflow-bar {
+    opacity: 0.85;
+}
+
+.cashflow-bar:hover {
+    opacity: 1;
+}
+
+.cashflow-net-line {
+    stroke: var(--accent);
+    stroke-width: 2;
+}
+
+.cashflow-net-dot {
+    fill: var(--accent);
+}
+
+.cashflow-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.75rem;
+    margin: 0.25rem 0 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+}
+
+.cashflow-key {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 3px;
+    margin-right: 0.15rem;
+    vertical-align: -1px;
+}
+
+.cashflow-key-income { background: var(--pos); }
+.cashflow-key-expense { background: var(--neg); }
+.cashflow-key-net { background: var(--accent); }
+
+.reports-callout {
+    padding: 0.6rem 0.75rem;
+    background: var(--surface-alt);
+    border: 1px solid var(--border-c);
+    border-radius: 10px;
+}
+
+/* --- Category ranking ---------------------------------------------------- */
+
+.cat-rank {
+    list-style: none;
+    margin: 0.75rem 0 1.5rem;
+    padding: 0;
+    display: grid;
+    gap: 0.7rem;
+}
+
+.cat-rank-row {
+    display: grid;
+    gap: 0.3rem;
+}
+
+.cat-rank-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.cat-rank-name {
+    font-weight: 600;
+}
+
+.cat-rank-amount {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cat-rank-bar-wrap {
+    height: 0.5rem;
+    background: var(--surface-alt);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.cat-rank-bar {
+    height: 100%;
+    min-width: 2px;
+    background: var(--accent);
+    border-radius: 999px;
+}
+
+.cat-rank-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.cat-rank-delta {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cat-rank-new {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-style: italic;
+}
+
+@media (max-width: 900px) {
+    .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .kpi-value {
+        font-size: 1.15rem;
+    }
+
+    .asset-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.4rem;
+    }
+
+    .asset-card {
+        padding: 0.55rem 0.5rem;
+    }
+
+    .asset-value {
+        font-size: 0.95rem;
+    }
+
+    /* Stack the title and the filters, and let the filter form use the full
+       width instead of shrink-wrapping to the Apply button. The bottom margin
+       offsets .small-hint's negative margin-top, which is meant to tuck the
+       hint under an h2 and otherwise pulls it onto the Apply button. */
+    .reports-head {
+        flex-direction: column;
+        align-items: stretch;
+        margin-bottom: 0.85rem;
+    }
+
+    .reports-head .reports-year-picker {
+        width: 100%;
+    }
+
+    /* The month table is a card list here like every other list table. */
+    .reports-months-table {
+        min-width: 0;
+    }
+}

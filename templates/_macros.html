@@ -83,6 +83,44 @@
 {%- endif -%}
 {%- endmacro %}
 
+{% macro reports_cash_flow_chart(spec, fig_caption, aria_label) -%}
+<div class="reports-chart-wrap">
+    <figure class="reports-chart-figure">
+        <figcaption class="sr-only">{{ fig_caption }}</figcaption>
+        <svg class="cashflow-chart" viewBox="0 0 {{ spec.w }} {{ spec.h }}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="{{ aria_label }}">
+            <rect class="reports-chart-plot-bg" x="{{ spec.plot_ml }}" y="{{ spec.plot_mt }}" width="{{ spec.plot_pw }}" height="{{ spec.plot_ph }}" rx="4" />
+            {% for t in spec.y_ticks %}
+            <text class="reports-chart-y-tick" x="{{ t.x }}" y="{{ t.y }}" dominant-baseline="middle" font-size="12">{{ t.text }}</text>
+            {% endfor %}
+            {% if spec.bars %}
+            <line class="cashflow-zero-line" x1="{{ spec.plot_ml }}" y1="{{ spec.zero_y }}" x2="{{ spec.plot_ml + spec.plot_pw }}" y2="{{ spec.zero_y }}" />
+            {% endif %}
+            {% for b in spec.bars %}
+            <rect class="cashflow-bar cashflow-bar-{{ b.kind }}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="2">
+                <title>{{ b.title }}</title>
+            </rect>
+            {% endfor %}
+            {% if spec.net_points %}
+            <polyline class="cashflow-net-line" fill="none" stroke-linecap="round" stroke-linejoin="round" points="{{ spec.net_points }}" />
+            {% endif %}
+            {% for d in spec.net_dots %}
+            <circle class="cashflow-net-dot" cx="{{ d.cx }}" cy="{{ d.cy }}" r="3.5">
+                <title>{{ d.title }}</title>
+            </circle>
+            {% endfor %}
+            {% for m in spec.month_labels %}
+            <text class="reports-chart-month" x="{{ m.x }}" y="{{ spec.month_label_y }}" dominant-baseline="middle" text-anchor="middle" font-size="11">{{ m.text }}</text>
+            {% endfor %}
+        </svg>
+    </figure>
+    <p class="cashflow-legend">
+        <span class="cashflow-key cashflow-key-income"></span> Income
+        <span class="cashflow-key cashflow-key-expense"></span> Spending
+        <span class="cashflow-key cashflow-key-net"></span> Net
+    </p>
+</div>
+{%- endmacro %}
+
 {% macro reports_balance_chart(spec, fig_caption, aria_label) -%}
 <div class="reports-chart-wrap">
     <figure class="reports-chart-figure">

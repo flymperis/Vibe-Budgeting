@@ -4,7 +4,7 @@ from urllib.parse import quote, urlparse
 import integrations
 import secrets
 
-from config import ALLOWED_PANELS, INVESTMENTS_SECTIONS, REPORTS_SECTIONS, SETTINGS_SECTIONS
+from config import ALLOWED_PANELS, INVESTMENTS_SECTIONS, LEGACY_REPORTS_SECTIONS, REPORTS_SECTIONS, SETTINGS_SECTIONS
 
 
 def get_csrf_token() -> str:
@@ -183,7 +183,9 @@ def normalize_txn_day_from_form(raw):
 
 def normalize_reports_section(value):
     section = (value or "").strip().lower()
-    return section if section in REPORTS_SECTIONS else "bank"
+    if section in REPORTS_SECTIONS:
+        return section
+    return LEGACY_REPORTS_SECTIONS.get(section, "overview")
 
 def normalize_report_account(value, conn, user_id):
     raw = (value or "").strip().lower()
