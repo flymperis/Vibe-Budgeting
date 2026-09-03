@@ -5,4 +5,21 @@ __pycache__
 .git
 .venv
 venv
-database.db
+
+# Any SQLite file in the build context. The old rule named database.db only,
+# which let local scratch databases (local-check.db and friends) be copied into
+# the image. The real database lives on the ./budget-data volume, never here.
+*.db
+*.db-wal
+*.db-shm
+budget-data/
+
+# Dev-only CSS toolchain. static/tailwind.css is committed and served as-is,
+# so the compiler and its source are not needed at runtime.
+tools/
+static/src/
+
+# Not needed to run the app.
+tests/
+requirements-dev.txt
+.github
