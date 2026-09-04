@@ -30,6 +30,35 @@ def _prepare_sqlite_storage():
             "Docker often creates a directory when a single-file bind mount source was missing."
         ) from None
 
+BUSY_TIMEOUT_MS = 30000
+
+_wal_attempted = False
+
+def _try_enable_wal(conn):
+    """Put the database file into WAL so readers stop blocking writers.
+
+    journal_mode is a property of the file rather than the connection, so this
+    only has to succeed once — the flag stops every later request paying for
+    the pragma, and stops a failing filesystem logging on every request.
+
+    Networked filesystems (PythonAnywhere's, NFS, SMB) often cannot provide the
+    shared-memory file WAL needs, and there the pragma either errors or quietly
+    reports another mode. That is survivable: rollback-journal still works, just
+    with less concurrency, so this never raises.
+    """
+    global _wal_attempted
+    if _wal_attempted:
+        return
+    _wal_attempted = True
+    try:
+        row = conn.execute("PRAGMA journal_mode = WAL").fetchone()
+    except sqlite3.Error as exc:
+        print(f"[vibe-budgeting] WAL unavailable ({exc}); staying on rollback journal", file=sys.stderr)
+        return
+    mode = str(row[0]).lower() if row else "unknown"
+    if mode != "wal":
+        print(f"[vibe-budgeting] WAL refused by filesystem; journal_mode is {mode!r}", file=sys.stderr)
+
 def get_connection():
     try:
         conn = sqlite3.connect(DB_PATH, timeout=30.0)
@@ -41,6 +70,10 @@ def get_connection():
         ) from exc
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # connect(timeout=) already sets this, but stating it makes the value
+    # visible to PRAGMA busy_timeout and so assertable in a test.
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+    _try_enable_wal(conn)
     return conn
 
 def _column_names(conn, table):
