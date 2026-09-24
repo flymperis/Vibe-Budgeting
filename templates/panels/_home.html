@@ -1,4 +1,4 @@
-{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart %}
+{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart, account_avatar %}
 <section class="panel {% if active_panel == 'home' %}active{% endif %}" id="panel-home">
     <h2 class="home-title">{{ month_heading }}</h2>
     <p class="muted small-hint home-intro">
@@ -11,18 +11,12 @@
         <button type="submit">Apply</button>
     </form>
 
-    <div class="stats consolidated-summary-cards home-summary-cards">
-        <div class="card">
-            <p>Income</p>
-            <strong>{{ total_income|money }}</strong>
-        </div>
-        <div class="card">
-            <p>Expenses</p>
-            <strong>{{ total_expenses|money }}</strong>
-        </div>
-        <div class="card">
-            <p>Net</p>
-            <strong class="{{ net_balance|amount_class }}">{{ net_balance|money }}</strong>
+    <div class="home-summary-hero">
+        <p class="home-summary-hero-label">Net</p>
+        <strong class="home-summary-hero-amount {{ net_balance|amount_class }}">{{ net_balance|money }}</strong>
+        <div class="home-summary-hero-pills">
+            <span class="home-summary-pill home-summary-pill-income">Income <b>{{ total_income|money }}</b></span>
+            <span class="home-summary-pill home-summary-pill-expense">Expenses <b>{{ total_expenses|money }}</b></span>
         </div>
     </div>
 
@@ -37,37 +31,42 @@
         </button>
     </div>
 
-    <div class="home-balances-wrap">
-        <table class="home-balances-table">
-            <thead>
-                <tr><th>Account</th><th>Balance</th></tr>
-            </thead>
-            <tbody>
-                {% for account in account_balances %}
-                    <tr>
-                        <td>{{ account.name }}</td>
-                        <td class="{{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</td>
-                    </tr>
-                {% else %}
-                    <tr><td colspan="2">No accounts yet.</td></tr>
-                {% endfor %}
-            </tbody>
-            {% if account_balances %}
-            <tfoot>
-                <tr class="home-balances-total-row">
-                    <th scope="row">Total (all accounts)</th>
-                    <td class="{{ accounts_total_balance|amount_class }}">{{ accounts_total_balance|money }}</td>
-                </tr>
-            </tfoot>
-            {% endif %}
-        </table>
-    </div>
+    <ul class="home-balances-list">
+        {% for account in account_balances %}
+            <li class="home-balances-row">
+                {{ account_avatar(account.name) }}
+                <span class="home-balances-name">{{ account.name }}</span>
+                <span class="home-balances-amount-pill {{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</span>
+            </li>
+        {% else %}
+            <li class="home-balances-row home-balances-empty">No accounts yet.</li>
+        {% endfor %}
+        {% if account_balances %}
+            <li class="home-balances-row home-balances-total">
+                <span class="home-balances-name">Total (all accounts)</span>
+                <span class="home-balances-amount-pill {{ accounts_total_balance|amount_class }}">{{ accounts_total_balance|money }}</span>
+            </li>
+        {% endif %}
+    </ul>
 
-    <p class="home-more-links muted">
-        <a href="{{ url_for('dashboard.index', panel='expenses', month=month_filter) }}">Expense list</a>
-        ·
-        <a href="{{ url_for('dashboard.index', panel='income', month=month_filter) }}">Income list</a>
-        ·
-        <a href="{{ url_for('dashboard.index', panel='summary', month=month_filter) }}">Consolidated breakdown</a>
-    </p>
+    <ul class="home-links-list">
+        <li>
+            <a class="home-links-row" href="{{ url_for('dashboard.index', panel='expenses', month=month_filter) }}">
+                <span>Expense list</span>
+                <span class="home-links-chevron" aria-hidden="true"></span>
+            </a>
+        </li>
+        <li>
+            <a class="home-links-row" href="{{ url_for('dashboard.index', panel='income', month=month_filter) }}">
+                <span>Income list</span>
+                <span class="home-links-chevron" aria-hidden="true"></span>
+            </a>
+        </li>
+        <li>
+            <a class="home-links-row" href="{{ url_for('dashboard.index', panel='summary', month=month_filter) }}">
+                <span>Consolidated breakdown</span>
+                <span class="home-links-chevron" aria-hidden="true"></span>
+            </a>
+        </li>
+    </ul>
 </section>

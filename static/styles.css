@@ -1488,9 +1488,11 @@ body.home-modal-open {
     background: var(--accent);
 }
 
+/* var(--neg) rather than the old fixed #fecaca, which was a dark-theme pink
+   and all but vanished on the light theme's pale red tile. */
 .btn-icon-delete {
     border-color: rgba(220, 38, 38, 0.55);
-    color: #fecaca;
+    color: var(--neg);
     background: rgba(220, 38, 38, 0.18);
 }
 
@@ -3050,4 +3052,1463 @@ form + form {
     .reports-months-table {
         min-width: 0;
     }
+}
+
+/* ==========================================================================
+   iOS-style mobile pass
+   Restyles the phone layout (<=900px) to read like a native iOS app: a gray
+   page background with white rounded cards, an inset-grouped list style for
+   rows, a floating pill tab bar, a "+" FAB on Home, and add-forms presented
+   as bottom sheets. Reuses the existing palette (color-mix tints of the
+   existing variables) rather than introducing new colours. A few rules that
+   also improve the desktop reading of the new Home markup (hero card,
+   balances list, links list) are left outside the media query on purpose,
+   because the HTML for those is shared between breakpoints.
+   ========================================================================== */
+
+/* --- Home: hero summary card + tinted pills (all widths) ----------------- */
+
+.home-summary-hero {
+    background: var(--surface);
+    border-radius: 18px;
+    padding: 1.1rem 1.15rem 1.25rem;
+    margin: 0 0 1rem;
+    text-align: center;
+}
+
+.home-summary-hero-label {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+}
+
+.home-summary-hero-amount {
+    display: block;
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    margin: 0.2rem 0 0.9rem;
+}
+
+.home-summary-hero-pills {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.home-summary-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.home-summary-pill b {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+}
+
+.home-summary-pill-income {
+    background: color-mix(in srgb, var(--pos) 15%, transparent);
+    color: var(--pos);
+}
+
+.home-summary-pill-expense {
+    background: color-mix(in srgb, var(--neg) 15%, transparent);
+    color: var(--neg);
+}
+
+/* --- Home: account balances as an inset grouped list (all widths) -------- */
+
+.home-balances-list {
+    list-style: none;
+    margin: 0 0 0.9rem;
+    padding: 0;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.home-balances-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--border-c);
+}
+
+.home-balances-row:last-child {
+    border-bottom: 0;
+}
+
+.home-balances-avatar {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: var(--tab);
+    color: var(--tab-text);
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.home-balances-name {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* currentColor picks up whichever amount-pos/neg/zero colour the amount_class
+   filter applied, so the pill tints itself without a rule per class. */
+.home-balances-amount-pill {
+    flex: 0 0 auto;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.home-balances-empty {
+    justify-content: center;
+    color: var(--muted);
+}
+
+.home-balances-total .home-balances-name {
+    font-weight: 800;
+}
+
+/* --- Home: "more" links as grouped rows with chevrons (all widths) ------- */
+
+.home-links-list {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.home-links-list li:not(:last-child) .home-links-row {
+    border-bottom: 1px solid var(--border-c);
+}
+
+.home-links-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.85rem;
+    color: var(--text);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.home-links-row:hover {
+    background: var(--surface-alt);
+}
+
+.home-links-chevron,
+.more-sheet-chevron {
+    flex: 0 0 auto;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+}
+
+/* --- Bottom sheets: shared chrome for expense/income/recurring + More ---- */
+
+/* Round "close" affordance and a centred title read as one header on both
+   breakpoints; the header only grows a third (Save) column on mobile. */
+.home-modal-close {
+    border-radius: 999px;
+}
+
+.home-modal-title {
+    flex: 1;
+    text-align: center;
+    /* The More sheet's title is a <span>, not an <h3> like the others, so it
+       needs its own bold weight instead of relying on heading defaults. */
+    font-weight: 700;
+}
+
+.home-modal-save {
+    display: none;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-content);
+    font-weight: 700;
+    font-size: 0.92rem;
+    padding: 0.45rem 0.95rem;
+    cursor: pointer;
+}
+
+.home-modal-save:hover {
+    background: var(--accent-hover);
+}
+
+/* Grab handle, shared by the home modals and the More sheet. Hidden by
+   default; the mobile block below is what actually shows it, since neither
+   surface is a real bottom sheet on a wide screen. */
+.home-modal-handle {
+    display: none;
+    width: 36px;
+    height: 4px;
+    margin: 0 auto 0.6rem;
+    border-radius: 999px;
+    background: var(--border-c);
+}
+
+/* Segmented Expense/Income switch at the top of those two sheets. */
+.home-modal-segmented {
+    display: flex;
+    gap: 2px;
+    background: var(--surface-alt);
+    padding: 3px;
+    border-radius: 10px;
+    margin: 0 0 0.85rem;
+}
+
+.home-modal-segment {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0.45rem 0.6rem;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.home-modal-segment:hover {
+    background: transparent;
+}
+
+.home-modal-segment.is-active {
+    background: var(--surface);
+    color: var(--text);
+}
+
+/* Big, borderless amount field at the top of the expense/income sheets. */
+.home-modal-amount-field {
+    text-align: center;
+    margin: 0 0 0.9rem;
+}
+
+.home-modal-amount-input {
+    width: 100%;
+    max-width: none;
+    border: 0;
+    background: transparent;
+    text-align: center;
+    font-size: 2rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    padding: 0.35rem 0;
+}
+
+.home-modal-amount-input:focus {
+    outline: none;
+}
+
+/* Keyboard focus still needs a visible indicator; a plain outline would ring
+   the whole borderless field, so an underline reads closer to the rest of
+   the "big amount" styling. Mouse/touch focus stays indicator-free above. */
+.home-modal-amount-input:focus-visible {
+    outline: none;
+    box-shadow: inset 0 -2px 0 0 var(--accent);
+}
+
+/* Remaining fields as an inset grouped list: label left, control right. */
+.home-modal-fields {
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 0 0 0.9rem;
+}
+
+.home-modal-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--border-c);
+}
+
+.home-modal-field:last-child {
+    border-bottom: 0;
+}
+
+.home-modal-field label {
+    flex: 0 0 auto;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.home-modal-field select,
+.home-modal-field textarea,
+.home-modal-field input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    text-align: right;
+}
+
+.home-modal-field-notes {
+    align-items: flex-start;
+}
+
+/* Textareas default to a monospace font and carry the base form padding, so
+   the placeholder sat ~9px below the "Notes" label in a different typeface.
+   Inherit the row's font and zero the vertical padding so the first line of
+   text shares the label's baseline. */
+.home-modal-field-notes textarea {
+    text-align: left;
+    min-height: 2.4rem;
+    font: inherit;
+    line-height: 1.3;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.home-modal-field-notes label {
+    line-height: 1.3;
+}
+
+/* Date inputs render in the UA's monospace face like textareas do; match the
+   row's font so "Date" rows read like every other grouped row. */
+.home-modal-field input[type="date"] {
+    font: inherit;
+    color: var(--text);
+}
+
+/* --- More sheet: inset grouped list of the six overflow sections --------- */
+
+.more-sheet-grid {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    gap: 0;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.more-sheet-grid .menu-item {
+    width: 100%;
+    min-height: 48px;
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--border-c);
+    border-radius: 0;
+    color: var(--text);
+}
+
+.more-sheet-grid .menu-item:last-child {
+    border-bottom: 0;
+}
+
+/* A subtle tint instead of the desktop solid accent fill, so the active row
+   still reads as part of the grouped list rather than a standalone tile. */
+.more-sheet-grid .menu-item.active {
+    background: var(--surface-alt);
+    color: var(--accent);
+}
+
+/* .menu-item-inner is width: 100%, so without border-box this padding pushed
+   the row 16px past the sheet and clipped the chevrons. */
+.more-sheet-grid .menu-item-inner {
+    box-sizing: border-box;
+    gap: 0.65rem;
+    padding: 0.65rem 0.85rem;
+}
+
+.more-sheet-icon {
+    flex: 0 0 auto;
+    width: 1.9rem;
+    height: 1.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+}
+
+.more-sheet-icon svg {
+    width: 1.05rem;
+    height: 1.05rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.more-sheet-chevron {
+    margin-left: auto;
+}
+
+/* --- "+" FAB: Home only, mobile only -------------------------------------- */
+
+.home-fab {
+    display: none;
+    position: fixed;
+    right: 1rem;
+    z-index: 65;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--accent-content);
+    border: 0;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    cursor: pointer;
+}
+
+.home-fab:hover {
+    background: var(--accent-hover);
+}
+
+.home-fab svg {
+    width: 1.6rem;
+    height: 1.6rem;
+}
+
+@keyframes home-sheet-slide-up {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 900px) {
+
+    /* --- Base type: let iPhones render SF Pro instead of the desktop web font */
+    html {
+        font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .home-title {
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin: 0.1rem 0 0.35rem;
+    }
+
+    /* The FAB replaces the quick-bar buttons, but only on the Home panel -
+       `.home-quick-bar` is also the class the Recurring panel's own add
+       button uses, and hiding it unscoped made recurring rules impossible
+       to add from a phone. */
+    #panel-home .home-quick-bar {
+        display: none;
+    }
+
+    /* `.is-flat-panel` (Home, Transfer) and `.is-home-panel` are toggled on
+       <body> by the same script that already drives panel switching (see
+       syncHomePanelBodyClass in app.js), rather than relying on :has()
+       support to key these off the active panel. */
+    body.is-flat-panel .panel-shell {
+        background: transparent;
+        border: 0;
+        padding: 0;
+    }
+
+    body.is-home-panel .home-fab {
+        display: flex;
+    }
+
+    .home-fab {
+        right: max(1rem, env(safe-area-inset-right));
+        bottom: calc(env(safe-area-inset-bottom, 0px) + var(--bottom-nav-h) + 20px);
+    }
+
+    /* --- Safe areas: `viewport-fit=cover` hands us the full screen, so the
+       fixed/edge-to-edge chrome below has to claim its own insets back in
+       landscape on notched phones instead of sitting under the notch. */
+    .app-container {
+        padding-left: max(0.65rem, env(safe-area-inset-left));
+        padding-right: max(0.65rem, env(safe-area-inset-right));
+    }
+
+    .header-row {
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
+    }
+
+    /* --- Tab bar: floating pill instead of a full-bleed bar --------------- */
+
+    .bottom-nav {
+        left: max(12px, env(safe-area-inset-left));
+        right: max(12px, env(safe-area-inset-right));
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+        border-radius: 999px;
+        border-top: 0;
+        padding-bottom: 0;
+        background: color-mix(in srgb, var(--surface) 88%, transparent);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    }
+
+    :root[data-theme="dark"] .bottom-nav {
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .bottom-nav-item {
+        margin: 6px 3px;
+        border-radius: 999px;
+    }
+
+    .bottom-nav-item.active {
+        background: var(--tab);
+        color: var(--tab-text);
+    }
+
+    /* The bar now floats clear of the edge, so content needs a little more
+       clearance than the pre-existing --bottom-nav-h + 1.5rem gave it, plus
+       the bottom safe area the floating bar itself already claims. */
+    main.app-container {
+        padding-bottom: calc(var(--bottom-nav-h) + 2.5rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* On Home the FAB sits above the tab bar and would otherwise cover the
+       last row of the balances/links lists at full scroll. ~76px covers the
+       56px FAB plus its clearance above the tab bar. */
+    body.is-home-panel main.app-container {
+        padding-bottom: calc(var(--bottom-nav-h) + 2.5rem + 76px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* --- Bottom sheets: anchor to the bottom edge, do not float centred --- */
+
+    .home-modal,
+    .more-sheet {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .home-modal-dialog,
+    .more-sheet-panel {
+        width: 100%;
+        max-width: none;
+        max-height: 92dvh;
+        margin: 0;
+        border: 0;
+        border-radius: 20px 20px 0 0;
+        background: var(--bg);
+        padding-top: 0.6rem;
+        padding-right: max(1rem, env(safe-area-inset-right));
+        padding-bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+        padding-left: max(1rem, env(safe-area-inset-left));
+    }
+
+    .home-modal-dialog-expense,
+    .home-modal-dialog-income,
+    .home-modal-dialog-recurring {
+        border-top: 0;
+    }
+
+    .home-modal-handle {
+        display: block;
+    }
+
+    .home-modal-save {
+        display: inline-flex;
+    }
+
+    .home-modal-submit {
+        display: none;
+    }
+
+    /* --- Tap targets: keep every sheet control at the 44px minimum -------- */
+
+    .home-modal-close {
+        width: 44px;
+        height: 44px;
+    }
+
+    .home-modal-save {
+        min-height: 44px;
+        padding: 0.6rem 1.1rem;
+    }
+
+    .home-modal-segment {
+        min-height: 44px;
+    }
+}
+
+@media (max-width: 900px) and (prefers-reduced-motion: no-preference) {
+    .home-modal-dialog,
+    .more-sheet-panel {
+        animation: home-sheet-slide-up 0.24s ease-out;
+    }
+}
+
+/* ==========================================================================
+   iOS-style mobile pass - fixes
+   Follow-up corrections after a real-device pass surfaced layout bugs the
+   first draft above did not catch (form direction inside the sheets, focus
+   rings, an overflowing More list, the Home month picker, etc).
+   ========================================================================== */
+
+/* --- Sheets: the add-forms must stay a single column, at every width -----
+   `form` is `display:flex; flex-wrap:wrap` by default, which let the amount
+   field, the field group and (on desktop) the submit button sit side by
+   side instead of stacked - the submit button in particular rendered as a
+   tall green column to the right of the field list. */
+.home-modal-dialog .panel-add-form.home-quick-form {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+}
+
+.home-modal-dialog .panel-add-form.home-quick-form > * {
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+}
+
+/* --- Amount field: win over the `input:not([type="hidden"])` mobile rule -
+   That selector carries an attribute selector, which out-specifies a lone
+   class selector; scoping to the parent field wrapper clears it instead of
+   relying on source order (fragile once more rules get appended below). */
+.home-modal-amount-field input.home-modal-amount-input {
+    font-size: 2.25rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+/* --- Header "Save" pill: centre the label (a flex container's default
+   cross-axis alignment left it sitting at the top of the 44px pill) and give
+   it a deliberate focus-visible ring instead of the browser default. */
+.home-modal-save {
+    align-items: center;
+    justify-content: center;
+    outline: none;
+}
+
+.home-modal-save:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.home-modal-close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* The More sheet reuses the expense sheet's Save-pill styling for its
+   "Done" button, but it has to stay visible whenever the sheet itself is
+   visible - .home-modal-save is desktop-hidden by default because the real
+   forms have their own submit button there. The sheet is mobile-only anyway
+   (its trigger lives in the bottom nav), so this never shows on desktop. */
+.more-sheet-done {
+    display: inline-flex;
+}
+
+/* --- More sheet: rows were overflowing the sheet's right edge, clipping
+   the chevron. `.menu-item` sets `white-space: nowrap`, which stopped
+   longer labels ("Bank Transfer") from wrapping and pushed the row wider
+   than the sheet instead. */
+.more-sheet-grid .menu-item {
+    box-sizing: border-box;
+    white-space: normal;
+}
+
+.more-sheet-grid .menu-item-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.more-sheet-panel {
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+/* JS now focuses the close button on open instead of the first row, but
+   keep an explicit ring here too in case a row is reached by Tab. */
+.more-sheet-grid .menu-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+/* --- Desktop: stop the Home content from stretching the full 1500px
+   container width; a comfortable reading column looks intentional instead
+   of a hero card and a two-column list floating in a lot of empty space. */
+@media (min-width: 901px) {
+    #panel-home {
+        max-width: 720px;
+        margin: 0 auto;
+    }
+}
+
+@media (max-width: 900px) {
+
+    /* --- Home: intro hint is muted body copy, not a second heading ------- */
+    #panel-home .home-intro {
+        font-size: 0.78rem;
+        line-height: 1.4;
+        margin: 0 0 0.75rem;
+    }
+
+    /* --- Home: month picker as one compact pill row, not a stacked form --
+       The earlier mobile pass stacked the two selects and the Apply button
+       full-width, which alone ran to ~140px of vertical space. Labels stay
+       in the DOM for screen readers but are visually hidden. */
+    #panel-home .month-picker.home-month-picker {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 0.4rem;
+        margin-bottom: 0.85rem;
+    }
+
+    #panel-home .month-picker.home-month-picker .cal-dropdown-row {
+        flex-direction: row;
+        flex: 1 1 auto;
+        gap: 0.4rem;
+        width: auto;
+        min-width: 0;
+    }
+
+    #panel-home .month-picker.home-month-picker .cal-dropdown-field {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    #panel-home .month-picker.home-month-picker .month-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    #panel-home .month-picker.home-month-picker .shell-cal-month,
+    #panel-home .month-picker.home-month-picker .shell-cal-year {
+        width: 100%;
+        min-height: 40px;
+        border-radius: 999px;
+        border: 1px solid var(--border-c);
+        background: var(--surface);
+        padding: 0.35rem 0.7rem;
+        font-size: 0.85rem;
+    }
+
+    #panel-home .month-picker.home-month-picker button[type="submit"] {
+        flex: 0 0 auto;
+        width: auto;
+        min-height: 40px;
+        border-radius: 999px;
+        padding: 0.4rem 0.9rem;
+        font-size: 0.85rem;
+    }
+
+    /* --- Header: username is redundant on a phone-width bar, and the
+       Log out button reads as a heavy filled box next to the small logo. */
+    .header-user-name {
+        display: none;
+    }
+
+    .header-user .btn-secondary {
+        padding: 0.35rem 0.75rem;
+        font-size: 0.82rem;
+        border-radius: 999px;
+        background: transparent;
+        border-color: var(--border-c);
+        color: var(--text);
+    }
+
+    .header-user .btn-secondary:hover {
+        background: var(--surface-alt);
+    }
+}
+
+/* ==========================================================================
+   Amount sign toggle
+   Expenses are signed (negative = spending, positive = refund - see
+   helpers.normalize_expense_amount), but a plain number input has no way to
+   type a leading "+", so a bare amount field made refunds the only
+   reachable positive value. This round -/+ button decides the sign of
+   whatever was typed as a positive number; an explicit "-" always wins
+   (see the submit handler in app.js).
+   ========================================================================== */
+
+.amount-sign-toggle {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--border-c);
+    background: color-mix(in srgb, var(--neg) 14%, transparent);
+    color: var(--neg);
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.amount-sign-toggle:hover {
+    filter: brightness(1.05);
+}
+
+.amount-sign-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* aria-pressed carries the state - "true" is the + (refund) side. */
+.amount-sign-toggle[aria-pressed="true"] {
+    background: color-mix(in srgb, var(--pos) 16%, transparent);
+    color: var(--pos);
+    border-color: color-mix(in srgb, var(--pos) 45%, var(--border-c));
+}
+
+/* --- Expenses panel add form: toggle + input sit in one flex item -------- */
+
+.amount-sign-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1 1 220px;
+}
+
+.amount-sign-field input[type="number"] {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* --- Home expense sheet: toggle beside the big centred amount ------------ */
+
+.home-modal-amount-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+}
+
+/* min-width: 0 matters: a flex item defaults to min-width: auto, and a number
+   input at 2.25rem has an intrinsic width of ~525px, which overflowed the
+   centred row on both sides and pushed the toggle off-screen. */
+.home-modal-amount-row .home-modal-amount-input {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+}
+
+@media (max-width: 900px) {
+    .amount-sign-toggle {
+        width: 44px;
+        height: 44px;
+    }
+
+    /* The older mobile rules stretch every button and input in the panel add
+       forms to width: 100% via #panel-expenses selectors, which turned the
+       toggle into a full-width pill and squeezed the amount off-screen. These
+       match that ID specificity so the toggle stays round beside the input. */
+    #panel-expenses .panel-add-form .amount-sign-field {
+        width: 100%;
+        flex: 0 0 auto;
+    }
+
+    #panel-expenses .panel-add-form .amount-sign-field .amount-sign-toggle {
+        flex: 0 0 44px;
+        width: 44px;
+        max-width: 44px;
+    }
+
+    #panel-expenses .panel-add-form .amount-sign-field input[type="number"] {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+    }
+}
+
+/* ==========================================================================
+   Select picker enhancement + native <select> restyle
+   The Home expense/income sheets and the recurring add form's Category and
+   Account selects get a real iOS-style picker sheet (progressive
+   enhancement, driven by [data-picker] in app.js's setupSelectPickers).
+   Every other <select> in the app just gets an on-theme CSS restyle.
+   ========================================================================== */
+
+/* --- Picker enhancement: the source <select> stays functional but hidden - */
+
+.picker-select-source {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.picker-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-c);
+    background: var(--surface-alt);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.picker-trigger:hover {
+    border-color: var(--accent);
+}
+
+.picker-trigger:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.picker-trigger-value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.picker-trigger-chevron {
+    flex: 0 0 auto;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+}
+
+/* Inside a sheet's grouped-row field the trigger blends into the row instead
+   of looking like a boxed control of its own: an invisible full-row button,
+   so the whole row (not just the value text) is the tap target, with the
+   row's own label still visible underneath it. */
+.home-modal-field:has(.picker-trigger) {
+    position: relative;
+}
+
+.home-modal-field .picker-trigger {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    min-height: 0;
+    justify-content: flex-end;
+    padding: 0 0.85rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+}
+
+.home-modal-field .picker-trigger-value {
+    flex: 0 1 auto;
+    color: var(--text);
+}
+
+.home-modal-field .picker-trigger:focus-visible {
+    box-shadow: none;
+    border-radius: 10px;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+/* --- The picker sheet: built with class="home-modal picker-sheet" in JS, so
+   it inherits the same fixed/backdrop/bottom-sheet-on-mobile rules as the
+   expense/income/recurring sheets - it just stacks one layer higher. ------ */
+
+.picker-sheet {
+    z-index: 1300;
+}
+
+.picker-sheet-spacer {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+}
+
+.picker-sheet-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--surface);
+    border-radius: 12px;
+}
+
+.picker-sheet-group-label {
+    padding: 0.6rem 0.85rem 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.picker-sheet-option {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.6rem 0.85rem;
+    border: 0;
+    border-bottom: 1px solid var(--border-c);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.picker-sheet-list li:last-child .picker-sheet-option {
+    border-bottom: 0;
+}
+
+.picker-sheet-option:hover {
+    background: var(--surface-alt);
+}
+
+.picker-sheet-option:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.picker-sheet-avatar {
+    flex: 0 0 auto;
+    width: 1.9rem;
+    height: 1.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: var(--tab);
+    color: var(--tab-text);
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.picker-sheet-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.picker-sheet-check {
+    flex: 0 0 auto;
+    width: 1.2rem;
+    text-align: center;
+    color: var(--accent);
+    font-weight: 700;
+}
+
+@media (max-width: 900px) {
+    .picker-sheet-spacer {
+        width: 44px;
+        height: 44px;
+    }
+}
+
+/* --- Every other native <select> app-wide: on-theme chrome ---------------
+   `appearance: none` drops the OS control's own arrow (and, on some
+   platforms, its whole boxed look); the replacement is a small inline SVG
+   chevron. A <select> can't host a ::after to hang a currentColor mask on
+   the way a button can, so this is a plain background-image, duplicated per
+   theme - the hex codes are the app's own --muted values (#5f6b66 light,
+   #a8a8a8 dark) spelled out, not new colours, because url() cannot read a
+   CSS variable. */
+select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235f6b66' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.65rem center;
+    background-size: 1rem;
+    padding-right: 2.1rem;
+    color-scheme: light;
+}
+
+select:hover {
+    border-color: var(--accent);
+}
+
+select:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+select:disabled {
+    color: var(--muted);
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+:root[data-theme="dark"] select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a8a8a8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    color-scheme: dark;
+}
+
+/* The picker-enhanced select is 1px and clipped anyway, but drop its chevron
+   and the extra right padding so nothing about it can peek through. */
+.picker-select-source {
+    background-image: none;
+    padding-right: 0;
+}
+
+/* ==========================================================================
+   Bank Transfer panel
+   Rebuilt around the same iOS-style building blocks as Home: a grouped-row
+   card for the add-transfer form (reusing .home-modal-fields/.home-modal-
+   field/.home-modal-amount-field, which are plain reusable classes, not
+   scoped to the sheets they were introduced in), .home-balances-list for the
+   account balances, and a new grouped list for the recent-transfers log
+   instead of the old table/cards. The old .transfer-log-table/.transfer-
+   actions rules above are left in place but unused - nothing in this markup
+   carries those classes any more.
+   ========================================================================== */
+
+/* `form` defaults to `display: flex; flex-wrap: wrap` (row), which - same as
+   the sheets before this fix - would lay the card's blocks out side by side
+   instead of stacked, on any width the mobile-only column rule doesn't
+   reach. */
+.transfer-add-form {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.transfer-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.transfer-same-account-hint {
+    margin: -0.4rem 0 0.85rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--neg);
+}
+
+.transfer-swap-row {
+    display: flex;
+    justify-content: center;
+    padding: 0.3rem 0;
+}
+
+.transfer-swap-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--border-c);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.transfer-swap-btn:hover {
+    filter: brightness(1.05);
+}
+
+.transfer-swap-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* From and To are two separate bordered cards rather than rows of one
+   grouped list: as a list, From's row separator ran along the top of the swap
+   row and read as a stray line. The swap button straddles the small gap
+   between the cards, so it needs an opaque fill (the tinted transparent one
+   would show the card borders through it). */
+.transfer-accounts-fields {
+    background: transparent;
+    overflow: visible;
+}
+
+.transfer-accounts-fields .home-modal-field {
+    min-height: 3.6rem;
+    box-sizing: border-box;
+    background: var(--surface);
+    border: 1px solid var(--border-c);
+    border-radius: 12px;
+}
+
+.transfer-accounts-fields .transfer-swap-row {
+    position: relative;
+    z-index: 1;
+    height: 0.5rem;
+    padding: 0;
+    align-items: center;
+}
+
+.transfer-accounts-fields .transfer-swap-btn {
+    flex: 0 0 auto;
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+/* Date/Notes get the same outline so the whole card reads as one family. */
+.transfer-add-form .home-modal-fields:not(.transfer-accounts-fields) {
+    border: 1px solid var(--border-c);
+}
+
+/* From/To rows show the account's balance under its name - a second, muted
+   line inside the picker trigger's value slot. setupTransferForm in app.js
+   fills these in; the layout only needs to exist here once. */
+.picker-trigger-value--stacked {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    line-height: 1.3;
+}
+
+.transfer-account-name {
+    color: var(--text);
+}
+
+.transfer-account-balance {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.transfer-submit-btn {
+    width: 100%;
+    min-height: 44px;
+    border-radius: 12px;
+    font-weight: 700;
+    margin-top: 0.25rem;
+}
+
+.transfer-submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* --- Recent transfers: an inset grouped list instead of a table/cards ---- */
+
+.transfer-log-list {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.transfer-log-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--border-c);
+}
+
+.transfer-log-list li:last-child .transfer-log-row {
+    border-bottom: 0;
+}
+
+.transfer-log-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.transfer-log-route {
+    margin: 0;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.transfer-log-meta {
+    margin: 0.15rem 0 0;
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.transfer-log-amount {
+    flex: 0 0 auto;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+/* A lone-button <form>, not the log row itself - `form` defaults to
+   flex-wrap/gap/margin-bottom, all wrong for a single icon button sitting
+   inline in a row. */
+.transfer-log-delete-form {
+    flex: 0 0 auto;
+    margin: 0;
+    display: flex;
+}
+
+.transfer-log-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.transfer-log-delete:hover,
+.transfer-log-delete:focus-visible {
+    color: var(--neg);
+    background: color-mix(in srgb, var(--neg) 12%, transparent);
+}
+
+.transfer-log-delete:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.transfer-log-row.transfer-log-empty {
+    justify-content: center;
+    color: var(--muted);
+}
+
+@media (max-width: 900px) {
+    /* The shared "every button/select/input in a panel-add-form is
+       width: 100%" mobile rule (#panel-transfer .panel-add-form button, an
+       ID selector) would otherwise stretch this round icon button into an
+       oval. */
+    #panel-transfer .panel-add-form button.transfer-swap-btn {
+        width: 44px;
+        max-width: 44px;
+    }
+}
+
+@media (min-width: 901px) {
+    #panel-transfer {
+        max-width: 1000px;
+        margin: 0 auto;
+    }
+
+    .transfer-layout {
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 1.5rem;
+    }
+
+    .transfer-card-col,
+    .transfer-side-col {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+}
+
+/* --- Bank badges on account avatars (see banks.py) ----------------------- */
+
+.bank-avatar {
+    background: var(--bank-bg, var(--tab));
+    color: var(--bank-fg, var(--tab-text));
+    letter-spacing: -0.02em;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.bank-avatar-long {
+    font-size: 0.62rem;
+    font-weight: 800;
+}
+
+/* The shipped icons already carry their own background; white only shows
+   through transparent ones (PayPal, Piraeus). */
+.bank-avatar-logo {
+    background: #fff;
+    padding: 0;
+    overflow: hidden;
+}
+
+.bank-avatar-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.settings-account-avatar {
+    align-self: center;
+}
+
+/* Small badge in front of an account name inside table cells / log rows. */
+.account-avatar-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    margin-right: 0.4rem;
+    border-radius: 5px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+    vertical-align: middle;
+}
+
+.account-avatar-inline.bank-avatar-long {
+    font-size: 0.45rem;
 }

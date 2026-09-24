@@ -1,4 +1,4 @@
-{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart %}
+{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart, account_avatar %}
 <section class="panel {% if active_panel == 'expenses' %}active{% endif %}" id="panel-expenses">
     <h2>Add Expense</h2>
     <form action="/expenses/add" class="panel-add-form" method="post">
@@ -12,7 +12,10 @@
             <input name="exp_category" type="hidden" value="{{ expense_filter_category_id }}">
         {% endif %}
         <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-        <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
+        <div class="amount-sign-field" data-amount-sign-field>
+            <button type="button" class="amount-sign-toggle" data-amount-sign-toggle aria-pressed="false" aria-label="Amount sign: expense">&minus;</button>
+            <input name="amount" placeholder="Amount" required step="any" type="number">
+        </div>
         <select name="category_id" required>
             {% for category in categories %}
                 <option value="{{ category.id }}">{{ category.name }}</option>
@@ -66,7 +69,7 @@
             {% for expense in expenses %}
                 <tr>
                     <td data-label="Category">{{ expense.category_name }}</td>
-                    <td data-label="Account">{{ expense.account_name }}</td>
+                    <td data-label="Account">{{ account_avatar(expense.account_name, 'account-avatar-inline', false) }}{{ expense.account_name }}</td>
                     <td class="cell-amount {{ expense.amount|amount_class }}" data-label="Amount">{{ expense.amount|money }}</td>
                     <td class="cell-notes" data-label="Notes">{{ expense.notes }}</td>
                     <td class="cell-date" data-label="Date">{{ expense.spent_at|txn_day }}</td>

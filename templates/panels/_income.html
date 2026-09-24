@@ -1,4 +1,4 @@
-{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart %}
+{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart, account_avatar %}
 <section class="panel {% if active_panel == 'income' %}active{% endif %}" id="panel-income">
     <h2>Add Income Entry</h2>
     <form action="/income/add" class="panel-add-form" method="post">
@@ -66,7 +66,7 @@
             {% for entry in income_entries %}
                 <tr>
                     <td data-label="Category">{{ entry.category_name }}</td>
-                    <td data-label="Account">{{ entry.account_name }}</td>
+                    <td data-label="Account">{{ account_avatar(entry.account_name, 'account-avatar-inline', false) }}{{ entry.account_name }}</td>
                     <td class="cell-amount {{ entry.amount|amount_class }}" data-label="Amount">{{ entry.amount|money }}</td>
                     <td class="cell-notes" data-label="Notes">{{ entry.notes }}</td>
                     <td class="cell-date" data-label="Date">{{ entry.received_at|txn_day }}</td>

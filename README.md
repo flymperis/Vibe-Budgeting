@@ -29,6 +29,22 @@ Gunicorn runs **one worker with four threads**, not multiple worker processes: t
 price caches live in process memory, so a second worker would keep its own copy and double
 the calls to the price APIs. Threads still handle concurrent requests.
 
+## Install on iPhone
+
+Vibe Budgeting is a PWA (web app manifest + icons), so Safari can add it to the
+Home Screen as a standalone app (no browser chrome):
+
+1. Open the app in **Safari** (Chrome/other browsers on iOS can't add
+   standalone web apps).
+2. Tap **Share** → **Add to Home Screen** → **Add**.
+3. Launch it from the Home Screen icon.
+
+This works over the same URL you already use day-to-day, including a plain
+`http://` Tailscale address — the standalone, full-screen launch behavior
+doesn't require HTTPS. Some other PWA capabilities (e.g. service workers,
+which this app doesn't use) are restricted by iOS to HTTPS or `localhost`, so
+if you add other PWA features later, keep that in mind.
+
 ## Layout
 
 | Path | Contents |

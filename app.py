@@ -1,11 +1,20 @@
 from flask import Flask, abort, g, redirect, request, session, url_for
 import hmac
+import mimetypes
 import os
 import secrets
 import sys
 import threading
 
 import telegram_bot
+
+# Windows' mimetypes registry doesn't know .webmanifest, so it would otherwise
+# serve static/manifest.webmanifest as application/octet-stream, which iOS
+# Safari's "Add to Home Screen" ignores. Registered before app.run()/Flask's
+# static handler picks a Content-Type, so it applies on every platform.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("image/x-icon", ".ico")
+from banks import bank_badges_for, detect_bank
 from config import CSRF_FIELD_NAME, _CSRF_EXEMPT_ENDPOINTS, _CSRF_SAFE_METHODS, _env_flag
 from db import DB_PATH, _prepare_sqlite_storage, get_connection, init_db
 from finance import fetch_account_balances_through
@@ -104,6 +113,9 @@ def _require_login():
         return redirect(url_for("auth.login", next=request.path))
     g.username = session.get("username") or ""
     return None
+
+
+app.jinja_env.globals.update(detect_bank=detect_bank, bank_badges_for=bank_badges_for)
 
 
 @app.template_filter("txn_day")

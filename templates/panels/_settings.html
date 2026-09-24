@@ -1,3 +1,4 @@
+{% from "_macros.html" import account_avatar %}
 <section class="panel {% if active_panel == 'settings' %}active{% endif %}" id="panel-settings">
     <div class="settings-body">
             <div class="settings-section {% if settings_section == 'general' %}active{% endif %}" id="settings-general">
@@ -13,7 +14,7 @@
 
             <div class="settings-section {% if settings_section == 'banks' %}active{% endif %}" id="settings-banks">
                 <h2>Banks</h2>
-                <p class="muted small-hint">Accounts are shared between expenses and income. Current balance is calculated from opening balance + all movements up to the selected month cutoff.</p>
+                <p class="muted small-hint">Accounts are shared between expenses and income. Include the bank in the name (e.g. "Eurobank", "Πειραιώς", "Revolut") and its logo is shown next to the account. Current balance is calculated from opening balance + all movements up to the selected month cutoff.</p>
                 <h3>Add Account</h3>
                 <form action="/accounts/add" method="post">
                     <input name="month" type="hidden" value="{{ month_filter }}">
@@ -31,6 +32,7 @@
                             <input name="month" type="hidden" value="{{ month_filter }}">
                             <input name="next_panel" type="hidden" value="settings">
                             <input name="settings_section" type="hidden" value="banks">
+                            {{ account_avatar(account.name, 'home-balances-avatar settings-account-avatar') }}
                             <input name="name" required type="text" value="{{ account.name }}">
                             <input disabled type="number" step="0.01" value="{{ '%.2f'|format(account_balance_by_id.get(account.id, account.opening_balance)) }}" title="Current balance (read-only)">
                             <input min="0" name="opening_balance" required step="0.01" type="number" value="{{ account.opening_balance }}">

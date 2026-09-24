@@ -2,11 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Vibe Budgeting.</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link rel="alternate icon" href="{{ url_for('static', filename='favicon.svg') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Vibe">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f7f6">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#262626">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&display=swap">
@@ -225,29 +233,54 @@
     <div id="home-modal-expense" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="home-modal-expense-title">
         <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close expense dialog"></button>
         <div class="home-modal-dialog home-modal-dialog-expense">
+            <div class="home-modal-handle" aria-hidden="true"></div>
             <div class="home-modal-header">
-                <h3 id="home-modal-expense-title" class="home-modal-title">New expense</h3>
                 <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
+                <h3 id="home-modal-expense-title" class="home-modal-title">New expense</h3>
+                {# type="submit" + form="…" lets this pill live in the header while
+                   still submitting the form below it, so no extra JS is needed. #}
+                <button type="submit" form="home-expense-form" class="home-modal-save">Save</button>
             </div>
-            <form action="/expenses/add" class="panel-add-form home-quick-form" method="post">
+            <div class="home-modal-segmented" role="group" aria-label="Entry type">
+                <button type="button" class="home-modal-segment is-active" data-home-modal-switch="expense" aria-pressed="true">Expense</button>
+                <button type="button" class="home-modal-segment" data-home-modal-switch="income" aria-pressed="false">Income</button>
+            </div>
+            <form id="home-expense-form" action="/expenses/add" class="panel-add-form home-quick-form" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
                 <input name="exp_page" type="hidden" value="1">
                 <input name="next_panel" type="hidden" value="home">
-                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                <input name="amount" placeholder="Amount (positive or negative — stored as expense)" required step="any" type="number">
-                <select name="category_id" required>
-                    {% for category in categories %}
-                        <option value="{{ category.id }}">{{ category.name }}</option>
-                    {% endfor %}
-                </select>
-                <select name="account_id" required>
-                    {% for account in accounts %}
-                        <option value="{{ account.id }}">{{ account.name }}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit">Add expense</button>
+                <div class="home-modal-amount-field" data-amount-sign-field>
+                    <label class="sr-only" for="home-expense-amount">Amount</label>
+                    <div class="home-modal-amount-row">
+                        <button type="button" class="amount-sign-toggle" data-amount-sign-toggle aria-pressed="false" aria-label="Amount sign: expense">&minus;</button>
+                        <input id="home-expense-amount" class="home-modal-amount-input" name="amount" placeholder="0.00" required step="any" type="number">
+                    </div>
+                </div>
+                <div class="home-modal-fields">
+                    <div class="home-modal-field">
+                        <label for="home-expense-category">Category</label>
+                        <select id="home-expense-category" name="category_id" required data-picker>
+                            {% for category in categories %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="home-modal-field">
+                        <label for="home-expense-account">Account</label>
+                        <select id="home-expense-account" name="account_id" required data-picker>
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="home-modal-field home-modal-field-notes">
+                        <label for="home-expense-notes">Notes</label>
+                        <textarea id="home-expense-notes" name="notes" placeholder="Notes" rows="2"></textarea>
+                    </div>
+                </div>
+                <button type="submit" class="home-modal-submit">Add expense</button>
             </form>
         </div>
     </div>
@@ -255,29 +288,49 @@
     <div id="home-modal-income" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="home-modal-income-title">
         <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close income dialog"></button>
         <div class="home-modal-dialog home-modal-dialog-income">
+            <div class="home-modal-handle" aria-hidden="true"></div>
             <div class="home-modal-header">
-                <h3 id="home-modal-income-title" class="home-modal-title">New income</h3>
                 <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
+                <h3 id="home-modal-income-title" class="home-modal-title">New income</h3>
+                <button type="submit" form="home-income-form" class="home-modal-save">Save</button>
             </div>
-            <form action="/income/add" class="panel-add-form home-quick-form" method="post">
+            <div class="home-modal-segmented" role="group" aria-label="Entry type">
+                <button type="button" class="home-modal-segment" data-home-modal-switch="expense" aria-pressed="false">Expense</button>
+                <button type="button" class="home-modal-segment is-active" data-home-modal-switch="income" aria-pressed="true">Income</button>
+            </div>
+            <form id="home-income-form" action="/income/add" class="panel-add-form home-quick-form" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
                 <input name="inc_page" type="hidden" value="1">
                 <input name="next_panel" type="hidden" value="home">
-                <textarea name="notes" placeholder="Notes" rows="2"></textarea>
-                <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
-                <select name="category_id" required>
-                    {% for category in income_categories %}
-                        <option value="{{ category.id }}">{{ category.name }}</option>
-                    {% endfor %}
-                </select>
-                <select name="account_id" required>
-                    {% for account in accounts %}
-                        <option value="{{ account.id }}">{{ account.name }}</option>
-                    {% endfor %}
-                </select>
-                <button type="submit">Add income</button>
+                <div class="home-modal-amount-field">
+                    <label class="sr-only" for="home-income-amount">Amount</label>
+                    <input id="home-income-amount" min="0" class="home-modal-amount-input" name="amount" placeholder="0.00" required step="0.01" type="number">
+                </div>
+                <div class="home-modal-fields">
+                    <div class="home-modal-field">
+                        <label for="home-income-category">Category</label>
+                        <select id="home-income-category" name="category_id" required data-picker>
+                            {% for category in income_categories %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="home-modal-field">
+                        <label for="home-income-account">Account</label>
+                        <select id="home-income-account" name="account_id" required data-picker>
+                            {% for account in accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="home-modal-field home-modal-field-notes">
+                        <label for="home-income-notes">Notes</label>
+                        <textarea id="home-income-notes" name="notes" placeholder="Notes" rows="2"></textarea>
+                    </div>
+                </div>
+                <button type="submit" class="home-modal-submit">Add income</button>
             </form>
         </div>
     </div>
@@ -285,17 +338,19 @@
     <div id="recurring-modal-add" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="recurring-modal-add-title">
         <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close recurring rule dialog"></button>
         <div class="home-modal-dialog home-modal-dialog-recurring">
+            <div class="home-modal-handle" aria-hidden="true"></div>
             <div class="home-modal-header">
-                <h3 id="recurring-modal-add-title" class="home-modal-title">New recurring rule</h3>
                 <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
+                <h3 id="recurring-modal-add-title" class="home-modal-title">New recurring rule</h3>
+                <button type="submit" form="home-recurring-form" class="home-modal-save">Save</button>
             </div>
-            <form action="{{ url_for('recurring.add_recurring') }}" class="panel-add-form recurring-add-form home-quick-form" method="post">
+            <form id="home-recurring-form" action="{{ url_for('recurring.add_recurring') }}" class="panel-add-form recurring-add-form home-quick-form" method="post">
                 <input name="month" type="hidden" value="{{ month_filter }}">
                 <input name="next_panel" type="hidden" value="recurring">
                 <label class="month-label" for="recurring-category-choice">Category</label>
-                <select id="recurring-category-choice" name="category_choice" required autocomplete="off">
+                <select id="recurring-category-choice" name="category_choice" required autocomplete="off" data-picker>
                     <optgroup label="Expense">
                         {% for category in categories %}
                             <option value="e-{{ category.id }}">{{ category.name }}</option>
@@ -310,7 +365,7 @@
                 <label class="month-label" for="recurring-amount">Amount (positive)</label>
                 <input id="recurring-amount" min="0.01" name="amount" placeholder="Amount per month" required step="0.01" type="number">
                 <label class="month-label" for="recurring-account">Account</label>
-                <select id="recurring-account" name="account_id" required>
+                <select id="recurring-account" name="account_id" required data-picker>
                     {% for account in accounts %}
                         <option value="{{ account.id }}">{{ account.name }}</option>
                     {% endfor %}
@@ -326,7 +381,7 @@
                 </div>
                 <label class="month-label" for="recurring-notes">Notes (optional)</label>
                 <textarea id="recurring-notes" name="notes" placeholder="e.g. Rent, Salary, Subscription" rows="2"></textarea>
-                <button type="submit">Add recurring rule</button>
+                <button type="submit" class="home-modal-submit">Add recurring rule</button>
             </form>
         </div>
     </div>
@@ -362,35 +417,72 @@
 
     <div class="more-sheet" id="more-sheet" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="More sections">
         <div class="more-sheet-panel">
-            <div class="more-sheet-head">
-                <span class="more-sheet-title">More</span>
-                <button class="btn-icon" data-more-sheet-close type="button" aria-label="Close">
-                    <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+            <div class="home-modal-handle" aria-hidden="true"></div>
+            <div class="more-sheet-head home-modal-header">
+                {# Same ✕-left / centered-title / pill-right pattern as the
+                   expense, income and recurring sheets, for consistency. #}
+                <button class="home-modal-close" data-more-sheet-close type="button" aria-label="Close">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
+                <span class="home-modal-title">More</span>
+                <button type="button" class="home-modal-save more-sheet-done" data-more-sheet-close>Done</button>
             </div>
             <div class="more-sheet-grid">
                 <button class="menu-item {% if active_panel == 'recurring' %}active{% endif %}" data-target="panel-recurring" type="button">
-                    <span class="menu-item-inner"><span class="menu-item-text">Recurring</span></span>
+                    <span class="menu-item-inner">
+                        <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 1 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg></span>
+                        <span class="menu-item-text">Recurring</span>
+                        <span class="more-sheet-chevron" aria-hidden="true"></span>
+                    </span>
                 </button>
                 <button class="menu-item {% if active_panel == 'transfer' %}active{% endif %}" data-target="panel-transfer" type="button">
-                    <span class="menu-item-inner"><span class="menu-item-text">Bank Transfer</span></span>
+                    <span class="menu-item-inner">
+                        <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><line x1="3" x2="21" y1="5" y2="5"/><polyline points="7 23 3 19 7 15"/><line x1="21" x2="3" y1="19" y2="19"/></svg></span>
+                        <span class="menu-item-text">Bank Transfer</span>
+                        <span class="more-sheet-chevron" aria-hidden="true"></span>
+                    </span>
                 </button>
                 <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">
-                    <span class="menu-item-inner"><span class="menu-item-text">Consolidated</span></span>
+                    <span class="menu-item-inner">
+                        <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="3"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></span>
+                        <span class="menu-item-text">Consolidated</span>
+                        <span class="more-sheet-chevron" aria-hidden="true"></span>
+                    </span>
                 </button>
                 <button class="menu-item {% if active_panel == 'yearly' %}active{% endif %}" data-target="panel-yearly" type="button">
-                    <span class="menu-item-inner"><span class="menu-item-text">Yearly</span></span>
+                    <span class="menu-item-inner">
+                        <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="4"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg></span>
+                        <span class="menu-item-text">Yearly</span>
+                        <span class="more-sheet-chevron" aria-hidden="true"></span>
+                    </span>
                 </button>
                 <button class="menu-item {% if active_panel == 'investments' %}active{% endif %}" data-target="panel-investments" type="button">
-                    <span class="menu-item-inner"><span class="menu-item-text">Investments</span></span>
+                    <span class="menu-item-inner">
+                        <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg></span>
+                        <span class="menu-item-text">Investments</span>
+                        <span class="more-sheet-chevron" aria-hidden="true"></span>
+                    </span>
                 </button>
                 <button class="menu-item {% if active_panel == 'settings' %}active{% endif %}" data-target="panel-settings" type="button">
-                    <span class="menu-item-inner"><span class="menu-item-text">Settings</span></span>
+                    <span class="menu-item-inner">
+                        <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></span>
+                        <span class="menu-item-text">Settings</span>
+                        <span class="more-sheet-chevron" aria-hidden="true"></span>
+                    </span>
                 </button>
             </div>
         </div>
     </div>
 
+    {# Mobile-only "+" FAB for the Home panel; opens the same expense sheet the
+       quick-bar buttons do, so it shares their aria-controls/aria-expanded
+       wiring instead of needing a second modal handler in app.js. #}
+    <button type="button" id="home-fab" class="home-fab" aria-label="Add expense" aria-controls="home-modal-expense" aria-expanded="false">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+    </button>
+
+    {# Bank badges keyed by account name, for the JS select pickers (setupSelectPickers). #}
+    <script type="application/json" id="bank-badges">{{ bank_badges_for((accounts or [])|map(attribute='name'))|tojson }}</script>
     <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </body>
 </html>

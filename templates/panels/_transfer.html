@@ -1,86 +1,106 @@
+{% from "_macros.html" import account_avatar %}
 <section class="panel {% if active_panel == 'transfer' %}active{% endif %}" id="panel-transfer">
-    <h2>Bank Transfer</h2>
-    <p class="muted small-hint">Move money between your accounts (e.g. Piraeus → AlphaBank). Balances update from the transfer date.</p>
-    {% if account_balances %}
-        <h3 class="home-balances-heading">Account balances</h3>
-        <p class="muted small-hint">{{ balance_scope_hint }}</p>
-        <div class="home-balances-wrap transfer-panel-balances-wrap">
-            <table class="home-balances-table">
-                <thead>
-                    <tr><th>Account</th><th>Balance</th></tr>
-                </thead>
-                <tbody>
-                    {% for account in account_balances %}
-                        <tr>
-                            <td>{{ account.name }}</td>
-                            <td class="{{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-                <tfoot>
-                    <tr class="home-balances-total-row">
-                        <th scope="row">Total (all accounts)</th>
-                        <td class="{{ accounts_total_balance|amount_class }}">{{ accounts_total_balance|money }}</td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-    {% endif %}
-    {% if accounts %}
-        <form action="{{ url_for('accounts.add_transfer') }}" class="panel-add-form transfer-add-form" method="post">
-            <input name="month" type="hidden" value="{{ month_filter }}">
-            <input name="next_panel" type="hidden" value="transfer">
-            <label class="transfer-field-label" for="transfer-from">From account</label>
-            <select id="transfer-from" name="from_account_id" required>
-                {% for account in accounts %}
-                    <option value="{{ account.id }}">{{ account.name }}</option>
-                {% endfor %}
-            </select>
-            <label class="transfer-field-label" for="transfer-to">To account</label>
-            <select id="transfer-to" name="to_account_id" required>
-                {% for account in accounts %}
-                    <option value="{{ account.id }}">{{ account.name }}</option>
-                {% endfor %}
-            </select>
-            <label class="transfer-field-label" for="transfer-amount">Amount</label>
-            <input id="transfer-amount" min="0.01" name="amount" placeholder="Amount" required step="0.01" type="number">
-            <label class="transfer-field-label" for="transfer-date">Date</label>
-            <input id="transfer-date" name="transferred_at" type="date" value="{{ transfer_default_date }}">
-            <textarea name="notes" placeholder="Notes (optional)" rows="2"></textarea>
-            <button type="submit">Record transfer</button>
-        </form>
-    {% else %}
-        <p class="muted">Add at least two accounts in Settings to record transfers.</p>
-    {% endif %}
+    <h2 class="home-title">Transfer</h2>
+    <p class="muted small-hint home-intro">
+        Move money between your accounts (e.g. Piraeus &rarr; AlphaBank). Balances update from the transfer date.
+        {% if account_balances %}{{ balance_scope_hint }}{% endif %}
+    </p>
 
-    <h3 class="transfer-log-heading">Last {{ transfer_log_limit }} transfers</h3>
-    <div class="transfer-log-wrap">
-        <table class="transfer-log-table">
-            <thead>
-                <tr><th>Date</th><th>From</th><th>To</th><th class="transfer-amt-col">Amount</th><th>Notes</th><th></th></tr>
-            </thead>
-            <tbody>
+    <div class="transfer-layout">
+        <div class="transfer-card-col">
+            {% if accounts %}
+                <form action="{{ url_for('accounts.add_transfer') }}" id="transfer-add-form" class="panel-add-form transfer-add-form home-quick-form" method="post">
+                    <input name="month" type="hidden" value="{{ month_filter }}">
+                    <input name="next_panel" type="hidden" value="transfer">
+
+                    <div class="home-modal-fields transfer-accounts-fields">
+                        <div class="home-modal-field">
+                            <label for="transfer-from">From</label>
+                            <select id="transfer-from" name="from_account_id" required data-picker>
+                                {% for account in accounts %}
+                                    <option value="{{ account.id }}" data-balance="{{ account_balance_by_id.get(account.id, 0)|money }}">{{ account.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="transfer-swap-row">
+                            <button type="button" id="transfer-swap-btn" class="transfer-swap-btn" aria-label="Swap accounts">&#8645;</button>
+                        </div>
+                        <div class="home-modal-field">
+                            <label for="transfer-to">To</label>
+                            {# Defaults to the second account (when there is one) so From
+                               and To do not start out equal - see setupTransferForm in
+                               app.js for the live "choose two different accounts" guard. #}
+                            <select id="transfer-to" name="to_account_id" required data-picker>
+                                {% for account in accounts %}
+                                    <option value="{{ account.id }}" data-balance="{{ account_balance_by_id.get(account.id, 0)|money }}" {% if loop.index0 == 1 %}selected{% endif %}>{{ account.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <p class="transfer-same-account-hint" id="transfer-same-account-hint" hidden>Choose two different accounts.</p>
+
+                    <div class="home-modal-amount-field">
+                        <label class="sr-only" for="transfer-amount">Amount</label>
+                        <input id="transfer-amount" class="home-modal-amount-input" min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number">
+                    </div>
+
+                    <div class="home-modal-fields">
+                        <div class="home-modal-field">
+                            <label for="transfer-date">Date</label>
+                            <input id="transfer-date" name="transferred_at" type="date" value="{{ transfer_default_date }}">
+                        </div>
+                        <div class="home-modal-field home-modal-field-notes">
+                            <label for="transfer-notes">Notes</label>
+                            <textarea id="transfer-notes" name="notes" placeholder="Notes" rows="2"></textarea>
+                        </div>
+                    </div>
+
+                    <button type="submit" id="transfer-submit-btn" class="transfer-submit-btn">Record transfer</button>
+                </form>
+            {% else %}
+                <p class="muted">Add at least two accounts in Settings to record transfers.</p>
+            {% endif %}
+        </div>
+
+        <div class="transfer-side-col">
+            {% if account_balances %}
+                <h3 class="home-balances-heading">Account balances</h3>
+                <ul class="home-balances-list">
+                    {% for account in account_balances %}
+                        <li class="home-balances-row">
+                            {{ account_avatar(account.name) }}
+                            <span class="home-balances-name">{{ account.name }}</span>
+                            <span class="home-balances-amount-pill {{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</span>
+                        </li>
+                    {% endfor %}
+                    <li class="home-balances-row home-balances-total">
+                        <span class="home-balances-name">Total (all accounts)</span>
+                        <span class="home-balances-amount-pill {{ accounts_total_balance|amount_class }}">{{ accounts_total_balance|money }}</span>
+                    </li>
+                </ul>
+            {% endif %}
+
+            <h3 class="transfer-log-heading">Last {{ transfer_log_limit }} transfers</h3>
+            <ul class="transfer-log-list">
                 {% for row in account_transfers %}
-                    <tr>
-                        <td data-label="Date">{{ row.transferred_at|txn_day }}</td>
-                        <td data-label="From">{{ row.from_account_name }}</td>
-                        <td data-label="To">{{ row.to_account_name }}</td>
-                        <td class="transfer-amt-col" data-label="Amount">{{ row.amount|money }}</td>
-                        <td data-label="Notes">{{ row.notes }}</td>
-                        <td class="transfer-actions">
-                            <form action="{{ url_for('accounts.delete_transfer', transfer_id=row.id) }}" method="post">
-                                <input name="month" type="hidden" value="{{ month_filter }}">
-                                <input name="next_panel" type="hidden" value="transfer">
-                                <button class="btn-icon btn-icon-delete" type="submit" title="Delete transfer" aria-label="Delete transfer">
-                                    <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
+                    <li class="transfer-log-row">
+                        <div class="transfer-log-main">
+                            <p class="transfer-log-route">{{ account_avatar(row.from_account_name, 'account-avatar-inline', false) }}{{ row.from_account_name }} &rarr; {{ account_avatar(row.to_account_name, 'account-avatar-inline', false) }}{{ row.to_account_name }}</p>
+                            <p class="transfer-log-meta muted">{{ row.transferred_at|txn_day }}{% if row.notes %} &middot; {{ row.notes }}{% endif %}</p>
+                        </div>
+                        <span class="transfer-log-amount">{{ row.amount|money }}</span>
+                        <form action="{{ url_for('accounts.delete_transfer', transfer_id=row.id) }}" class="transfer-log-delete-form" method="post">
+                            <input name="month" type="hidden" value="{{ month_filter }}">
+                            <input name="next_panel" type="hidden" value="transfer">
+                            <button class="transfer-log-delete" type="submit" title="Delete transfer" aria-label="Delete transfer">
+                                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                        </form>
+                    </li>
                 {% else %}
-                    <tr><td colspan="6">No transfers yet.</td></tr>
+                    <li class="transfer-log-row transfer-log-empty">No transfers yet.</li>
                 {% endfor %}
-            </tbody>
-        </table>
+            </ul>
+        </div>
     </div>
 </section>

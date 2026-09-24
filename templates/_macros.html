@@ -145,3 +145,16 @@
     </figure>
 </div>
 {%- endmacro %}
+
+{# Square avatar for an account: the bank's logo or brand-coloured badge when
+   the name matches a known bank (see banks.py), else the first letter. #}
+{% macro account_avatar(name, cls='home-balances-avatar', fallback=true) -%}
+{% set bank = detect_bank(name) %}
+{% if bank and bank.logo -%}
+<span class="{{ cls }} bank-avatar bank-avatar-logo" aria-hidden="true" title="{{ bank.name }}"><img src="{{ bank.logo }}" alt="" loading="lazy"></span>
+{%- elif bank -%}
+<span class="{{ cls }} bank-avatar{% if bank.label|length > 2 %} bank-avatar-long{% endif %}" aria-hidden="true" title="{{ bank.name }}" style="--bank-bg: {{ bank.bg }}; --bank-fg: {{ bank.fg }};">{{ bank.label }}</span>
+{%- elif fallback -%}
+<span class="{{ cls }}" aria-hidden="true">{{ (name or '?')[0]|upper }}</span>
+{%- endif %}
+{%- endmacro %}

@@ -6,6 +6,22 @@
     // in sync via data-target.
     const menuButtons = document.querySelectorAll(".menu-item, .bottom-nav-item[data-target]");
     const panels = document.querySelectorAll(".panel");
+
+    // Mirrors the active panel onto <body> for CSS that needs to key off it
+    // but should not depend on :has() support: .is-home-panel shows the
+    // mobile FAB, and .is-flat-panel makes the panel shell transparent on
+    // mobile for panels built from grouped-list cards, so the cards sit
+    // directly on the page background.
+    const FLAT_PANELS = ["panel-home", "panel-transfer"];
+
+    function syncHomePanelBodyClass() {
+        const activePanel = document.querySelector(".panel.active");
+        const activeId = activePanel ? activePanel.id : "";
+        document.body.classList.toggle("is-home-panel", activeId === "panel-home");
+        document.body.classList.toggle("is-flat-panel", FLAT_PANELS.indexOf(activeId) !== -1);
+    }
+    syncHomePanelBodyClass();
+
     const savedTheme = localStorage.getItem("theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const theme = savedTheme || (prefersDark ? "dark" : "light");
@@ -276,6 +292,7 @@
             panels.forEach(function (panel) {
                 panel.classList.toggle("active", panel.id === panelTarget);
             });
+            syncHomePanelBodyClass();
 
             subMenuGroups.forEach(function (group) {
                 const parentBtn = group.previousElementSibling;
@@ -326,6 +343,7 @@
             panels.forEach(function (panel) {
                 panel.classList.toggle("active", panel.id === target);
             });
+            syncHomePanelBodyClass();
 
             subMenuGroups.forEach(function (group) {
                 const parentBtn = group.previousElementSibling;
@@ -506,21 +524,304 @@
         });
     })();
 
+    (function setupSelectPickers() {
+        // Progressive enhancement: the <select> stays in the DOM (still named,
+        // still validated, still what actually gets submitted) but is visually
+        // replaced by a row-style button that opens a shared iOS-style picker
+        // sheet. Selects opt in with [data-picker].
+        const selects = document.querySelectorAll("select[data-picker]");
+        if (!selects.length) {
+            return;
+        }
+
+        const sheet = document.createElement("div");
+        // Reuses .home-modal's own fixed/backdrop/bottom-sheet-on-mobile CSS;
+        // .picker-sheet only adds the z-index bump that stacks it above it.
+        sheet.className = "home-modal picker-sheet";
+        sheet.hidden = true;
+        sheet.setAttribute("aria-hidden", "true");
+        sheet.setAttribute("role", "dialog");
+        sheet.setAttribute("aria-modal", "true");
+        sheet.innerHTML =
+            '<button type="button" class="home-modal-backdrop" data-picker-close aria-label="Close"></button>' +
+            '<div class="home-modal-dialog picker-sheet-dialog">' +
+            '<div class="home-modal-handle" aria-hidden="true"></div>' +
+            '<div class="home-modal-header">' +
+            '<button type="button" class="home-modal-close" data-picker-close aria-label="Close">' +
+            '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>' +
+            "</button>" +
+            '<h3 class="home-modal-title picker-sheet-title"></h3>' +
+            '<span class="picker-sheet-spacer" aria-hidden="true"></span>' +
+            "</div>" +
+            '<ul class="picker-sheet-list"></ul>' +
+            "</div>";
+        // Appended once, to <body>, and reused for every enhanced select - it
+        // stacks above whichever .home-modal happens to be open underneath it.
+        document.body.appendChild(sheet);
+
+        const titleEl = sheet.querySelector(".picker-sheet-title");
+        const listEl = sheet.querySelector(".picker-sheet-list");
+        const closeBtn = sheet.querySelector(".home-modal-close");
+        let activeTrigger = null;
+
+        function optionLabel(select) {
+            const opt = select.options[select.selectedIndex];
+            return opt ? opt.textContent : "";
+        }
+
+        function avatarLetter(text) {
+            const trimmed = (text || "").trim();
+            return trimmed ? trimmed.charAt(0).toUpperCase() : "?";
+        }
+
+        // Account name -> bank badge, rendered server-side by banks.py.
+        let bankBadges = {};
+        try {
+            const badgeData = document.getElementById("bank-badges");
+            bankBadges = badgeData ? JSON.parse(badgeData.textContent) || {} : {};
+        } catch (err) {
+            bankBadges = {};
+        }
+
+        function buildAvatar(option, select) {
+            const avatar = document.createElement("span");
+            avatar.className = "picker-sheet-avatar";
+            avatar.setAttribute("aria-hidden", "true");
+            const isAccount = /account_id$/.test(select.name || "");
+            const bank = isAccount ? bankBadges[option.textContent] : null;
+            if (bank && bank.logo) {
+                avatar.classList.add("bank-avatar", "bank-avatar-logo");
+                const img = document.createElement("img");
+                img.src = bank.logo;
+                img.alt = "";
+                avatar.appendChild(img);
+            } else if (bank) {
+                avatar.classList.add("bank-avatar");
+                if (bank.label.length > 2) {
+                    avatar.classList.add("bank-avatar-long");
+                }
+                avatar.style.setProperty("--bank-bg", bank.bg);
+                avatar.style.setProperty("--bank-fg", bank.fg);
+                avatar.textContent = bank.label;
+            } else {
+                avatar.textContent = avatarLetter(option.textContent);
+            }
+            return avatar;
+        }
+
+        function closePicker() {
+            if (sheet.hidden) {
+                return;
+            }
+            sheet.hidden = true;
+            sheet.setAttribute("aria-hidden", "true");
+            if (activeTrigger) {
+                activeTrigger.focus();
+            }
+            activeTrigger = null;
+        }
+
+        function buildOptionRow(option, select) {
+            const li = document.createElement("li");
+            const optBtn = document.createElement("button");
+            optBtn.type = "button";
+            optBtn.className = "picker-sheet-option";
+            optBtn.setAttribute("role", "option");
+            const selected = option.value === select.value;
+            optBtn.setAttribute("aria-selected", selected ? "true" : "false");
+            optBtn.innerHTML =
+                '<span class="picker-sheet-name"></span>' +
+                '<span class="picker-sheet-check" aria-hidden="true">' + (selected ? "✓" : "") + "</span>";
+            optBtn.insertBefore(buildAvatar(option, select), optBtn.firstChild);
+            optBtn.querySelector(".picker-sheet-name").textContent = option.textContent;
+            optBtn.addEventListener("click", function () {
+                select.value = option.value;
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+                closePicker();
+            });
+            li.appendChild(optBtn);
+            return li;
+        }
+
+        function renderOptions(select) {
+            listEl.innerHTML = "";
+            for (let i = 0; i < select.children.length; i += 1) {
+                const child = select.children[i];
+                if (child.tagName === "OPTGROUP") {
+                    const header = document.createElement("li");
+                    header.className = "picker-sheet-group-label";
+                    header.textContent = child.label;
+                    listEl.appendChild(header);
+                    for (let j = 0; j < child.children.length; j += 1) {
+                        listEl.appendChild(buildOptionRow(child.children[j], select));
+                    }
+                } else if (child.tagName === "OPTION") {
+                    listEl.appendChild(buildOptionRow(child, select));
+                }
+            }
+        }
+
+        function openPicker(select, trigger, title) {
+            activeTrigger = trigger;
+            titleEl.textContent = title;
+            renderOptions(select);
+            sheet.hidden = false;
+            sheet.setAttribute("aria-hidden", "false");
+            closeBtn.focus();
+        }
+
+        sheet.querySelectorAll("[data-picker-close]").forEach(function (el) {
+            el.addEventListener("click", closePicker);
+        });
+
+        // Registered ahead of setupHomeQuickModals below, so its keydown
+        // listener runs first: stopImmediatePropagation keeps the Escape key
+        // from also closing the .home-modal underneath the picker.
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && !sheet.hidden) {
+                event.stopImmediatePropagation();
+                closePicker();
+            }
+        });
+
+        selects.forEach(function (select) {
+            const label = select.id ? document.querySelector("label[for='" + select.id + "']") : null;
+            const title = label ? label.textContent.trim() : select.getAttribute("aria-label") || "";
+
+            const trigger = document.createElement("button");
+            trigger.type = "button";
+            trigger.className = "picker-trigger";
+            if (select.id) {
+                trigger.id = select.id + "-trigger";
+            }
+            trigger.innerHTML =
+                '<span class="picker-trigger-value"></span>' +
+                '<span class="picker-trigger-chevron" aria-hidden="true"></span>';
+            trigger.querySelector(".picker-trigger-value").textContent = optionLabel(select);
+
+            select.insertAdjacentElement("afterend", trigger);
+            // Visually hidden, not display:none, so `required` validation and
+            // its native error bubble still work; out of the tab order because
+            // the button above is now the focusable, operable control.
+            select.classList.add("picker-select-source");
+            select.setAttribute("tabindex", "-1");
+            select.setAttribute("aria-hidden", "true");
+            if (label && trigger.id) {
+                label.setAttribute("for", trigger.id);
+            }
+
+            trigger.addEventListener("click", function () {
+                openPicker(select, trigger, title);
+            });
+
+            select.addEventListener("change", function () {
+                trigger.querySelector(".picker-trigger-value").textContent = optionLabel(select);
+            });
+        });
+    })();
+
+    (function setupTransferForm() {
+        // Runs after setupSelectPickers above, which is what actually creates
+        // the #transfer-from-trigger / #transfer-to-trigger buttons this
+        // reaches into.
+        const form = document.getElementById("transfer-add-form");
+        const fromSelect = document.getElementById("transfer-from");
+        const toSelect = document.getElementById("transfer-to");
+        if (!form || !fromSelect || !toSelect) {
+            return;
+        }
+        const swapBtn = document.getElementById("transfer-swap-btn");
+        const hint = document.getElementById("transfer-same-account-hint");
+        const submitBtn = document.getElementById("transfer-submit-btn");
+
+        function renderValue(select) {
+            const trigger = document.getElementById(select.id + "-trigger");
+            const valueEl = trigger ? trigger.querySelector(".picker-trigger-value") : null;
+            if (!valueEl) {
+                return;
+            }
+            const option = select.options[select.selectedIndex];
+            valueEl.classList.add("picker-trigger-value--stacked");
+            valueEl.innerHTML = "";
+            const nameEl = document.createElement("span");
+            nameEl.className = "transfer-account-name";
+            nameEl.textContent = option ? option.textContent : "";
+            valueEl.appendChild(nameEl);
+            const balance = option ? option.getAttribute("data-balance") : "";
+            if (balance) {
+                const balanceEl = document.createElement("span");
+                balanceEl.className = "transfer-account-balance";
+                balanceEl.textContent = balance;
+                valueEl.appendChild(balanceEl);
+            }
+        }
+
+        function checkSameAccount() {
+            const same = !!fromSelect.value && fromSelect.value === toSelect.value;
+            if (hint) {
+                hint.hidden = !same;
+            }
+            if (submitBtn) {
+                submitBtn.disabled = same;
+            }
+        }
+
+        [fromSelect, toSelect].forEach(function (select) {
+            renderValue(select);
+            select.addEventListener("change", function () {
+                renderValue(select);
+                checkSameAccount();
+            });
+        });
+        checkSameAccount();
+
+        if (swapBtn) {
+            swapBtn.addEventListener("click", function () {
+                const fromValue = fromSelect.value;
+                const toValue = toSelect.value;
+                fromSelect.value = toValue;
+                toSelect.value = fromValue;
+                // The server does the real "different accounts" check too;
+                // this is just so the swap and the hint/submit state agree
+                // immediately without a round trip.
+                fromSelect.dispatchEvent(new Event("change", { bubbles: true }));
+                toSelect.dispatchEvent(new Event("change", { bubbles: true }));
+            });
+        }
+    })();
+
     (function setupHomeQuickModals() {
+        // The FAB is a second trigger for the same expense sheet the quick-bar
+        // button opens, so both are listed for that one modal/kind pair.
         const modalConfigs = [
-            { modal: document.getElementById("home-modal-expense"), button: document.getElementById("home-btn-expense") },
-            { modal: document.getElementById("home-modal-income"), button: document.getElementById("home-btn-income") },
-            { modal: document.getElementById("recurring-modal-add"), button: document.getElementById("recurring-btn-add") },
-        ].filter(function (entry) {
-            return entry.modal && entry.button;
+            { modal: document.getElementById("home-modal-expense"), buttons: [document.getElementById("home-btn-expense"), document.getElementById("home-fab")], kind: "expense" },
+            { modal: document.getElementById("home-modal-income"), buttons: [document.getElementById("home-btn-income")], kind: "income" },
+            { modal: document.getElementById("recurring-modal-add"), buttons: [document.getElementById("recurring-btn-add")], kind: "recurring" },
+        ].map(function (entry) {
+            entry.buttons = entry.buttons.filter(Boolean);
+            return entry;
+        }).filter(function (entry) {
+            return entry.modal && entry.buttons.length;
         });
         if (!modalConfigs.length) {
             return;
         }
 
+        function findEntry(kind) {
+            return modalConfigs.filter(function (entry) {
+                return entry.kind === kind;
+            })[0];
+        }
+
         function focusFirstField(modal) {
-            const field = modal.querySelector(
-                "textarea, input:not([type='hidden']):not([type='checkbox']), select, button[type='submit']"
+            // Search inside the form only: the header's Save button is also a
+            // button[type="submit"] and sits before the form in the DOM, so a
+            // modal-wide search picked it (display:none on desktop, so focus
+            // silently left the dialog; visible on mobile, so it got focused
+            // instead of the amount field).
+            const form = modal.querySelector("form") || modal;
+            const field = form.querySelector(
+                "input.home-modal-amount-input, textarea, input:not([type='hidden']):not([type='checkbox']), select"
             );
             if (field) {
                 field.focus();
@@ -531,29 +832,35 @@
             modalConfigs.forEach(function (entry) {
                 entry.modal.hidden = true;
                 entry.modal.setAttribute("aria-hidden", "true");
-                entry.button.setAttribute("aria-expanded", "false");
-                entry.button.classList.remove("is-active");
+                entry.buttons.forEach(function (button) {
+                    button.setAttribute("aria-expanded", "false");
+                    button.classList.remove("is-active");
+                });
             });
             document.body.classList.remove("home-modal-open");
         }
 
-        function openModal(modal, button) {
+        function openModal(modal, buttons) {
             closeAll();
             modal.hidden = false;
             modal.setAttribute("aria-hidden", "false");
-            button.setAttribute("aria-expanded", "true");
-            button.classList.add("is-active");
+            buttons.forEach(function (button) {
+                button.setAttribute("aria-expanded", "true");
+                button.classList.add("is-active");
+            });
             document.body.classList.add("home-modal-open");
             focusFirstField(modal);
         }
 
         modalConfigs.forEach(function (entry) {
-            entry.button.addEventListener("click", function () {
-                if (entry.modal.hidden) {
-                    openModal(entry.modal, entry.button);
-                } else {
-                    closeAll();
-                }
+            entry.buttons.forEach(function (button) {
+                button.addEventListener("click", function () {
+                    if (entry.modal.hidden) {
+                        openModal(entry.modal, entry.buttons);
+                    } else {
+                        closeAll();
+                    }
+                });
             });
         });
 
@@ -561,11 +868,116 @@
             el.addEventListener("click", closeAll);
         });
 
+        // Segmented Expense/Income control inside those two sheets: swap which
+        // sheet is open without touching the escape/backdrop/focus plumbing above.
+        document.querySelectorAll("[data-home-modal-switch]").forEach(function (el) {
+            el.addEventListener("click", function () {
+                const target = findEntry(el.getAttribute("data-home-modal-switch"));
+                if (!target) {
+                    return;
+                }
+                const current = modalConfigs.filter(function (entry) {
+                    return !entry.modal.hidden;
+                })[0];
+                // Carry the amount and notes across so switching Expense/Income
+                // mid-entry doesn't throw away what was already typed.
+                if (current && current !== target) {
+                    const fromAmount = current.modal.querySelector(".home-modal-amount-input");
+                    const toAmount = target.modal.querySelector(".home-modal-amount-input");
+                    if (fromAmount && toAmount) {
+                        // Income has no sign of its own, and the expense sheet
+                        // only applies its -/+ toggle at submit time, so the
+                        // field itself can hold a "-" the user typed. Carry the
+                        // magnitude across either direction rather than a
+                        // negative value landing in income's min="0" input.
+                        const amountValue = fromAmount.value;
+                        if (amountValue === "") {
+                            toAmount.value = "";
+                        } else {
+                            const parsed = parseFloat(amountValue);
+                            toAmount.value = isNaN(parsed) ? amountValue : Math.abs(parsed);
+                        }
+                    }
+                    const fromNotes = current.modal.querySelector("textarea[name='notes']");
+                    const toNotes = target.modal.querySelector("textarea[name='notes']");
+                    if (fromNotes && toNotes) {
+                        toNotes.value = fromNotes.value;
+                    }
+                }
+                openModal(target.modal, target.buttons);
+            });
+        });
+
         document.addEventListener("keydown", function (event) {
             if (event.key === "Escape" && document.body.classList.contains("home-modal-open")) {
                 closeAll();
             }
         });
+    })();
+
+    (function setupAmountSignToggles() {
+        // Expenses are signed - negative spends, positive refunds (see
+        // helpers.normalize_expense_amount) - but type="number" has no way to
+        // type a leading "+", so a plain amount field left refunds as the only
+        // reachable positive value. This round -/+ toggle picks the sign for
+        // whatever was typed as a positive number; an explicit "-" always wins.
+        const toggles = document.querySelectorAll("[data-amount-sign-toggle]");
+        if (!toggles.length) {
+            return;
+        }
+
+        function fieldFor(toggle) {
+            return toggle.closest("[data-amount-sign-field]");
+        }
+
+        function amountInputFor(toggle) {
+            const field = fieldFor(toggle);
+            return field ? field.querySelector("input[type='number']") : null;
+        }
+
+        function applyState(toggle, isRefund) {
+            toggle.setAttribute("aria-pressed", isRefund ? "true" : "false");
+            toggle.setAttribute("aria-label", "Amount sign: " + (isRefund ? "refund" : "expense"));
+            toggle.textContent = isRefund ? "+" : "−";
+        }
+
+        toggles.forEach(function (toggle) {
+            applyState(toggle, toggle.getAttribute("aria-pressed") === "true");
+
+            toggle.addEventListener("click", function () {
+                applyState(toggle, toggle.getAttribute("aria-pressed") !== "true");
+            });
+
+            const form = toggle.closest("form");
+            const amountInput = amountInputFor(toggle);
+            if (!form || !amountInput) {
+                return;
+            }
+            // Runs after the browser's own constraint validation (a required/
+            // invalid field never gets this far) and before the form's data is
+            // collected for the request.
+            form.addEventListener("submit", function () {
+                const parsed = parseFloat(amountInput.value);
+                const isRefund = toggle.getAttribute("aria-pressed") === "true";
+                if (!isNaN(parsed) && parsed > 0 && !isRefund) {
+                    amountInput.value = String(-parsed);
+                }
+            });
+        });
+
+        // The Home expense sheet always reopens on "-" (spending), regardless
+        // of how it was left last time.
+        const homeExpenseModal = document.getElementById("home-modal-expense");
+        const homeExpenseToggle = homeExpenseModal
+            ? homeExpenseModal.querySelector("[data-amount-sign-toggle]")
+            : null;
+        if (homeExpenseModal && homeExpenseToggle) {
+            new MutationObserver(function () {
+                if (!homeExpenseModal.hidden) {
+                    applyState(homeExpenseToggle, false);
+                }
+            }).observe(homeExpenseModal, { attributes: true, attributeFilter: ["hidden"] });
+        }
     })();
 
     (function setupMoreSheet() {
@@ -596,9 +1008,12 @@
             sheet.setAttribute("aria-hidden", "false");
             trigger.setAttribute("aria-expanded", "true");
             document.body.classList.add("home-modal-open");
-            const first = sheet.querySelector(".menu-item");
-            if (first) {
-                first.focus();
+            // Focus the close button rather than the first row: focusing a
+            // list item drew a full-width default focus ring around it, which
+            // read as a rendering glitch rather than a deliberate highlight.
+            const closeBtn = sheet.querySelector(".home-modal-close");
+            if (closeBtn) {
+                closeBtn.focus();
             }
         }
 
