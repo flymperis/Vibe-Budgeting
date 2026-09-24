@@ -39,6 +39,10 @@ _BANKS = [
     ("n26", "N26", "N26", "#36A18B", "#FFFFFF", [r"n26"]),
     ("wise", "Wise", "W", "#9FE870", "#163300", [r"wise", r"transferwise"]),
     ("paypal", "PayPal", "PP", "#003087", "#FFFFFF", [r"paypal"]),
+    # --- Meal vouchers ---------------------------------------------------
+    # Edenred's Ticket Restaurant card is commonly kept as its own "account".
+    ("ticket_restaurant", "Ticket Restaurant", "TR", "#F72717", "#FFFFFF",
+     [r"ticket ?restaurant", r"ticket", r"edenred", r"τικετ"]),
     # --- Not a bank, but a very common "account" --------------------------
     ("cash", "Cash", "€", "#2E7D32", "#FFFFFF", [r"cash", r"μετρητα", r"metrita", r"πορτοφολι", r"wallet"]),
 ]

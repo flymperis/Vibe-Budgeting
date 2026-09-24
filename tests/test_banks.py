@@ -19,6 +19,10 @@ from .conftest import csrf_token, register_and_login
         ("Revolut EUR", "revolut"),
         ("CrediaBank", "attica"),
         ("Μετρητά", "cash"),
+        ("Ticket Restaurant", "ticket_restaurant"),
+        ("TicketRestaurant", "ticket_restaurant"),
+        ("Edenred κάρτα", "ticket_restaurant"),
+        ("Τικετ", "ticket_restaurant"),
     ],
 )
 def test_detect_bank_from_account_name(name, slug):
