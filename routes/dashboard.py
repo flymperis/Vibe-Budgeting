@@ -1,5 +1,6 @@
 from flask import Blueprint, flash, g, render_template, request
 from datetime import datetime, timedelta, timezone
+import budget
 import calendar
 import integrations
 import telegram_bot
@@ -499,6 +500,38 @@ def index():
             stock_monthly[asset_idx] if len(stock_monthly) > asset_idx else 0.0
         )
 
+    budget_enabled = budget.is_enabled(conn, uid)
+    budget_summary = budget.budget_for_month(conn, uid, month_filter) if budget_enabled else None
+    budget_defaults = budget.default_budgets(conn, uid) if budget_enabled else {}
+    budget_form_rows = []
+    budget_other_amount = None
+    if budget_enabled:
+        # budget_summary already looked up other_amount for its "other" block;
+        # read it back from there instead of hitting budget_settings again.
+        budget_other_amount = budget_summary["other"]["budget"] if budget_summary["other"] else None
+        category_ids = [int(cat["id"]) for cat in categories]
+        history = budget.spending_history(
+            conn, uid, month_filter, category_ids=category_ids, defaults=budget_defaults
+        )
+        fixed_ids = budget.fixed_categories(conn, uid)
+        for cat in categories:
+            cid = int(cat["id"])
+            hist = history.get(cid, {"avg": 0.0, "suggested": 0.0, "active": False})
+            budget_form_rows.append(
+                {
+                    "id": cid,
+                    "name": cat["name"],
+                    "default": budget_defaults.get(cid),
+                    "avg": hist["avg"],
+                    "suggested": hist["suggested"],
+                    "active": hist["active"],
+                    "fixed": cid in fixed_ids,
+                }
+            )
+        budget_form_rows.sort(
+            key=lambda r: (0, -r["avg"], r["name"]) if r["active"] else (1, r["name"])
+        )
+
     user_integrations = integrations.get_user_integrations(conn, uid)
     telegram_server = telegram_bot.server_config_for_form(conn)
     telegram_link = telegram_bot.get_telegram_link(conn, uid)
@@ -576,6 +609,11 @@ def index():
         reports_crypto_value=reports_crypto_value,
         reports_stock_value=reports_stock_value,
         recurring_entries=recurring_entries,
+        budget_enabled=budget_enabled,
+        budget_summary=budget_summary,
+        budget_defaults=budget_defaults,
+        budget_form_rows=budget_form_rows,
+        budget_other_amount=budget_other_amount,
         investments_section=investments_section,
         crypto_holdings=crypto_holdings_raw,
         crypto_transactions=crypto_txs,

@@ -4,9 +4,9 @@ import re
 import secrets
 
 
-# 2 added the Transfers/Stocks/Crypto/Recurring sheets. Version 1 workbooks
-# still import: the sheets added in 2 are optional on the way in.
-EXPORT_FORMAT_VERSION = 2
+# 2 added the Transfers/Stocks/Crypto/Recurring sheets, 3 the Budgets sheet.
+# Older workbooks still import: sheets added later are optional on the way in.
+EXPORT_FORMAT_VERSION = 3
 
 LIST_PAGE_SIZE = 75
 
@@ -38,6 +38,8 @@ SHEET_CRYPTO = "Crypto"
 
 SHEET_RECURRING = "Recurring"
 
+SHEET_BUDGETS = "Budgets"
+
 ALLOWED_PANELS = {
     "home",
     "expenses",
@@ -45,6 +47,7 @@ ALLOWED_PANELS = {
     "recurring",
     "transfer",
     "summary",
+    "budget",
     "yearly",
     "reports",
     "investments",

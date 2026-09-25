@@ -2,7 +2,8 @@ import re
 from datetime import datetime, timedelta, timezone
 from openpyxl import Workbook, load_workbook
 
-from config import EXPORT_FORMAT_VERSION, SHEET_ACCOUNTS, SHEET_CRYPTO, SHEET_EXPENSES, SHEET_EXPENSE_CATEGORIES, SHEET_INCOME, SHEET_INCOME_CATEGORIES, SHEET_META, SHEET_RECURRING, SHEET_STOCKS, SHEET_TRANSFERS
+import budget
+from config import EXPORT_FORMAT_VERSION, SHEET_ACCOUNTS, SHEET_BUDGETS, SHEET_CRYPTO, SHEET_EXPENSES, SHEET_EXPENSE_CATEGORIES, SHEET_INCOME, SHEET_INCOME_CATEGORIES, SHEET_META, SHEET_RECURRING, SHEET_STOCKS, SHEET_TRANSFERS
 from db import get_connection
 from helpers import _lookup_account_id, _lookup_category_id
 
@@ -54,6 +55,11 @@ RECURRING_COLUMNS = [
     "created_at",
     "applied_months",
 ]
+# Added in format version 3. A blank month is the category's default monthly
+# budget; YYYY-MM is an override for that month alone. `fixed` (1/0) is only
+# meaningful on a default row (blank month) — it is optional on import so
+# older-format workbooks still load, and blank/absent means "not fixed".
+BUDGET_COLUMNS = ["category_name", "month", "amount", "fixed"]
 
 
 def _normalize_header_key(value):
@@ -147,6 +153,9 @@ def _build_export_workbook(conn, user_id):
     ws_meta.append(["key", "value"])
     ws_meta.append(["format_version", EXPORT_FORMAT_VERSION])
     ws_meta.append(["exported_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")])
+    ws_meta.append(["budget_enabled", 1 if budget.is_enabled(conn, uid) else 0])
+    other_amount = budget.get_other_amount(conn, uid)
+    ws_meta.append(["budget_other_amount", "" if other_amount is None else other_amount])
 
     ws_accounts = wb.create_sheet(SHEET_ACCOUNTS)
     ws_accounts.append(["name", "opening_balance"])
@@ -295,6 +304,28 @@ def _build_export_workbook(conn, user_id):
         values = [row[c] for c in RECURRING_COLUMNS if c != "applied_months"]
         ws_rec.append(values + [",".join(applied)])
 
+    ws_bud = wb.create_sheet(SHEET_BUDGETS)
+    ws_bud.append(BUDGET_COLUMNS)
+    for row in conn.execute(
+        """
+        SELECT c.name AS category_name, '' AS month, b.amount AS amount,
+               COALESCE(f.fixed, 0) AS fixed
+        FROM categories c
+        LEFT JOIN category_budgets b ON b.user_id = c.user_id AND b.category_id = c.id
+        LEFT JOIN category_budget_flags f ON f.user_id = c.user_id AND f.category_id = c.id
+        WHERE c.user_id = ? AND (b.amount IS NOT NULL OR f.fixed = 1)
+        UNION ALL
+        SELECT c.name, o.ym, o.amount, 0
+        FROM category_budget_overrides o JOIN categories c ON c.id = o.category_id
+        WHERE o.user_id = ?
+        ORDER BY 1, 2
+        """,
+        (uid, uid),
+    ):
+        # A category can be fixed with no default amount of its own yet; the
+        # amount cell is left blank rather than forcing a 0 the user never set.
+        ws_bud.append([row["category_name"], row["month"], row["amount"], row["fixed"]])
+
     return wb
 
 def _build_migration_template_workbook():
@@ -327,6 +358,7 @@ def _build_migration_template_workbook():
     wb.create_sheet(SHEET_STOCKS).append(STOCK_COLUMNS)
     wb.create_sheet(SHEET_CRYPTO).append(CRYPTO_COLUMNS)
     wb.create_sheet(SHEET_RECURRING).append(RECURRING_COLUMNS)
+    wb.create_sheet(SHEET_BUDGETS).append(BUDGET_COLUMNS)
 
     return wb
 
@@ -583,6 +615,84 @@ def _collect_import_recurring(rows):
     return out, errors
 
 
+_BUDGET_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def _parse_bool_flag(raw):
+    """1/0/true/false, case-insensitive; blank or unrecognised is False."""
+    text = str(raw if raw is not None else "").strip().lower()
+    if text in ("1", "true", "yes"):
+        return 1
+    if text in ("", "0", "false", "no"):
+        return 0
+    try:
+        return 1 if float(text) else 0
+    except ValueError:
+        return 0
+
+
+def _sheet_headers(wb, sheet_name):
+    """Normalized column headers of a sheet, or an empty set when absent."""
+    if sheet_name not in wb.sheetnames:
+        return set()
+    rows = list(wb[sheet_name].iter_rows(values_only=True))
+    if not rows:
+        return set()
+    return {_normalize_header_key(cell) for cell in rows[0] if cell}
+
+
+def _collect_import_budgets(rows, has_fixed_column=False):
+    """Rows are (category_name, month_or_None, amount_or_None, fixed_or_None).
+
+    `fixed` is None when the workbook predates the fixed column (leave any
+    existing flag alone on import) rather than False (which would clear it).
+    A blank amount is only legal on a default row (blank month) explicitly
+    marked fixed — a fixed category with no default amount of its own yet.
+    """
+    out = []
+    errors = []
+    for idx, row in enumerate(rows, start=2):
+        cat_name = _required_text(row, "category_name", SHEET_BUDGETS, idx, errors)
+        raw_month = row.get("month")
+        # Excel turns a typed 2026-12 into a date, so accept that shape too.
+        month = raw_month.strftime("%Y-%m") if hasattr(raw_month, "strftime") else _optional_text(row, "month")
+        if month and not _BUDGET_MONTH_RE.match(month):
+            errors.append(f"{SHEET_BUDGETS} row {idx}: month must be YYYY-MM or empty")
+            continue
+        fixed = _parse_bool_flag(row.get("fixed")) if has_fixed_column else None
+        try:
+            amount = budget.parse_amount(row.get("amount"))
+        except ValueError:
+            errors.append(f"{SHEET_BUDGETS} row {idx}: amount must be a number of zero or more")
+            continue
+        if amount is None and (month or fixed != 1):
+            errors.append(f"{SHEET_BUDGETS} row {idx}: missing amount")
+            continue
+        if cat_name:
+            out.append((cat_name, month or None, amount, fixed))
+    return out, errors
+
+
+def _meta_flag(wb, key):
+    if SHEET_META not in wb.sheetnames:
+        return None
+    for row in _sheet_as_dicts(wb[SHEET_META]):
+        if str(row.get("key") or "").strip() == key:
+            return str(row.get("value") or "").strip() in ("1", "true", "True")
+    return None
+
+
+def _meta_present(wb, key):
+    """(present, raw_value) for a _meta key — lets blank be distinguished from absent."""
+    if SHEET_META not in wb.sheetnames:
+        return False, None
+    for row in _sheet_as_dicts(wb[SHEET_META]):
+        if str(row.get("key") or "").strip() == key:
+            value = row.get("value")
+            return True, ("" if value is None else str(value).strip())
+    return False, None
+
+
 def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
     errors = []
     required_sheets = {
@@ -619,16 +729,30 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
         _rows_of(SHEET_CRYPTO), SHEET_CRYPTO, CRYPTO_COLUMNS, ("coin_id", "coin_symbol", "coin_name")
     )
     insert_recurring, recurring_errors = _collect_import_recurring(_rows_of(SHEET_RECURRING))
+    insert_budgets, budget_errors = _collect_import_budgets(
+        _rows_of(SHEET_BUDGETS), has_fixed_column="fixed" in _sheet_headers(wb, SHEET_BUDGETS)
+    )
+    budget_enabled = _meta_flag(wb, "budget_enabled")
+    other_amount_present, other_amount_raw = _meta_present(wb, "budget_other_amount")
+    other_amount = None
+    if other_amount_present:
+        try:
+            other_amount = budget.parse_amount(other_amount_raw)
+        except ValueError:
+            budget_errors.append(f"{SHEET_META}: budget_other_amount must be a number of zero or more")
 
     parse_errors = (
         parse_errors + transfer_errors + stock_errors + crypto_errors + recurring_errors
+        + budget_errors
     )
     if parse_errors:
         return parse_errors
 
-    expense_cats_from_movements = {row[2] for row in insert_expenses} | {
-        row[2] for row in insert_recurring if row[0] == "expense"
-    }
+    expense_cats_from_movements = (
+        {row[2] for row in insert_expenses}
+        | {row[2] for row in insert_recurring if row[0] == "expense"}
+        | {row[0] for row in insert_budgets}
+    )
     income_cats_from_movements = {row[2] for row in insert_income} | {
         row[2] for row in insert_recurring if row[0] == "income"
     }
@@ -724,6 +848,12 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
                 (uid,),
             )
             conn.execute("DELETE FROM recurring_entries WHERE user_id = ?", (uid,))
+            # Only wipe budgets when the workbook actually has a Budgets sheet —
+            # a v1/v2 backup has none, and would otherwise silently erase them.
+            if SHEET_BUDGETS in wb.sheetnames:
+                conn.execute("DELETE FROM category_budgets WHERE user_id = ?", (uid,))
+                conn.execute("DELETE FROM category_budget_overrides WHERE user_id = ?", (uid,))
+                conn.execute("DELETE FROM category_budget_flags WHERE user_id = ?", (uid,))
 
         for notes, amount, cat_name, acc_name, spent_at, created_at in insert_expenses:
             category_id = _lookup_category_id(conn, cat_name, uid, expense=True)
@@ -875,6 +1005,25 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
                     "INSERT OR IGNORE INTO recurring_applied (recurring_id, ym) VALUES (?, ?)",
                     (rule_id, ym),
                 )
+
+        for cat_name, month, amount, fixed in insert_budgets:
+            category_id = _lookup_category_id(conn, cat_name, uid, expense=True)
+            if category_id is None:
+                errors.append(f"{SHEET_BUDGETS}: unknown expense category {cat_name!r}")
+                continue
+            if month:
+                budget.set_override(conn, uid, category_id, month, amount)
+            else:
+                # amount can be None here only for a fixed category with no
+                # default of its own — leave category_budgets untouched then.
+                if amount is not None:
+                    budget.set_default(conn, uid, category_id, amount)
+                if fixed is not None:
+                    budget.set_fixed(conn, uid, category_id, bool(fixed))
+        if budget_enabled is not None:
+            budget.set_enabled(conn, uid, budget_enabled)
+        if other_amount_present:
+            budget.set_other_amount(conn, uid, other_amount)
 
         if errors:
             conn.rollback()

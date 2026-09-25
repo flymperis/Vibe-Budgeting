@@ -1,4 +1,5 @@
 from werkzeug.security import check_password_hash, generate_password_hash
+import budget
 import integrations
 import os
 import re
@@ -155,6 +156,7 @@ def migrate_schema(conn):
     migrate_stock_month_prices(conn)
     integrations.migrate_user_integrations(conn)
     telegram_bot.migrate_telegram(conn)
+    budget.migrate_budgets(conn)
     migrate_add_indexes(conn)
 
 def migrate_add_indexes(conn):

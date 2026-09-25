@@ -93,6 +93,12 @@
                     <span class="menu-item-text">Bank Transfer</span>
                 </span>
             </button>
+            <button class="menu-item {% if active_panel == 'budget' %}active{% endif %}" data-target="panel-budget" type="button">
+                <span class="menu-item-inner">
+                    <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4"/></svg>
+                    <span class="menu-item-text">Budget</span>
+                </span>
+            </button>
             <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">
                 <span class="menu-item-inner">
                     <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="3"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
@@ -160,6 +166,8 @@
                 {% include "panels/_recurring.html" %}
 
                 {% include "panels/_transfer.html" %}
+
+                {% include "panels/_budget.html" %}
 
                 {% include "panels/_summary.html" %}
 
@@ -408,7 +416,7 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
                 <span>Reports</span>
             </button>
-            <button class="bottom-nav-item {% if active_panel in ['recurring', 'transfer', 'summary', 'yearly', 'investments', 'settings'] %}active{% endif %}" id="more-nav-btn" type="button" aria-haspopup="dialog" aria-expanded="false">
+            <button class="bottom-nav-item {% if active_panel in ['recurring', 'transfer', 'budget', 'summary', 'yearly', 'investments', 'settings'] %}active{% endif %}" id="more-nav-btn" type="button" aria-haspopup="dialog" aria-expanded="false">
                 <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
                 <span>More</span>
             </button>
@@ -439,6 +447,13 @@
                     <span class="menu-item-inner">
                         <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><line x1="3" x2="21" y1="5" y2="5"/><polyline points="7 23 3 19 7 15"/><line x1="21" x2="3" y1="19" y2="19"/></svg></span>
                         <span class="menu-item-text">Bank Transfer</span>
+                        <span class="more-sheet-chevron" aria-hidden="true"></span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'budget' %}active{% endif %}" data-target="panel-budget" type="button">
+                    <span class="menu-item-inner">
+                        <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4"/></svg></span>
+                        <span class="menu-item-text">Budget</span>
                         <span class="more-sheet-chevron" aria-hidden="true"></span>
                     </span>
                 </button>

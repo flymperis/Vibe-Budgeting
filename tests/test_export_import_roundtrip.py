@@ -178,7 +178,7 @@ def test_export_covers_every_sheet(client):
     for sheet in (
         config.SHEET_ACCOUNTS, config.SHEET_EXPENSE_CATEGORIES, config.SHEET_INCOME_CATEGORIES,
         config.SHEET_EXPENSES, config.SHEET_INCOME, config.SHEET_TRANSFERS,
-        config.SHEET_STOCKS, config.SHEET_CRYPTO, config.SHEET_RECURRING,
+        config.SHEET_STOCKS, config.SHEET_CRYPTO, config.SHEET_RECURRING, config.SHEET_BUDGETS,
     ):
         assert sheet in wb.sheetnames, f"export is missing the {sheet} sheet"
 

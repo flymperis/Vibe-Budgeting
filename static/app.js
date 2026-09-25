@@ -359,6 +359,7 @@
                 "panel-income": "income",
                 "panel-recurring": "recurring",
                 "panel-transfer": "transfer",
+                "panel-budget": "budget",
                 "panel-summary": "summary",
                 "panel-yearly": "yearly",
                 "panel-reports": "reports",
@@ -989,6 +990,7 @@
 
         const MORE_PANELS = [
             "panel-recurring",
+            "panel-budget",
             "panel-transfer",
             "panel-summary",
             "panel-yearly",
@@ -1117,6 +1119,235 @@
                 });
         });
     })();
+
+    (function setupBudgetTools() {
+        const form = document.getElementById("budget-defaults-form");
+        if (!form) return;
+
+        const searchInput = document.getElementById("budget-search-input");
+        const rowsContainer = document.getElementById("budget-default-rows");
+        const searchEmpty = document.getElementById("budget-search-empty");
+        const fillBtn = document.getElementById("budget-fill-history-btn");
+        const distributeTotal = document.getElementById("budget-distribute-total");
+        const distributeBtn = document.getElementById("budget-distribute-btn");
+        const statusEl = document.getElementById("budget-tools-status");
+
+        function setStatus(msg) {
+            if (statusEl) statusEl.textContent = msg || "";
+        }
+
+        function normalize(text) {
+            return (text || "")
+                .normalize("NFD")
+                .replace(/[̀-ͯ]/g, "")
+                .toLowerCase()
+                .replace(/ς/g, "σ")
+                .trim();
+        }
+
+        function allRowEls() {
+            return rowsContainer ? Array.prototype.slice.call(rowsContainer.querySelectorAll("[data-category-row]")) : [];
+        }
+
+        function isFixed(row) {
+            const checkbox = row.querySelector("[data-fixed-toggle]");
+            return !!(checkbox && checkbox.checked);
+        }
+
+        function formatEuros(amount) {
+            const sign = amount < 0 ? "-" : "";
+            const fixed = Math.abs(amount).toFixed(2).replace(".", ",");
+            const parts = fixed.split(",");
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+            return sign + parts.join(",") + " €";
+        }
+
+        // Keep the row's visual "fixed" cue in sync while the checkbox is
+        // toggled, before the form is even saved.
+        if (rowsContainer) {
+            rowsContainer.addEventListener("change", function (event) {
+                const checkbox = event.target;
+                if (!checkbox || !checkbox.matches || !checkbox.matches("[data-fixed-toggle]")) return;
+                const row = checkbox.closest("[data-category-row]");
+                if (row) row.classList.toggle("budget-default-row-fixed", checkbox.checked);
+            });
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener("input", function () {
+                const query = normalize(searchInput.value);
+                let visibleCount = 0;
+
+                allRowEls().forEach(function (row) {
+                    const name = normalize(row.getAttribute("data-name"));
+                    const matches = !query || name.indexOf(query) !== -1;
+                    row.hidden = !matches;
+                    if (matches) {
+                        visibleCount += 1;
+                    }
+                });
+
+                if (searchEmpty) {
+                    searchEmpty.hidden = visibleCount !== 0;
+                }
+            });
+        }
+
+        if (fillBtn) {
+            fillBtn.addEventListener("click", function () {
+                let filled = 0;
+                allRowEls().forEach(function (row) {
+                    if (isFixed(row)) return;
+                    const input = row.querySelector(".budget-default-input");
+                    if (!input || input.value.trim() !== "") return;
+                    const suggested = parseFloat(input.getAttribute("data-suggested") || "0");
+                    if (!suggested) return;
+                    input.value = suggested.toFixed(2);
+                    filled += 1;
+                });
+                if (filled > 0) {
+                    setStatus("Filled " + filled + " categor" + (filled === 1 ? "y" : "ies") + " — review and Save.");
+                } else {
+                    setStatus("Nothing to fill — every category already has an amount, is fixed, or has no history.");
+                }
+            });
+        }
+
+        if (distributeBtn) {
+            distributeBtn.addEventListener("click", function () {
+                const rawTotal = parseFloat((distributeTotal && distributeTotal.value) || "");
+                if (!isFinite(rawTotal) || rawTotal <= 0) {
+                    setStatus("Enter a total to distribute first.");
+                    return;
+                }
+                const total = Math.round(rawTotal * 100) / 100;
+
+                // Only touch rows the search filter is currently showing.
+                const allRows = allRowEls();
+                const visibleRows = allRows.filter(function (row) { return !row.hidden; });
+                const searchFiltering = !!(searchInput && searchInput.value.trim() && visibleRows.length < allRows.length);
+                const fixedRows = visibleRows.filter(isFixed);
+                const fixedTotal = fixedRows.reduce(function (sum, row) {
+                    const input = row.querySelector(".budget-default-input");
+                    const value = parseFloat((input && input.value) || "0");
+                    return sum + (isFinite(value) ? value : 0);
+                }, 0);
+                const remaining = Math.round((total - fixedTotal) * 100) / 100;
+
+                if (remaining < 0) {
+                    setStatus("Fixed amounts (" + formatEuros(fixedTotal) + ") exceed the total — nothing changed.");
+                    return;
+                }
+
+                const eligibleRows = visibleRows.filter(function (row) { return !isFixed(row); });
+                const withHistory = eligibleRows
+                    .map(function (row) {
+                        const avg = parseFloat(row.getAttribute("data-avg") || "0");
+                        const input = row.querySelector(".budget-default-input");
+                        return { avg: avg, input: input };
+                    })
+                    .filter(function (c) { return c.avg > 0 && c.input; });
+                const withoutHistoryCount = eligibleRows.length - withHistory.length;
+
+                if (remaining === 0) {
+                    setStatus(fixedRows.length
+                        ? "Fixed amounts already cover the whole total — nothing left to split."
+                        : "Nothing to split — enter a larger total.");
+                    return;
+                }
+
+                if (!withHistory.length) {
+                    setStatus("No non-fixed categories have spending history to distribute by.");
+                    return;
+                }
+
+                // Largest-remainder method, in whole cents: floor every
+                // share first (never negative), then hand out the leftover
+                // cents one at a time to the shares with the biggest
+                // fractional remainder. This always sums to exactly the
+                // total, unlike rounding each share to the nearest cent and
+                // dumping the whole leftover/deficit onto the largest share,
+                // which could push that share below zero.
+                const avgSum = withHistory.reduce(function (sum, c) { return sum + c.avg; }, 0);
+                const totalCents = Math.round(remaining * 100);
+                let shares = withHistory.map(function (c) {
+                    const rawCents = (c.avg / avgSum) * totalCents;
+                    const flooredCents = Math.floor(rawCents);
+                    return { input: c.input, cents: flooredCents, fraction: rawCents - flooredCents };
+                });
+                let leftoverCents = totalCents - shares.reduce(function (sum, s) { return sum + s.cents; }, 0);
+                shares
+                    .slice()
+                    .sort(function (a, b) { return b.fraction - a.fraction; })
+                    .slice(0, leftoverCents)
+                    .forEach(function (s) { s.cents += 1; });
+                shares.forEach(function (s) {
+                    s.input.value = (s.cents / 100).toFixed(2);
+                });
+
+                let message = "";
+                if (fixedRows.length) {
+                    message += "Kept " + fixedRows.length + " fixed categor" + (fixedRows.length === 1 ? "y" : "ies") +
+                        " (" + formatEuros(fixedTotal) + "); split " + formatEuros(remaining) +
+                        " across " + shares.length + " categor" + (shares.length === 1 ? "y" : "ies") + " — review and Save.";
+                } else {
+                    message += "Changed " + shares.length + " categor" + (shares.length === 1 ? "y" : "ies") +
+                        " with spending history to split " + formatEuros(remaining) + " — review and Save.";
+                }
+                message += withoutHistoryCount > 0
+                    ? " Other categories without history and Everything else were left as they are."
+                    : " Everything else was left as it is.";
+                if (searchFiltering) {
+                    message += " Limited to categories matching your search — clear it to distribute across all categories.";
+                }
+                setStatus(message);
+            });
+        }
+    })();
+
+    (function setupBudgetOverrideToggles() {
+        // The pencil next to each category row toggles its "change this
+        // month" form. Runs unconditionally (not gated on the manual
+        // budgets form existing) since the category list can render on its
+        // own.
+        function togglePanel(btn, panel, open) {
+            panel.hidden = !open;
+            if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+            if (open) {
+                const input = panel.querySelector("input[type='number']");
+                if (input) input.focus();
+            }
+        }
+
+        document.addEventListener("click", function (event) {
+            const btn = event.target.closest("[data-budget-edit-toggle]");
+            if (!btn) return;
+            const panel = document.getElementById(btn.getAttribute("aria-controls") || "");
+            if (!panel) return;
+            togglePanel(btn, panel, panel.hidden);
+        });
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key !== "Escape") return;
+            const panel = event.target.closest && event.target.closest(".budget-override-panel");
+            if (!panel || panel.hidden) return;
+            const btn = document.querySelector('[data-budget-edit-toggle][aria-controls="' + panel.id + '"]');
+            togglePanel(btn, panel, false);
+            if (btn) btn.focus();
+        });
+    })();
+})();
+
+(function () {
+    // Forms with a data-confirm attribute (e.g. actions that overwrite data)
+    // ask for confirmation before submitting, instead of using inline JS.
+    document.addEventListener("submit", function (event) {
+        var form = event.target;
+        var message = form && form.getAttribute && form.getAttribute("data-confirm");
+        if (message && !window.confirm(message)) {
+            event.preventDefault();
+        }
+    });
 })();
 
 (function () {

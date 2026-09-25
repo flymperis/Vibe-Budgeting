@@ -415,8 +415,27 @@ form {
 
 .month-picker,
 .year-picker {
-    align-items: center;
     margin-bottom: 1rem;
+}
+
+.year-picker {
+    align-items: center;
+}
+
+/* .month-picker's Apply sits next to shell_month_year_row's output, which
+   stacks a <label> above each <select> (.cal-dropdown-field) — taller than
+   the button alone — so align-items: center (fine for .year-picker, whose
+   label/select/button are plain siblings of equal-ish height) left Apply
+   floating above the selects' own bottom edge. flex-end bottom-aligns it
+   with the selects instead, and the added border makes it their exact
+   height (buttons are borderless elsewhere; inputs/selects get free height
+   from their 1px border that a borderless button doesn't). */
+.month-picker {
+    align-items: flex-end;
+}
+
+.month-picker button[type="submit"] {
+    border: 1px solid transparent;
 }
 
 .year-picker input[type="number"],
@@ -2346,7 +2365,7 @@ form + form {
     outline-offset: -2px;
 }
 
-/* "More" sheet: the six panels that do not fit in the tab bar */
+/* "More" sheet: the panels that do not fit in the tab bar */
 .more-sheet[hidden] {
     display: none;
 }
@@ -4511,4 +4530,616 @@ select:disabled {
 
 .account-avatar-inline.bank-avatar-long {
     font-size: 0.45rem;
+}
+
+/* Budget: per-category progress against the month's limit ----------------- */
+
+/* Plain submit buttons are borderless (see the shared `button` rule) while
+   the inputs/selects next to them keep a 1px border, so they render 2px
+   shorter. .btn-secondary already carries its own border and doesn't need
+   this. Scoped to the Budget panel so it only touches "Save budgets" and
+   the per-category override "Save" — .month-picker's own Apply button gets
+   the same treatment separately, since that's shared with Home,
+   Consolidated and the list filters. */
+#panel-budget button[type="submit"]:not(.btn-secondary) {
+    border: 1px solid transparent;
+}
+
+.budget-list {
+    list-style: none;
+    margin: 0.75rem 0 1.5rem;
+    padding: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.6rem;
+}
+
+.budget-row,
+.home-budget-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 0.55rem 0.9rem;
+}
+
+.home-budget-card {
+    margin: 0 0 1rem;
+    color: inherit;
+    text-decoration: none;
+}
+
+/* A 4-column grid keeps the name column (and so the start of every bar)
+   the same width on every row, and the remaining/amounts columns fixed
+   widths too — rather than "auto" — so the bar also STARTS and ENDS at the
+   same x on every row instead of sizing to each row's own text. The name
+   and bar columns are minmax() ranges (not fixed), so between the ≤820px
+   breakpoint and desktop widths they shrink together — always by the same
+   amount on every row, so bars stay aligned — instead of the fixed columns
+   forcing an overflow once the panel's content width gets tight. (A shared
+   subgrid across .budget-list would size the fixed columns from real
+   content instead of a guessed width, but needs every row to be a subgrid
+   two levels deep — .budget-row and .budget-row-head both — for a layout
+   this is comfortably safe to hard-code.) */
+.budget-row-head {
+    display: grid;
+    grid-template-columns: minmax(6rem, 13rem) 8.5rem minmax(3rem, 1fr) 14rem;
+    align-items: center;
+    gap: 0.3rem 0.6rem;
+}
+
+/* .budget-row-line1 is display:contents here (see below), so its two
+   children become direct grid items of .budget-row-head in DOM order —
+   explicit column numbers keep them in the right columns regardless of
+   that DOM order (name-line, then amounts, ahead of remaining/bar). */
+.budget-row-name-line {
+    grid-column: 1;
+}
+
+.budget-row-remaining {
+    grid-column: 2;
+}
+
+.budget-bar-fill {
+    grid-column: 3;
+}
+
+.budget-row-amounts {
+    grid-column: 4;
+}
+
+/* Groups the name and the spent/budget amounts so line 1 can be a single
+   flex row on narrow screens (see media query) without disturbing the
+   4-column grid above ~820px, where it disappears from layout entirely. */
+.budget-row-line1 {
+    display: contents;
+}
+
+/* Home card keeps a link chevron below the head. */
+.budget-row-meta {
+    display: flex;
+    justify-content: flex-end;
+    font-size: 0.8rem;
+}
+
+/* Name and edit pencil travel together and never wrap internally; the bar
+   (3rd grid column) fills the gap between the remaining amount and the
+   spent/budget amounts. */
+.budget-row-name-line {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.budget-row-name {
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.budget-row-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.budget-row-edit-btn:hover,
+.budget-row-edit-btn[aria-expanded="true"] {
+    background: var(--surface-alt);
+    color: var(--text);
+}
+
+.budget-row-edit-btn svg {
+    width: 0.85rem;
+    height: 0.85rem;
+}
+
+/* Remaining/over amount, right-aligned so its digits line up with the
+   digits in the amounts column two tracks over. */
+.budget-row-remaining {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    justify-self: end;
+}
+
+.budget-row-remaining-word {
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 0.8em;
+}
+
+.budget-row-amounts {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    justify-self: end;
+}
+
+.budget-row-amounts-slash {
+    display: none;
+}
+
+.budget-bar-wrap {
+    height: 0.5rem;
+    background: var(--surface-alt);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+/* Fills the space between the remaining column and the amounts column.
+   Matches the 3rd grid track's own minmax(3rem, 1fr) floor, so this element
+   never demands more than the track can give it once the name column has
+   already shrunk to its own 6rem floor. */
+.budget-bar-fill {
+    width: 100%;
+    min-width: 3rem;
+    height: 6px;
+}
+
+.budget-hero-bar {
+    margin: 0.6rem auto 0.75rem;
+    max-width: 22rem;
+}
+
+.budget-bar {
+    height: 100%;
+    min-width: 2px;
+    border-radius: 999px;
+    background: var(--pos);
+}
+
+.budget-bar.budget-warn { background: var(--color-warning, #b45309); }
+.budget-bar.budget-over { background: var(--neg); }
+
+.budget-text-ok { color: var(--pos); }
+.budget-text-warn { color: var(--color-warning, #b45309); }
+.budget-text-over { color: var(--neg); }
+
+.home-budget-over {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--neg);
+}
+
+.budget-override-panel {
+    margin-top: 0.4rem;
+}
+
+.budget-override-panel[hidden] {
+    display: none;
+}
+
+.budget-override-panel input[type="number"] {
+    width: 8rem;
+}
+
+.budget-unbudgeted {
+    list-style: none;
+    margin: 0.5rem 0 1.5rem;
+    padding: 0;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.budget-unbudgeted li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.budget-unbudgeted li:not(:last-child) {
+    border-bottom: 1px solid var(--border-c);
+}
+
+.budget-copy-last-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin: 0.5rem 0 1.25rem;
+}
+
+/* .small-hint's negative top margin is meant to tuck it under a label/input
+   in normal block flow; in these flex rows it just pulls the hint text up
+   out of the vertical center next to the button, so cancel it here. */
+.budget-copy-last-form .small-hint,
+.budget-disable-form .small-hint {
+    margin: 0;
+}
+
+.budget-row-other {
+    border: 1px dashed var(--border-c);
+}
+
+.budget-defaults-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.6rem;
+}
+
+.budget-manual {
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.budget-manual-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.85rem 0.9rem;
+    box-sizing: border-box;
+    cursor: pointer;
+    font-weight: 600;
+    list-style: none;
+}
+
+.budget-manual-summary::-webkit-details-marker {
+    display: none;
+}
+
+.budget-manual-summary::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(-45deg);
+    transition: transform 0.15s ease;
+}
+
+.budget-manual[open] .budget-manual-summary::after {
+    transform: rotate(45deg);
+}
+
+.budget-manual-summary:hover {
+    background: var(--surface-alt);
+}
+
+.budget-manual-count {
+    font-weight: 400;
+}
+
+.budget-manual-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.6rem;
+    padding: 0 0.9rem 0.9rem;
+    box-sizing: border-box;
+}
+
+/* Every direct child of the manual-budgets body is a grid item in a single
+   minmax(0, 1fr) column; without min-width: 0 a child with non-wrapping
+   content (a button row, a long hint sentence) can force this track — and
+   so the whole card — wider than the viewport instead of wrapping/shrinking
+   to fit. */
+.budget-manual-body > * {
+    min-width: 0;
+}
+
+.budget-manual-body > p.small-hint {
+    overflow-wrap: anywhere;
+}
+
+.budget-tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 0.75rem 0.9rem;
+    margin-bottom: 0.25rem;
+}
+
+.budget-tools > * {
+    min-width: 0;
+}
+
+.budget-search-field input,
+.budget-distribute input,
+.budget-default-input,
+.budget-other-row input,
+.budget-override-panel input[type="number"] {
+    box-sizing: border-box;
+}
+
+.budget-search-field input {
+    width: 100%;
+}
+
+.budget-fill-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    align-items: center;
+    min-width: 0;
+}
+
+.budget-distribute {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    min-width: 0;
+}
+
+.budget-distribute input {
+    width: 7rem;
+}
+
+#budget-tools-status:empty {
+    display: none;
+}
+
+.budget-default-rows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+}
+
+.budget-default-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.4rem 0.75rem;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 0.5rem 0.75rem;
+}
+
+.budget-default-row[hidden] {
+    display: none;
+}
+
+.budget-default-row-fixed {
+    background: var(--surface-alt);
+}
+
+.budget-default-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.budget-default-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.budget-default-row-fixed .budget-default-name::before {
+    content: "🔒 ";
+}
+
+.budget-default-hint {
+    font-size: 0.75rem;
+}
+
+.budget-default-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+}
+
+.budget-default-input {
+    width: 6.5rem;
+    flex: 0 0 auto;
+}
+
+.budget-default-fixed-check {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+/* Reset the app-wide input padding, which is meant for text fields and
+   otherwise inflates a checkbox into a large square. */
+.budget-default-fixed-check input {
+    margin: 0;
+    padding: 0;
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
+}
+
+.budget-other-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.4rem 0.75rem;
+    min-width: 0;
+    box-sizing: border-box;
+    background: var(--surface-alt);
+    border-radius: 10px;
+    padding: 0.5rem 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.budget-other-row input {
+    width: 8rem;
+}
+
+.budget-manual-body > button[type="submit"] {
+    justify-self: start;
+}
+
+.budget-disable-form {
+    align-items: center;
+    margin-top: 1.5rem;
+}
+
+/* The category-row grid has 4 columns (name 6-13rem, remaining 8.5rem, bar
+   3rem-1fr, amounts 14rem). Once the name is fully grown to its 13rem max,
+   the bar needs at least ~8rem to still read as a bar rather than a sliver:
+   13 + 8.5 + 8 + 14 = 43.5rem of tracks + 3 gaps of 0.6rem = 45.3rem
+   (724.8px) of content width, plus the panel's ≤900px chrome overhead
+   (app-container/panel-shell padding+border/row padding ≈ 75.6px) = a
+   ~800px viewport. Below that, the category list switches to the two-line
+   layout instead of slowly squeezing the bar down to a sliver. */
+@media (max-width: 820px) {
+    /* Category row (never wraps): line 1 is its own flex row (name, ellipsis
+       … amounts, right-aligned) that spans the full row width; line 2 is
+       remaining (fixed width — the SAME literal length on every row, so its
+       start and therefore the bar's start line up) + bar, which only shares
+       a track with line 2's remaining, never with line 1's amounts. This
+       decouples the bar's width from each row's own "spent of budget" text,
+       which previously made every bar end at a different x. */
+    .budget-row-head {
+        grid-template-columns: 7.5rem minmax(0, 1fr);
+        grid-template-areas:
+            "line1 line1"
+            "remaining bar";
+    }
+
+    /* .budget-row-line1 stops being display:contents and becomes the actual
+       line-1 flex row: name grows/truncates, amounts stays its own size and
+       is pushed to the end. */
+    .budget-row-line1 {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem 0.6rem;
+        grid-area: line1;
+    }
+
+    .budget-row-name-line {
+        grid-column: auto;
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .budget-row-amounts {
+        grid-column: auto;
+        flex: 0 0 auto;
+    }
+
+    .budget-row-remaining {
+        grid-area: remaining;
+        justify-self: start;
+        font-size: 0.85em;
+    }
+
+    .budget-row-remaining-word {
+        font-size: 0.75em;
+    }
+
+    .budget-bar-fill {
+        grid-area: bar;
+        min-width: 0;
+    }
+
+    .budget-row-edit-btn {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .budget-row-edit-btn svg {
+        width: 1rem;
+        height: 1rem;
+    }
+
+    /* "140,00 € of 2.000,00 €" doesn't fit next to a long name at this
+       width, so the separator drops to "/" (see budget-row-amounts-of/
+       -slash toggle below the manual-budgets rules). */
+    .budget-row-amounts-of {
+        display: none;
+    }
+
+    .budget-row-amounts-slash {
+        display: inline;
+    }
+}
+
+/* Extra headroom for very narrow phones: shrinks the fixed remaining column
+   and the amounts text a touch so "140,00 € / 2.000,00 €" plus a truncated
+   name and the pencil all fit line 1 without crowding. */
+@media (max-width: 360px) {
+    .budget-row-head {
+        grid-template-columns: 6.25rem minmax(0, 1fr);
+    }
+
+    .budget-row-amounts {
+        font-size: 0.85em;
+    }
+}
+
+@media (max-width: 480px) {
+    /* Manual-budgets form: every control keeps its own compact, fixed
+       width and wraps as a whole unit instead of stretching to 100% (which
+       — combined with the global content-box input padding — was what
+       pushed rows past the card's right edge). */
+    .budget-other-row input {
+        width: 6.5rem;
+        flex: 0 0 auto;
+    }
+
+    .budget-fill-tools {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .budget-fill-tools > button {
+        width: 100%;
+    }
+
+    .budget-distribute {
+        width: 100%;
+    }
+
+    .budget-distribute input {
+        flex: 1 1 0%;
+        min-width: 0;
+        width: auto;
+    }
 }

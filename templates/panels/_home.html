@@ -20,6 +20,35 @@
         </div>
     </div>
 
+    {% if budget_enabled and (budget_summary.rows or budget_summary.other) %}
+        <a class="home-budget-card" href="{{ url_for('dashboard.index', panel='budget', month=month_filter) }}">
+            <div class="budget-row-head">
+                <div class="budget-row-line1">
+                    <div class="budget-row-name-line">
+                        <span class="budget-row-name">Budget</span>
+                    </div>
+                    <span class="budget-row-amounts"><b>{{ budget_summary.total_spent|money }}</b> <span class="muted budget-row-amounts-of">of</span><span class="muted budget-row-amounts-slash">/</span> {{ budget_summary.total_budget|money }}</span>
+                </div>
+                <span class="budget-row-remaining budget-text-{{ budget_summary.total_status }}">
+                    {% if budget_summary.total_remaining < 0 %}
+                        <b>{{ (-budget_summary.total_remaining)|money }}</b> <span class="budget-row-remaining-word">over</span>
+                    {% else %}
+                        <b>{{ budget_summary.total_remaining|money }}</b> <span class="budget-row-remaining-word">left</span>
+                    {% endif %}
+                </span>
+                <div class="budget-bar-wrap budget-bar-fill" role="progressbar" aria-label="Budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ budget_summary.total_pct|round|int }}">
+                    <div class="budget-bar budget-{{ budget_summary.total_status }}" style="width: {{ [[budget_summary.total_pct, 100]|min, 0]|max }}%"></div>
+                </div>
+            </div>
+            <div class="budget-row-meta">
+                <span class="home-links-chevron" aria-hidden="true"></span>
+            </div>
+            {% if budget_summary.over %}
+                <p class="home-budget-over">Over budget: {{ budget_summary.over|map(attribute='name')|join(', ') }}</p>
+            {% endif %}
+        </a>
+    {% endif %}
+
     <h3 class="home-balances-heading">Account balances</h3>
 
     <div class="home-quick-bar">
