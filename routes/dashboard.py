@@ -535,9 +535,12 @@ def index():
     budget_form_rows = []
     budget_other_amount = None
     if budget_enabled:
-        # budget_summary already looked up other_amount for its "other" block;
-        # read it back from there instead of hitting budget_settings again.
-        budget_other_amount = budget_summary["other"]["budget"] if budget_summary["other"] else None
+        # The manual-budgets form edits the saved other_amount regardless of
+        # which month is being viewed, so it must be read directly rather than
+        # via budget_summary["other"] — on a cleared month that's always None
+        # (the clear ignores other_amount for that month only), and saving the
+        # form as rendered would otherwise wipe the real value for every month.
+        budget_other_amount = budget.get_other_amount(conn, uid)
         category_ids = [int(cat["id"]) for cat in categories]
         history = budget.spending_history(
             conn, uid, month_filter, category_ids=category_ids, defaults=budget_defaults
@@ -552,7 +555,6 @@ def index():
                     "name": cat["name"],
                     "default": budget_defaults.get(cid),
                     "avg": hist["avg"],
-                    "suggested": hist["suggested"],
                     "active": hist["active"],
                     "fixed": cid in fixed_ids,
                 }
@@ -560,6 +562,15 @@ def index():
         budget_form_rows.sort(
             key=lambda r: (0, -r["avg"], r["name"]) if r["active"] else (1, r["name"])
         )
+
+    budget_month_snapshots = (
+        [
+            {"ym": snap["ym"], "amounts": {str(cid): amt for cid, amt in snap["amounts"].items()}}
+            for snap in budget.month_budget_snapshots(conn, uid)
+        ]
+        if budget_enabled
+        else []
+    )
 
     user_integrations = integrations.get_user_integrations(conn, uid)
     telegram_server = telegram_bot.server_config_for_form(conn)
@@ -643,6 +654,7 @@ def index():
         budget_defaults=budget_defaults,
         budget_form_rows=budget_form_rows,
         budget_other_amount=budget_other_amount,
+        budget_month_snapshots=budget_month_snapshots,
         investments_section=investments_section,
         crypto_holdings=crypto_holdings_raw,
         crypto_transactions=crypto_txs,

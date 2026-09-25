@@ -822,6 +822,7 @@
             { modal: document.getElementById("home-modal-expense"), buttons: [document.getElementById("home-btn-expense"), document.getElementById("home-fab")], kind: "expense" },
             { modal: document.getElementById("home-modal-income"), buttons: [document.getElementById("home-btn-income")], kind: "income" },
             { modal: document.getElementById("recurring-modal-add"), buttons: [document.getElementById("recurring-btn-add")], kind: "recurring" },
+            { modal: document.getElementById("budget-modal-copy"), buttons: [document.getElementById("budget-copy-month-btn")], kind: "budget-copy" },
         ].map(function (entry) {
             entry.buttons = entry.buttons.filter(Boolean);
             return entry;
@@ -1148,25 +1149,13 @@
         const form = document.getElementById("budget-defaults-form");
         if (!form) return;
 
-        const searchInput = document.getElementById("budget-search-input");
         const rowsContainer = document.getElementById("budget-default-rows");
-        const searchEmpty = document.getElementById("budget-search-empty");
-        const fillBtn = document.getElementById("budget-fill-history-btn");
         const distributeTotal = document.getElementById("budget-distribute-total");
         const distributeBtn = document.getElementById("budget-distribute-btn");
         const statusEl = document.getElementById("budget-tools-status");
 
         function setStatus(msg) {
             if (statusEl) statusEl.textContent = msg || "";
-        }
-
-        function normalize(text) {
-            return (text || "")
-                .normalize("NFD")
-                .replace(/[̀-ͯ]/g, "")
-                .toLowerCase()
-                .replace(/ς/g, "σ")
-                .trim();
         }
 
         function allRowEls() {
@@ -1186,6 +1175,40 @@
             return sign + parts.join(",") + " €";
         }
 
+        const otherAmountInput = form.querySelector('input[name="other_amount"]');
+        const totalLiveAmountEl = document.getElementById("budget-total-live-amount");
+
+        // Every category input plus Everything else. Blank/invalid fields
+        // count as 0.
+        function parseAmount(input) {
+            if (!input) return 0;
+            const value = parseFloat(input.value);
+            return isFinite(value) ? value : 0;
+        }
+
+        function updateLiveTotal() {
+            if (!totalLiveAmountEl) return;
+            const rowsTotal = allRowEls().reduce(function (sum, row) {
+                return sum + parseAmount(row.querySelector(".budget-default-input"));
+            }, 0);
+            const total = rowsTotal + parseAmount(otherAmountInput);
+            totalLiveAmountEl.textContent = formatEuros(total);
+        }
+
+        updateLiveTotal();
+
+        if (rowsContainer) {
+            rowsContainer.addEventListener("input", function (event) {
+                if (event.target && event.target.matches && event.target.matches(".budget-default-input")) {
+                    updateLiveTotal();
+                }
+            });
+        }
+
+        if (otherAmountInput) {
+            otherAmountInput.addEventListener("input", updateLiveTotal);
+        }
+
         // Keep the row's visual "fixed" cue in sync while the checkbox is
         // toggled, before the form is even saved.
         if (rowsContainer) {
@@ -1194,46 +1217,6 @@
                 if (!checkbox || !checkbox.matches || !checkbox.matches("[data-fixed-toggle]")) return;
                 const row = checkbox.closest("[data-category-row]");
                 if (row) row.classList.toggle("budget-default-row-fixed", checkbox.checked);
-            });
-        }
-
-        if (searchInput) {
-            searchInput.addEventListener("input", function () {
-                const query = normalize(searchInput.value);
-                let visibleCount = 0;
-
-                allRowEls().forEach(function (row) {
-                    const name = normalize(row.getAttribute("data-name"));
-                    const matches = !query || name.indexOf(query) !== -1;
-                    row.hidden = !matches;
-                    if (matches) {
-                        visibleCount += 1;
-                    }
-                });
-
-                if (searchEmpty) {
-                    searchEmpty.hidden = visibleCount !== 0;
-                }
-            });
-        }
-
-        if (fillBtn) {
-            fillBtn.addEventListener("click", function () {
-                let filled = 0;
-                allRowEls().forEach(function (row) {
-                    if (isFixed(row)) return;
-                    const input = row.querySelector(".budget-default-input");
-                    if (!input || input.value.trim() !== "") return;
-                    const suggested = parseFloat(input.getAttribute("data-suggested") || "0");
-                    if (!suggested) return;
-                    input.value = suggested.toFixed(2);
-                    filled += 1;
-                });
-                if (filled > 0) {
-                    setStatus("Filled " + filled + " categor" + (filled === 1 ? "y" : "ies") + " — review and Save.");
-                } else {
-                    setStatus("Nothing to fill — every category already has an amount, is fixed, or has no history.");
-                }
             });
         }
 
@@ -1246,11 +1229,8 @@
                 }
                 const total = Math.round(rawTotal * 100) / 100;
 
-                // Only touch rows the search filter is currently showing.
                 const allRows = allRowEls();
-                const visibleRows = allRows.filter(function (row) { return !row.hidden; });
-                const searchFiltering = !!(searchInput && searchInput.value.trim() && visibleRows.length < allRows.length);
-                const fixedRows = visibleRows.filter(isFixed);
+                const fixedRows = allRows.filter(isFixed);
                 const fixedTotal = fixedRows.reduce(function (sum, row) {
                     const input = row.querySelector(".budget-default-input");
                     const value = parseFloat((input && input.value) || "0");
@@ -1263,7 +1243,7 @@
                     return;
                 }
 
-                const eligibleRows = visibleRows.filter(function (row) { return !isFixed(row); });
+                const eligibleRows = allRows.filter(function (row) { return !isFixed(row); });
                 const withHistory = eligibleRows
                     .map(function (row) {
                         const avg = parseFloat(row.getAttribute("data-avg") || "0");
@@ -1308,6 +1288,7 @@
                 shares.forEach(function (s) {
                     s.input.value = (s.cents / 100).toFixed(2);
                 });
+                updateLiveTotal();
 
                 let message = "";
                 if (fixedRows.length) {
@@ -1321,11 +1302,119 @@
                 message += withoutHistoryCount > 0
                     ? " Other categories without history and Everything else were left as they are."
                     : " Everything else was left as it is.";
-                if (searchFiltering) {
-                    message += " Limited to categories matching your search — clear it to distribute across all categories.";
-                }
                 setStatus(message);
             });
+        }
+
+        // "Copy from another month" — prefills the (still unsaved) form from
+        // a month that has its own override amounts; nothing is written to
+        // the server here, the user reviews and presses the existing Save.
+        const copySnapshotsEl = document.getElementById("budget-month-snapshots");
+        const copyModal = document.getElementById("budget-modal-copy");
+        const copyMonthSelect = document.getElementById("budget-copy-month-select");
+        const copyPreviewList = document.getElementById("budget-copy-preview-list");
+        const copyPreviewTotal = document.getElementById("budget-copy-preview-total");
+        const copyPrefillBtn = document.getElementById("budget-copy-prefill-btn");
+        const manualDetails = document.getElementById("budget-manual");
+
+        if (copySnapshotsEl && copyModal && copyMonthSelect) {
+            let snapshots = [];
+            try {
+                snapshots = JSON.parse(copySnapshotsEl.textContent || "[]") || [];
+            } catch (e) {
+                snapshots = [];
+            }
+
+            if (snapshots.length) {
+                const MONTH_NAMES = [
+                    "January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December"
+                ];
+
+                function monthLabel(ym) {
+                    const parts = (ym || "").split("-");
+                    const monthIndex = parseInt(parts[1], 10) - 1;
+                    const name = MONTH_NAMES[monthIndex];
+                    return name ? name + " " + parts[0] : ym;
+                }
+
+                function findSnapshot(ym) {
+                    return snapshots.filter(function (s) { return s.ym === ym; })[0] || snapshots[0];
+                }
+
+                snapshots.forEach(function (snap) {
+                    const option = document.createElement("option");
+                    option.value = snap.ym;
+                    option.textContent = monthLabel(snap.ym);
+                    copyMonthSelect.appendChild(option);
+                });
+
+                function categoryIdFor(input) {
+                    return input ? input.name.replace(/^amount_/, "") : "";
+                }
+
+                function renderPreview() {
+                    const snap = findSnapshot(copyMonthSelect.value);
+                    if (!snap || !copyPreviewList) return;
+                    copyPreviewList.innerHTML = "";
+                    let total = 0;
+                    allRowEls().forEach(function (row) {
+                        const input = row.querySelector(".budget-default-input");
+                        const categoryId = categoryIdFor(input);
+                        const li = document.createElement("li");
+                        const nameSpan = document.createElement("span");
+                        nameSpan.textContent = row.getAttribute("data-name") || "";
+                        const valueSpan = document.createElement("span");
+                        valueSpan.className = "muted";
+                        if (isFixed(row)) {
+                            const current = parseAmount(input);
+                            valueSpan.textContent = "kept (fixed) " + formatEuros(current);
+                            total += current;
+                        } else if (snap.amounts && Object.prototype.hasOwnProperty.call(snap.amounts, categoryId)) {
+                            const amount = parseFloat(snap.amounts[categoryId]);
+                            valueSpan.textContent = isFinite(amount) ? formatEuros(amount) : "unchanged";
+                            valueSpan.className = "";
+                            total += isFinite(amount) ? amount : parseAmount(input);
+                        } else {
+                            valueSpan.textContent = "unchanged";
+                            total += parseAmount(input);
+                        }
+                        li.appendChild(nameSpan);
+                        li.appendChild(valueSpan);
+                        copyPreviewList.appendChild(li);
+                    });
+                    total += parseAmount(otherAmountInput);
+                    if (copyPreviewTotal) {
+                        copyPreviewTotal.textContent = "Total after prefill: " + formatEuros(total);
+                    }
+                }
+
+                copyMonthSelect.addEventListener("change", renderPreview);
+                renderPreview();
+
+                if (copyPrefillBtn) {
+                    copyPrefillBtn.addEventListener("click", function () {
+                        const snap = findSnapshot(copyMonthSelect.value);
+                        if (!snap) return;
+                        allRowEls().forEach(function (row) {
+                            if (isFixed(row)) return;
+                            const input = row.querySelector(".budget-default-input");
+                            const categoryId = categoryIdFor(input);
+                            if (!input || !snap.amounts || !Object.prototype.hasOwnProperty.call(snap.amounts, categoryId)) return;
+                            const amount = parseFloat(snap.amounts[categoryId]);
+                            input.value = isFinite(amount) ? amount.toFixed(2) : "";
+                        });
+                        if (manualDetails) manualDetails.open = true;
+                        updateLiveTotal();
+                        // Reuse the shared modal-close handler (resets aria
+                        // state, removes the body class) instead of
+                        // duplicating it here.
+                        const closeBtn = copyModal && copyModal.querySelector("[data-home-modal-close]");
+                        if (closeBtn) closeBtn.click();
+                        setStatus("Prefilled from " + monthLabel(snap.ym) + " — review and Save.");
+                    });
+                }
+            }
         }
     })();
 

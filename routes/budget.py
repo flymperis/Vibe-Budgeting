@@ -1,3 +1,4 @@
+import calendar
 import re
 
 from flask import Blueprint, flash, g, request
@@ -16,6 +17,12 @@ def _strict_month(raw):
     bad value is not silently swapped for the current month."""
     text = (raw or "").strip()
     return text if _MONTH_RE.match(text) else None
+
+
+def _month_label(ym):
+    """'2026-09' -> 'September 2026', for flash messages."""
+    year_str, month_str = ym.split("-", 1)
+    return f"{calendar.month_name[int(month_str)]} {year_str}"
 
 
 @bp.route("/budget/toggle", methods=["POST"])
@@ -100,34 +107,49 @@ def save_budget_override():
         if not budget.category_owned(conn, uid, category_id):
             flash("Category not found.", "error")
             return redirect_home(panel="budget")
+        cleared = budget.is_month_cleared(conn, uid, ym)
         budget.set_override(conn, uid, category_id, ym, amount)
         conn.commit()
     finally:
         conn.close()
-    flash("Budget for this month reset to the default." if amount is None else "Budget for this month saved.", "success")
+    if amount is not None:
+        flash("Budget for this month saved.", "success")
+    elif cleared:
+        # The month has no default to fall back to — dropping the override
+        # leaves the category with no budget at all, not "reset".
+        flash("Budget for this month removed.", "success")
+    else:
+        flash("Budget for this month reset to the default.", "success")
     return redirect_home(panel="budget")
 
-@bp.route("/budget/copy-last-month", methods=["POST"])
-def copy_last_month():
+@bp.route("/budget/clear-month", methods=["POST"])
+def clear_month():
     uid = g.user_id
     ym = _strict_month(request.form.get("month"))
     if ym is None:
         flash("Invalid month.", "error")
         return redirect_home(panel="budget")
     conn = get_connection()
-    info = {}
     try:
-        copied = budget.copy_previous_month_actuals(conn, uid, ym, info=info)
+        budget.clear_month(conn, uid, ym)
         conn.commit()
     finally:
         conn.close()
-    if copied:
-        flash(f"Copied last month's spending into {copied} categor{'y' if copied == 1 else 'ies'}.", "success")
-    elif info.get("had_spending") and info.get("skipped"):
-        flash(
-            "Nothing to copy — every category with spending last month is fixed or covered by Everything else.",
-            "info",
-        )
-    else:
-        flash("No spending last month to copy.", "info")
+    flash(f"Cleared the budget for {_month_label(ym)}.", "success")
+    return redirect_home(panel="budget")
+
+@bp.route("/budget/restore-month", methods=["POST"])
+def restore_month():
+    uid = g.user_id
+    ym = _strict_month(request.form.get("month"))
+    if ym is None:
+        flash("Invalid month.", "error")
+        return redirect_home(panel="budget")
+    conn = get_connection()
+    try:
+        budget.restore_month(conn, uid, ym)
+        conn.commit()
+    finally:
+        conn.close()
+    flash(f"Restored the monthly budgets for {_month_label(ym)}.", "success")
     return redirect_home(panel="budget")

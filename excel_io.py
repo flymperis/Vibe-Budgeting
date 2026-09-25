@@ -156,6 +156,13 @@ def _build_export_workbook(conn, user_id):
     ws_meta.append(["budget_enabled", 1 if budget.is_enabled(conn, uid) else 0])
     other_amount = budget.get_other_amount(conn, uid)
     ws_meta.append(["budget_other_amount", "" if other_amount is None else other_amount])
+    cleared_months = sorted(
+        str(row["ym"])
+        for row in conn.execute(
+            "SELECT ym FROM budget_month_cleared WHERE user_id = ?", (uid,)
+        )
+    )
+    ws_meta.append(["budget_cleared_months", ",".join(cleared_months)])
 
     ws_accounts = wb.create_sheet(SHEET_ACCOUNTS)
     ws_accounts.append(["name", "opening_balance"])
@@ -741,6 +748,18 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
         except ValueError:
             budget_errors.append(f"{SHEET_META}: budget_other_amount must be a number of zero or more")
 
+    cleared_months_present, cleared_months_raw = _meta_present(wb, "budget_cleared_months")
+    cleared_months = []
+    if cleared_months_present:
+        for chunk in cleared_months_raw.split(","):
+            ym = chunk.strip()
+            if not ym:
+                continue
+            if not _BUDGET_MONTH_RE.match(ym):
+                budget_errors.append(f"{SHEET_META}: budget_cleared_months has an invalid month {ym!r}")
+                continue
+            cleared_months.append(ym)
+
     parse_errors = (
         parse_errors + transfer_errors + stock_errors + crypto_errors + recurring_errors
         + budget_errors
@@ -854,6 +873,11 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
                 conn.execute("DELETE FROM category_budgets WHERE user_id = ?", (uid,))
                 conn.execute("DELETE FROM category_budget_overrides WHERE user_id = ?", (uid,))
                 conn.execute("DELETE FROM category_budget_flags WHERE user_id = ?", (uid,))
+            # budget_cleared_months is a _meta key, independent of the Budgets
+            # sheet — only replace the markers when the key was actually present
+            # (an old workbook without it must not silently un-clear months).
+            if cleared_months_present:
+                conn.execute("DELETE FROM budget_month_cleared WHERE user_id = ?", (uid,))
 
         for notes, amount, cat_name, acc_name, spent_at, created_at in insert_expenses:
             category_id = _lookup_category_id(conn, cat_name, uid, expense=True)
@@ -1024,6 +1048,14 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
             budget.set_enabled(conn, uid, budget_enabled)
         if other_amount_present:
             budget.set_other_amount(conn, uid, other_amount)
+        if cleared_months_present:
+            for ym in cleared_months:
+                # Marker only — this is a restore of a previously-cleared month,
+                # not a fresh clear, so existing overrides for `ym` must survive.
+                conn.execute(
+                    "INSERT OR IGNORE INTO budget_month_cleared (user_id, ym) VALUES (?, ?)",
+                    (uid, ym),
+                )
 
         if errors:
             conn.rollback()

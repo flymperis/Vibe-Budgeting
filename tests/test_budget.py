@@ -430,77 +430,6 @@ def test_other_amount_works_without_prior_budget_settings_row(client):
 
 
 # ---------------------------------------------------------------------------
-# copy-last-month
-# ---------------------------------------------------------------------------
-
-
-def test_copy_last_month_creates_and_overwrites_overrides(client):
-    register_and_login(client, "copybasic")
-    uid, cats, account_id = _user("copybasic")
-    general, other = cats["General"], cats["Other"]
-    _post(client, "/budget/toggle", {"enabled": "1"})
-
-    _spend(uid, general, account_id, 123.456, "2026-04-10")
-    _refund(uid, other, account_id, 50, "2026-04-11")  # refund only, net <= 0
-
-    # Existing override for May should be overwritten.
-    conn = vb_app.get_connection()
-    budget.set_override(conn, uid, general, "2026-05", 999)
-    conn.commit()
-    conn.close()
-
-    resp = _post(client, "/budget/copy-last-month", {"month": "2026-05"})
-    assert "Copied last month" in resp.get_data(as_text=True)
-
-    conn = vb_app.get_connection()
-    row = conn.execute(
-        "SELECT amount FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, general, "2026-05"),
-    ).fetchone()
-    assert round(row["amount"], 2) == 123.46
-    # Other only had a refund, so it should not be touched.
-    assert conn.execute(
-        "SELECT 1 FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, other, "2026-05"),
-    ).fetchone() is None
-    conn.close()
-
-
-def test_copy_last_month_january_uses_december_previous_year(client):
-    register_and_login(client, "copyjan")
-    uid, cats, account_id = _user("copyjan")
-    general = cats["General"]
-    _post(client, "/budget/toggle", {"enabled": "1"})
-    _spend(uid, general, account_id, 77, "2025-12-20")
-
-    resp = _post(client, "/budget/copy-last-month", {"month": "2026-01"})
-    assert "Copied last month" in resp.get_data(as_text=True)
-
-    conn = vb_app.get_connection()
-    row = conn.execute(
-        "SELECT amount FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, general, "2026-01"),
-    ).fetchone()
-    assert row["amount"] == 77.0
-    conn.close()
-
-
-def test_copy_last_month_empty_previous_month_copies_nothing(client):
-    register_and_login(client, "copyempty")
-    uid, cats, _ = _user("copyempty")
-    _post(client, "/budget/toggle", {"enabled": "1"})
-
-    resp = _post(client, "/budget/copy-last-month", {"month": "2026-05"})
-    assert "No spending last month to copy" in resp.get_data(as_text=True)
-
-    conn = vb_app.get_connection()
-    assert conn.execute(
-        "SELECT 1 FROM category_budget_overrides WHERE user_id = ?", (uid,)
-    ).fetchone() is None
-    conn.close()
-
-
-# ---------------------------------------------------------------------------
 # Dashboard rendering
 # ---------------------------------------------------------------------------
 
@@ -519,8 +448,6 @@ def test_dashboard_budget_panel_renders_form_controls_and_order(client):
     assert resp.status_code == 200
     page = resp.get_data(as_text=True)
 
-    assert 'id="budget-search-input"' in page
-    assert 'id="budget-fill-history-btn"' in page
     assert 'id="budget-distribute-btn"' in page
     assert 'name="other_amount"' in page
     # All categories now live together in a single collapsible section.
@@ -647,58 +574,6 @@ def test_budget_for_month_float_rounding_avoids_false_over(client):
     assert summary["total_budget"] == 0.30
     assert summary["total_spent"] == 0.30
     assert summary["total_remaining"] == 0.0
-
-
-def test_copy_last_month_with_other_amount_skips_unbudgeted_categories(client):
-    register_and_login(client, "copyother")
-    uid, cats, account_id = _user("copyother")
-    general, other_cat = cats["General"], cats["Other"]
-    _post(client, "/budget/toggle", {"enabled": "1"})
-    # General has its own default budget; Other has none, so it is covered by
-    # "everything else" and must not get its own override.
-    _post(client, "/budget/defaults", {f"amount_{general}": "100", "other_amount": "50"})
-
-    _spend(uid, general, account_id, 30, "2026-04-10")
-    _spend(uid, other_cat, account_id, 15, "2026-04-11")
-
-    resp = _post(client, "/budget/copy-last-month", {"month": "2026-05"})
-    assert "Copied last month" in resp.get_data(as_text=True)
-
-    conn = vb_app.get_connection()
-    assert conn.execute(
-        "SELECT amount FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, general, "2026-05"),
-    ).fetchone()["amount"] == 30.0
-    assert conn.execute(
-        "SELECT 1 FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, other_cat, "2026-05"),
-    ).fetchone() is None
-    conn.close()
-
-
-def test_copy_last_month_without_other_amount_copies_all_spending_categories(client):
-    register_and_login(client, "copynoother")
-    uid, cats, account_id = _user("copynoother")
-    general, other_cat = cats["General"], cats["Other"]
-    _post(client, "/budget/toggle", {"enabled": "1"})
-    _post(client, "/budget/defaults", {f"amount_{general}": "100"})  # no other_amount
-
-    _spend(uid, general, account_id, 30, "2026-04-10")
-    _spend(uid, other_cat, account_id, 15, "2026-04-11")
-
-    resp = _post(client, "/budget/copy-last-month", {"month": "2026-05"})
-    assert "Copied last month" in resp.get_data(as_text=True)
-
-    conn = vb_app.get_connection()
-    assert conn.execute(
-        "SELECT amount FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, general, "2026-05"),
-    ).fetchone()["amount"] == 30.0
-    assert conn.execute(
-        "SELECT amount FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, other_cat, "2026-05"),
-    ).fetchone()["amount"] == 15.0
-    conn.close()
 
 
 def test_parse_amount_rejects_non_finite_and_over_ceiling():
@@ -879,24 +754,6 @@ def test_override_route_rejects_invalid_month(client):
     conn.close()
 
 
-def test_copy_last_month_rejects_invalid_month(client):
-    register_and_login(client, "invalidmonthcopy")
-    uid, cats, account_id = _user("invalidmonthcopy")
-    general = cats["General"]
-    _post(client, "/budget/toggle", {"enabled": "1"})
-    _spend(uid, general, account_id, 20, "2026-04-10")
-
-    for bad_month in ("2026-13", "abc", ""):
-        resp = _post(client, "/budget/copy-last-month", {"month": bad_month})
-        assert "Invalid month." in resp.get_data(as_text=True)
-
-    conn = vb_app.get_connection()
-    assert conn.execute(
-        "SELECT 1 FROM category_budget_overrides WHERE user_id = ?", (uid,)
-    ).fetchone() is None
-    conn.close()
-
-
 def test_home_card_renders_with_only_other_amount_set(client):
     register_and_login(client, "homeotheronly")
     uid, cats, account_id = _user("homeotheronly")
@@ -1005,68 +862,6 @@ def test_deleting_category_cascades_fixed_flag(client):
     assert not conn.execute(
         "SELECT 1 FROM category_budget_flags WHERE category_id = ?", (travel,)
     ).fetchone()
-    conn.close()
-
-
-def test_copy_last_month_skips_fixed_categories(client):
-    register_and_login(client, "fixedcopy")
-    uid, cats, account_id = _user("fixedcopy")
-    general, other_cat = cats["General"], cats["Other"]
-    _post(client, "/budget/toggle", {"enabled": "1"})
-    _post(
-        client,
-        "/budget/defaults",
-        {f"amount_{general}": "100", f"fixed_{general}": "1", f"amount_{other_cat}": "50"},
-    )
-
-    _spend(uid, general, account_id, 30, "2026-04-10")
-    _spend(uid, other_cat, account_id, 15, "2026-04-11")
-
-    resp = _post(client, "/budget/copy-last-month", {"month": "2026-05"})
-    assert "Copied last month" in resp.get_data(as_text=True)
-
-    conn = vb_app.get_connection()
-    # Fixed category: no override created, default budget untouched.
-    assert conn.execute(
-        "SELECT 1 FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, general, "2026-05"),
-    ).fetchone() is None
-    assert budget.default_budgets(conn, uid)[general] == 100.0
-    # Non-fixed category gets the override.
-    assert conn.execute(
-        "SELECT amount FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
-        (uid, other_cat, "2026-05"),
-    ).fetchone()["amount"] == 15.0
-    conn.close()
-
-
-def test_copy_last_month_skips_fixed_categories_with_other_amount_set(client):
-    register_and_login(client, "fixedcopyother")
-    uid, cats, account_id = _user("fixedcopyother")
-    general, other_cat = cats["General"], cats["Other"]
-    _post(client, "/budget/toggle", {"enabled": "1"})
-    # General is fixed (own default); Other has no default -> covered by "everything else".
-    _post(
-        client,
-        "/budget/defaults",
-        {f"amount_{general}": "100", f"fixed_{general}": "1", "other_amount": "50"},
-    )
-
-    _spend(uid, general, account_id, 30, "2026-04-10")
-    _spend(uid, other_cat, account_id, 15, "2026-04-11")
-
-    resp = _post(client, "/budget/copy-last-month", {"month": "2026-05"})
-    assert (
-        "Nothing to copy — every category with spending last month is fixed "
-        "or covered by Everything else." in resp.get_data(as_text=True)
-    )
-
-    conn = vb_app.get_connection()
-    # General is fixed -> skipped. Other has no own budget -> skipped by the
-    # other_amount rule. Nothing should have been copied.
-    assert conn.execute(
-        "SELECT 1 FROM category_budget_overrides WHERE user_id = ?", (uid,)
-    ).fetchone() is None
     conn.close()
 
 
@@ -1224,17 +1019,453 @@ def test_import_blank_amount_default_row_with_fixed_zero_is_an_error(client):
     assert b"missing amount" in resp.data
 
 
-def test_budget_panel_copy_last_month_confirm_and_hint_text(client):
-    register_and_login(client, "panelconfirm")
-    uid, cats, _ = _user("panelconfirm")
+# ---------------------------------------------------------------------------
+# month_budget_snapshots
+# ---------------------------------------------------------------------------
+
+
+def test_month_budget_snapshots_newest_first_and_effective_amounts(client):
+    register_and_login(client, "snapbasic")
+    uid, cats, _ = _user("snapbasic")
+    general, other = cats["General"], cats["Other"]
+
+    conn = vb_app.get_connection()
+    budget.set_default(conn, uid, general, 100)
+    # March: General overridden, Other left at its default (no override that month).
+    budget.set_override(conn, uid, general, "2026-03", 80)
+    budget.set_default(conn, uid, other, 20)
+    # April: General back to nothing special (no override), Other overridden.
+    budget.set_override(conn, uid, other, "2026-04", 25)
+    conn.commit()
+    conn.close()
+
+    conn = vb_app.get_connection()
+    snapshots = budget.month_budget_snapshots(conn, uid)
+    conn.close()
+
+    assert [s["ym"] for s in snapshots] == ["2026-04", "2026-03"]  # newest first
+
+    april = next(s for s in snapshots if s["ym"] == "2026-04")
+    assert april["amounts"][general] == 100.0  # falls back to the default
+    assert april["amounts"][other] == 25.0  # the override for that month
+
+    march = next(s for s in snapshots if s["ym"] == "2026-03")
+    assert march["amounts"][general] == 80.0  # the override for that month
+    assert march["amounts"][other] == 20.0  # falls back to the default
+
+
+def test_month_budget_snapshots_omits_categories_with_neither(client):
+    register_and_login(client, "snapomit")
+    uid, cats, _ = _user("snapomit")
+    general, other = cats["General"], cats["Other"]
+
+    conn = vb_app.get_connection()
+    # Only General ever gets a default or an override; Other never does.
+    budget.set_override(conn, uid, general, "2026-05", 40)
+    conn.commit()
+
+    snapshots = budget.month_budget_snapshots(conn, uid)
+    conn.close()
+
+    assert len(snapshots) == 1
+    assert snapshots[0]["ym"] == "2026-05"
+    assert snapshots[0]["amounts"] == {general: 40.0}
+    assert other not in snapshots[0]["amounts"]
+
+
+def test_month_budget_snapshots_only_months_with_an_override_are_listed(client):
+    register_and_login(client, "snapdefaultonly")
+    uid, cats, _ = _user("snapdefaultonly")
+    general = cats["General"]
+
+    conn = vb_app.get_connection()
+    # A default with no override for any month at all: nothing to list.
+    budget.set_default(conn, uid, general, 100)
+    conn.commit()
+
+    snapshots = budget.month_budget_snapshots(conn, uid)
+    conn.close()
+
+    assert snapshots == []
+
+
+def test_month_budget_snapshots_isolates_other_users(client, app):
+    register_and_login(client, "snapowner")
+    uid, cats, _ = _user("snapowner")
+    general = cats["General"]
+
+    other_client = app.test_client()
+    register_and_login(other_client, "snapintruder")
+    other_uid, other_cats, _ = _user("snapintruder")
+    other_general = other_cats["General"]
+
+    conn = vb_app.get_connection()
+    budget.set_override(conn, uid, general, "2026-06", 70)
+    budget.set_override(conn, other_uid, other_general, "2026-06", 999)
+    conn.commit()
+
+    snapshots = budget.month_budget_snapshots(conn, uid)
+    conn.close()
+
+    assert len(snapshots) == 1
+    assert snapshots[0]["amounts"] == {general: 70.0}
+
+
+def test_month_budget_snapshots_respects_limit(client):
+    register_and_login(client, "snaplimit")
+    uid, cats, _ = _user("snaplimit")
+    general = cats["General"]
+
+    conn = vb_app.get_connection()
+    for month_num in range(1, 6):  # 2026-01 .. 2026-05
+        budget.set_override(conn, uid, general, f"2026-{month_num:02d}", 10 * month_num)
+    conn.commit()
+
+    snapshots = budget.month_budget_snapshots(conn, uid, limit=2)
+    conn.close()
+
+    assert [s["ym"] for s in snapshots] == ["2026-05", "2026-04"]
+
+
+# ---------------------------------------------------------------------------
+# Clear / restore a month's budget
+# ---------------------------------------------------------------------------
+
+
+def test_clear_month_hides_defaults_and_other_for_that_month_only(client):
+    register_and_login(client, "clearbasic")
+    uid, cats, account_id = _user("clearbasic")
+    general, other_cat = cats["General"], cats["Other"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/defaults", {f"amount_{general}": "100", "other_amount": "30"})
+    _spend(uid, general, account_id, 40, "2026-05-10")
+    _spend(uid, other_cat, account_id, 10, "2026-05-11")
+    _spend(uid, general, account_id, 40, "2026-06-10")
+
+    resp = _post(client, "/budget/clear-month", {"month": "2026-05"})
+    assert "Cleared the budget for May 2026." in resp.get_data(as_text=True)
+
+    may = _summary(uid, "2026-05")
+    assert may["cleared"] is True
+    assert may["rows"] == []
+    assert may["other"] is None
+    assert may["total_budget"] == 0
+    assert may["total_spent"] == 0
+    assert {u["name"] for u in may["unbudgeted"]} == {"General", "Other"}
+
+    # June (not cleared) still uses the default/other_amount as normal.
+    june = _summary(uid, "2026-06")
+    assert june["cleared"] is False
+    assert june["by_category"][general]["budget"] == 100.0
+
+
+def test_clear_month_deletes_that_months_existing_overrides(client):
+    register_and_login(client, "clearoverrides")
+    uid, cats, _ = _user("clearoverrides")
+    general = cats["General"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/defaults", {f"amount_{general}": "100"})
+    _post(client, "/budget/override", {"category_id": str(general), "month": "2026-05", "amount": "80"})
+
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+
+    conn = vb_app.get_connection()
+    assert conn.execute(
+        "SELECT 1 FROM category_budget_overrides WHERE user_id = ? AND category_id = ? AND ym = ?",
+        (uid, general, "2026-05"),
+    ).fetchone() is None
+    conn.close()
+
+
+def test_override_after_clear_budgets_only_that_category(client):
+    register_and_login(client, "clearthenoverride")
+    uid, cats, account_id = _user("clearthenoverride")
+    general, other_cat = cats["General"], cats["Other"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/defaults", {f"amount_{general}": "100", f"amount_{other_cat}": "50"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+
+    resp = _post(client, "/budget/override", {"category_id": str(general), "month": "2026-05", "amount": "25"})
+    assert "Budget for this month saved." in resp.get_data(as_text=True)
+
+    may = _summary(uid, "2026-05")
+    assert may["cleared"] is True
+    assert may["by_category"][general]["budget"] == 25.0
+    assert other_cat not in may["by_category"]  # Other still has no budget this month
+
+
+def test_reset_to_default_on_cleared_month_removes_the_budget(client):
+    register_and_login(client, "clearreset")
+    uid, cats, account_id = _user("clearreset")
+    general = cats["General"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/defaults", {f"amount_{general}": "100"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+    _post(client, "/budget/override", {"category_id": str(general), "month": "2026-05", "amount": "25"})
+    _spend(uid, general, account_id, 25, "2026-05-01")
+
+    resp = _post(client, "/budget/override", {"category_id": str(general), "month": "2026-05", "clear": "1"})
+    assert "Budget for this month removed." in resp.get_data(as_text=True)
+
+    may = _summary(uid, "2026-05")
+    assert general not in may["by_category"]
+    assert [u["name"] for u in may["unbudgeted"]] == ["General"]
+
+
+def test_restore_month_brings_back_defaults_and_keeps_post_clear_overrides(client):
+    register_and_login(client, "clearrestore")
+    uid, cats, _ = _user("clearrestore")
+    general, other_cat = cats["General"], cats["Other"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/defaults", {f"amount_{general}": "100", f"amount_{other_cat}": "50"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+    _post(client, "/budget/override", {"category_id": str(general), "month": "2026-05", "amount": "25"})
+
+    resp = _post(client, "/budget/restore-month", {"month": "2026-05"})
+    assert "Restored the monthly budgets for May 2026." in resp.get_data(as_text=True)
+
+    may = _summary(uid, "2026-05")
+    assert may["cleared"] is False
+    # The override set while cleared survives the restore.
+    assert may["by_category"][general]["budget"] == 25.0
+    # Other has no override, so it falls back to its default again.
+    assert may["by_category"][other_cat]["budget"] == 50.0
+
+
+def test_clear_and_restore_month_reject_invalid_month_without_write(client):
+    register_and_login(client, "clearinvalid")
+    uid, cats, _ = _user("clearinvalid")
     _post(client, "/budget/toggle", {"enabled": "1"})
 
-    page = client.get("/?panel=budget&month=2026-05").get_data(as_text=True)
-    assert 'data-confirm=' in page
-    assert "based on what you actually spent last month" in page
-    assert "for budgeted categories" not in page
+    for bad_month in ("2026-13", "abc", ""):
+        resp = _post(client, "/budget/clear-month", {"month": bad_month})
+        assert "Invalid month." in resp.get_data(as_text=True)
+        resp = _post(client, "/budget/restore-month", {"month": bad_month})
+        assert "Invalid month." in resp.get_data(as_text=True)
 
-    _post(client, "/budget/defaults", {"other_amount": "40"})
+    conn = vb_app.get_connection()
+    assert conn.execute(
+        "SELECT 1 FROM budget_month_cleared WHERE user_id = ?", (uid,)
+    ).fetchone() is None
+    conn.close()
+
+
+def test_clear_month_isolated_per_user(client, app):
+    register_and_login(client, "clearowner")
+    uid, cats, _ = _user("clearowner")
+
+    intruder = app.test_client()
+    register_and_login(intruder, "clearintruder")
+    intruder_uid, _, _ = _user("clearintruder")
+
+    _post(intruder, "/budget/clear-month", {"month": "2026-05"})
+
+    conn = vb_app.get_connection()
+    assert budget.is_month_cleared(conn, intruder_uid, "2026-05") is True
+    assert budget.is_month_cleared(conn, uid, "2026-05") is False
+    conn.close()
+
+
+def test_deleting_category_does_not_break_a_cleared_month(client):
+    register_and_login(client, "cleardeletecat")
+    uid, cats, _ = _user("cleardeletecat")
+    _post(client, "/categories/add", {"name": "Travel"})
+    _, cats, _ = _user("cleardeletecat")
+    travel = cats["Travel"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/defaults", {f"amount_{travel}": "200"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+    _post(client, "/budget/override", {"category_id": str(travel), "month": "2026-05", "amount": "75"})
+
+    _post(client, f"/categories/{travel}/delete", {})
+
+    conn = vb_app.get_connection()
+    assert budget.is_month_cleared(conn, uid, "2026-05") is True
+    conn.close()
+    # Rendering the cleared month must not blow up once its only override's
+    # category is gone.
+    may = _summary(uid, "2026-05")
+    assert may["cleared"] is True
+    assert may["rows"] == []
+
+
+def test_month_budget_snapshots_for_cleared_month_ignores_defaults(client):
+    register_and_login(client, "clearsnap")
+    uid, cats, _ = _user("clearsnap")
+    general, other_cat = cats["General"], cats["Other"]
+
+    conn = vb_app.get_connection()
+    budget.set_default(conn, uid, general, 100)
+    budget.set_default(conn, uid, other_cat, 50)
+    conn.commit()
+    conn.close()
+
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+    _post(client, "/budget/override", {"category_id": str(general), "month": "2026-05", "amount": "20"})
+
+    conn = vb_app.get_connection()
+    snapshots = budget.month_budget_snapshots(conn, uid)
+    conn.close()
+
+    may = next(s for s in snapshots if s["ym"] == "2026-05")
+    # Only the override counts — the default for Other must not leak in.
+    assert may["amounts"] == {general: 20.0}
+
+
+def test_month_budget_snapshots_skips_cleared_month_with_no_overrides_left(client):
+    register_and_login(client, "clearsnapempty")
+    uid, cats, _ = _user("clearsnapempty")
+    general = cats["General"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/override", {"category_id": str(general), "month": "2026-05", "amount": "20"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})  # wipes the override too
+
+    conn = vb_app.get_connection()
+    snapshots = budget.month_budget_snapshots(conn, uid)
+    conn.close()
+
+    assert all(s["ym"] != "2026-05" for s in snapshots)
+
+
+def test_clear_month_survives_export_import_round_trip(client, app):
+    register_and_login(client, "clearexport")
+    uid, cats, _ = _user("clearexport")
+    general = cats["General"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/defaults", {f"amount_{general}": "100"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+    _post(client, "/budget/override", {"category_id": str(general), "month": "2026-05", "amount": "25"})
+    workbook_bytes = client.get("/export/excel").data
+
+    other = app.test_client()
+    register_and_login(other, "clearimport")
+    resp = other.post(
+        "/import/excel",
+        data={
+            "file": (io.BytesIO(workbook_bytes), "budget-export.xlsx"),
+            "replace_movements": "1",
+            "_csrf_token": csrf_token(other),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert b"Import failed" not in resp.data
+
+    dst_uid, dst_cats, _ = _user("clearimport")
+    conn = vb_app.get_connection()
+    assert budget.is_month_cleared(conn, dst_uid, "2026-05") is True
+    conn.close()
+    dst_summary = _summary(dst_uid, "2026-05")
+    assert dst_summary["cleared"] is True
+    assert dst_summary["by_category"][dst_cats["General"]]["budget"] == 25.0
+
+
+def test_old_workbook_without_budget_cleared_months_key_does_not_clear_anything(client, app):
+    """An older-format workbook predates budget_cleared_months entirely; importing
+    it over an account that already has a cleared month must leave it alone."""
+    register_and_login(client, "clearkeep")
+    uid, cats, _ = _user("clearkeep")
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+
+    workbook_bytes = client.get("/export/excel").data
+
+    from openpyxl import load_workbook
+
+    buf = io.BytesIO(workbook_bytes)
+    wb = load_workbook(buf)
+    ws_meta = wb["_meta"]
+    for row_idx in range(ws_meta.max_row, 1, -1):
+        if str(ws_meta.cell(row=row_idx, column=1).value or "").strip() == "budget_cleared_months":
+            ws_meta.delete_rows(row_idx)
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+
+    resp = client.post(
+        "/import/excel",
+        data={
+            "file": (out, "old-format.xlsx"),
+            "replace_movements": "1",
+            "_csrf_token": csrf_token(client),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert b"Import failed" not in resp.data
+
+    conn = vb_app.get_connection()
+    assert budget.is_month_cleared(conn, uid, "2026-05") is True
+    conn.close()
+
+
+def test_import_rejects_junk_in_budget_cleared_months(client):
+    register_and_login(client, "clearjunk")
+    uid, cats, _ = _user("clearjunk")
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    workbook_bytes = client.get("/export/excel").data
+
+    from openpyxl import load_workbook
+
+    buf = io.BytesIO(workbook_bytes)
+    wb = load_workbook(buf)
+    ws_meta = wb["_meta"]
+    for row_idx in range(1, ws_meta.max_row + 1):
+        if str(ws_meta.cell(row=row_idx, column=1).value or "").strip() == "budget_cleared_months":
+            ws_meta.cell(row=row_idx, column=2).value = "2026-05,not-a-month"
+            break
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+
+    resp = client.post(
+        "/import/excel",
+        data={
+            "file": (out, "junk-cleared-months.xlsx"),
+            "_csrf_token": csrf_token(client),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert b"Import failed" in resp.data
+    assert b"budget_cleared_months" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Regression: saving the manual-budgets form on a cleared month must not
+# wipe other_amount for every other month
+# ---------------------------------------------------------------------------
+
+
+def test_defaults_form_on_cleared_month_preserves_other_amount(client):
+    register_and_login(client, "clearotherpreserve")
+    uid, cats, _ = _user("clearotherpreserve")
+    general = cats["General"]
+    _post(client, "/budget/toggle", {"enabled": "1"})
+    _post(client, "/budget/defaults", {f"amount_{general}": "100", "other_amount": "100"})
+    _post(client, "/budget/clear-month", {"month": "2026-05"})
+
+    # budget_summary["other"] is None for a cleared month, but the form must
+    # still show the real saved value, not blank.
     page = client.get("/?panel=budget&month=2026-05").get_data(as_text=True)
-    assert "for budgeted categories" in page
-    assert "based on what you actually spent last month" not in page
+    assert 'name="other_amount"' in page
+    assert 'value="100.00"' in page
+
+    # Posting the defaults form exactly as rendered (other_amount unchanged)
+    # while viewing the cleared month must not clear the saved other_amount.
+    resp = _post(
+        client,
+        "/budget/defaults",
+        {f"amount_{general}": "100", "other_amount": "100", "month": "2026-05"},
+    )
+    assert "Monthly budgets saved." in resp.get_data(as_text=True)
+
+    conn = vb_app.get_connection()
+    assert budget.get_other_amount(conn, uid) == 100.0
+    conn.close()
+
+    # Other (non-cleared) months still see the preserved other_amount too.
+    assert _summary(uid, "2026-06")["other"]["budget"] == 100.0
+
+

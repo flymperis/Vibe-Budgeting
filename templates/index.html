@@ -394,6 +394,41 @@
         </div>
     </div>
 
+    {# Budget panel's "Copy from another month" modal. Lives here (a direct
+       <body> descendant, like the other modals) rather than inside the
+       Budget panel's own <form>/<details> — a <div id="panel-budget"> that
+       isn't the active panel is display:none, and a closed <details> doesn't
+       render its content at all, so a modal nested in either couldn't be
+       shown; nesting it in the budget defaults <form> also meant any button
+       without type="button" would submit that form instead of the intended
+       action. Prefills the still-open Budget panel's own inputs entirely
+       client-side — no data of its own to submit, so nothing here needs a
+       name or a non-"button" type. #}
+    {% set budget_copy_snapshots = budget_month_snapshots|default([]) %}
+    <script id="budget-month-snapshots" type="application/json">{{ budget_copy_snapshots|tojson }}</script>
+
+    <div id="budget-modal-copy" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="budget-modal-copy-title">
+        <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close dialog"></button>
+        <div class="home-modal-dialog budget-copy-dialog">
+            <div class="home-modal-handle" aria-hidden="true"></div>
+            <div class="home-modal-header">
+                <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+                <h3 id="budget-modal-copy-title" class="home-modal-title">Copy budget from another month</h3>
+                <button type="button" class="home-modal-save" id="budget-copy-prefill-btn">Prefill</button>
+            </div>
+            <div class="budget-copy-body">
+                <label class="budget-copy-month-field">
+                    <span>Month</span>
+                    <select id="budget-copy-month-select"></select>
+                </label>
+                <ul class="budget-copy-preview-list" id="budget-copy-preview-list"></ul>
+                <p class="budget-copy-preview-total" id="budget-copy-preview-total"></p>
+            </div>
+        </div>
+    </div>
+
     {# Mobile only (hidden from 900px up, where the side menu takes over).
        These carry the same data-target as the side-menu buttons, so the
        existing panel-switching handler drives them without new navigation

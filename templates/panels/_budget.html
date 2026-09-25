@@ -6,8 +6,8 @@
             {% if row.avg %}<span class="budget-default-hint muted">3-mo avg {{ row.avg|money }}</span>{% endif %}
         </div>
         <div class="budget-default-controls">
-            <input aria-label="Monthly budget for {{ row.name }}" class="budget-default-input" data-suggested="{{ row.suggested }}" min="0" name="amount_{{ row.id }}" placeholder="—" step="0.01" type="number" inputmode="decimal" value="{% if row.default is not none %}{{ '%.2f'|format(row.default) }}{% endif %}">
-            <label class="budget-default-fixed-check" title="Keep this amount as is — Distribute and &quot;Use last month's spending&quot; won't change it">
+            <input aria-label="Monthly budget for {{ row.name }}" class="budget-default-input" min="0" name="amount_{{ row.id }}" placeholder="—" step="0.01" type="number" inputmode="decimal" value="{% if row.default is not none %}{{ '%.2f'|format(row.default) }}{% endif %}">
+            <label class="budget-default-fixed-check" title="Keep this amount as is — Distribute won't change it">
                 <input class="budget-default-fixed-input" data-fixed-toggle name="fixed_{{ row.id }}" type="checkbox" value="1" {% if row.fixed %}checked{% endif %}>
                 <span>Fixed</span>
             </label>
@@ -33,30 +33,121 @@
             <button type="submit">Apply</button>
         </form>
 
-        <form action="{{ url_for('budget.copy_last_month') }}" class="budget-copy-last-form" data-confirm="Replace this month's budgets with last month's spending?" method="post">
-            <input name="month" type="hidden" value="{{ month_filter }}">
-            <button class="btn-secondary" type="submit">Use last month's spending</button>
-            {% if budget_other_amount is not none %}
-                <span class="muted small-hint">Sets this month's amounts to last month's spending for budgeted categories (fixed categories are skipped).</span>
-            {% else %}
-                <span class="muted small-hint">Sets this month's amounts only, based on what you actually spent last month (fixed categories are skipped).</span>
-            {% endif %}
-        </form>
+        {% if not budget_summary.cleared or budget_summary.rows %}
+            <form action="{{ url_for('budget.clear_month') }}" class="budget-clear-form" data-confirm="Clear the budget for {{ month_heading }}? Other months keep their budgets." method="post">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                <button class="btn-secondary budget-clear-btn" type="submit">Clear current month</button>
+            </form>
+        {% endif %}
 
-        <div class="home-summary-hero budget-hero">
-            <p class="home-summary-hero-label">Left to spend · {{ month_heading }}</p>
-            <strong class="home-summary-hero-amount {{ budget_summary.total_remaining|amount_class }}">{{ budget_summary.total_remaining|money }}</strong>
-            <div class="budget-bar-wrap budget-hero-bar" role="progressbar" aria-label="Budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ budget_summary.total_pct|round|int }}">
-                <div class="budget-bar budget-{{ budget_summary.total_status }}" style="width: {{ [[budget_summary.total_pct, 100]|min, 0]|max }}%"></div>
+        {% if budget_summary.cleared and not budget_summary.rows %}
+            {% set cleared_total_spent = budget_summary.total_spent + (budget_summary.unbudgeted|sum(attribute='spent')) %}
+            <div class="home-summary-hero budget-hero budget-hero-cleared">
+                <p class="home-summary-hero-label muted">No budget for {{ month_heading }}</p>
+                <div class="home-summary-hero-pills">
+                    <span class="home-summary-pill home-summary-pill-expense">Spent <b>{{ cleared_total_spent|money }}</b></span>
+                </div>
+                <form action="{{ url_for('budget.restore_month') }}" method="post">
+                    <input name="month" type="hidden" value="{{ month_filter }}">
+                    <button class="btn-secondary" type="submit">Restore monthly budgets</button>
+                </form>
             </div>
-            <div class="home-summary-hero-pills">
-                <span class="home-summary-pill">Budget <b>{{ budget_summary.total_budget|money }}</b></span>
-                <span class="home-summary-pill home-summary-pill-expense">Spent <b>{{ budget_summary.total_spent|money }}</b></span>
+        {% else %}
+            <div class="home-summary-hero budget-hero">
+                <p class="home-summary-hero-label">Left to spend · {{ month_heading }}</p>
+                <strong class="home-summary-hero-amount {{ budget_summary.total_remaining|amount_class }}">{{ budget_summary.total_remaining|money }}</strong>
+                <div class="budget-bar-wrap budget-hero-bar" role="progressbar" aria-label="Budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ budget_summary.total_pct|round|int }}">
+                    <div class="budget-bar budget-{{ budget_summary.total_status }}" style="width: {{ [[budget_summary.total_pct, 100]|min, 0]|max }}%"></div>
+                </div>
+                <div class="home-summary-hero-pills">
+                    <span class="home-summary-pill">Budget <b>{{ budget_summary.total_budget|money }}</b></span>
+                    <span class="home-summary-pill home-summary-pill-expense">Spent <b>{{ budget_summary.total_spent|money }}</b></span>
+                </div>
+                {% if budget_summary.cleared %}
+                    <p class="muted small-hint budget-hero-cleared-note">Only the amounts you set for this month.</p>
+                    <form action="{{ url_for('budget.restore_month') }}" class="budget-hero-restore-form" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <button class="btn-secondary" type="submit">Restore monthly budgets</button>
+                    </form>
+                {% endif %}
             </div>
-        </div>
+        {% endif %}
 
         <h3>Categories</h3>
-        {% if budget_summary.rows or budget_summary.other %}
+        {% if budget_summary.cleared %}
+            {% if budget_form_rows %}
+                <ul class="budget-list">
+                    {% for row in budget_form_rows %}
+                        {% set active_row = budget_summary.by_category.get(row.id) %}
+                        {% if active_row %}
+                            {% set remaining_word = 'over' if active_row.status == 'over' else 'left' %}
+                            {% set remaining_display = (-active_row.remaining)|money if active_row.status == 'over' else active_row.remaining|money %}
+                            {% set value_text = remaining_display ~ ' ' ~ remaining_word ~ ' · ' ~ (active_row.pct|round|int) ~ '%' %}
+                            <li class="budget-row">
+                                <div class="budget-row-head">
+                                    <div class="budget-row-line1">
+                                        <div class="budget-row-name-line">
+                                            <span class="budget-row-name">{{ row.name }}</span>
+                                            <button aria-controls="budget-override-{{ row.id }}" aria-expanded="false" aria-label="Change budget for {{ row.name }} in {{ month_heading }}" class="budget-row-edit-btn" data-budget-edit-toggle type="button">
+                                                <svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+                                                    <path d="M12 20h9"></path>
+                                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <span class="budget-row-amounts"><b>{{ active_row.spent|money }}</b> <span class="muted budget-row-amounts-of">of</span><span class="muted budget-row-amounts-slash">/</span> {{ active_row.budget|money }}</span>
+                                    </div>
+                                    <span class="budget-row-remaining budget-text-{{ active_row.status }}"><b>{{ remaining_display }}</b> <span class="budget-row-remaining-word">{{ remaining_word }}</span></span>
+                                    <div class="budget-bar-wrap budget-bar-fill" role="progressbar" aria-label="{{ row.name }} budget used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ active_row.pct|round|int }}" aria-valuetext="{{ value_text }}" title="{{ value_text }}">
+                                        <div class="budget-bar budget-{{ active_row.status }}" style="width: {{ [[active_row.pct, 100]|min, 0]|max }}%"></div>
+                                    </div>
+                                </div>
+                                <div class="budget-override-panel" hidden id="budget-override-{{ row.id }}">
+                                    <form action="{{ url_for('budget.save_budget_override') }}" class="inline-form" method="post">
+                                        <input name="month" type="hidden" value="{{ month_filter }}">
+                                        <input name="category_id" type="hidden" value="{{ row.id }}">
+                                        <input aria-label="Budget for {{ row.name }} in {{ month_heading }}" min="0" name="amount" required step="0.01" type="number" inputmode="decimal" value="{{ '%.2f'|format(active_row.budget) }}">
+                                        <button type="submit">Save</button>
+                                        {% if active_row.override is not none %}
+                                            <button class="btn-secondary" name="clear" type="submit" value="1" formnovalidate>{% if budget_summary.cleared %}Remove{% else %}Reset to default{% endif %}</button>
+                                        {% endif %}
+                                    </form>
+                                </div>
+                            </li>
+                        {% else %}
+                            <li class="budget-row budget-row-uncleared">
+                                <div class="budget-row-head">
+                                    <div class="budget-row-line1">
+                                        <div class="budget-row-name-line">
+                                            <span class="budget-row-name">{{ row.name }}</span>
+                                            <button aria-controls="budget-override-{{ row.id }}" aria-expanded="false" aria-label="Change budget for {{ row.name }} in {{ month_heading }}" class="budget-row-edit-btn" data-budget-edit-toggle type="button">
+                                                <svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24">
+                                                    <path d="M12 20h9"></path>
+                                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <span class="budget-row-amounts muted">—</span>
+                                    </div>
+                                    <span class="budget-row-remaining muted">—</span>
+                                    <div class="budget-bar-wrap budget-bar-fill" aria-hidden="true"></div>
+                                </div>
+                                <div class="budget-override-panel" hidden id="budget-override-{{ row.id }}">
+                                    <form action="{{ url_for('budget.save_budget_override') }}" class="inline-form" method="post">
+                                        <input name="month" type="hidden" value="{{ month_filter }}">
+                                        <input name="category_id" type="hidden" value="{{ row.id }}">
+                                        <input aria-label="Budget for {{ row.name }} in {{ month_heading }}" min="0" name="amount" required step="0.01" type="number" inputmode="decimal" value="">
+                                        <button type="submit">Save</button>
+                                    </form>
+                                </div>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="muted">No expense categories yet.</p>
+            {% endif %}
+        {% elif budget_summary.rows or budget_summary.other %}
             <ul class="budget-list">
                 {% for row in budget_summary.rows %}
                     {% set remaining_word = 'over' if row.status == 'over' else 'left' %}
@@ -118,7 +209,7 @@
             <p class="muted">No budgets yet. Set monthly amounts below.</p>
         {% endif %}
 
-        {% if budget_summary.unbudgeted %}
+        {% if not budget_summary.cleared and budget_summary.unbudgeted %}
             <h3>{% if budget_summary.other %}Covered by Everything else{% else %}Not budgeted{% endif %}</h3>
             <ul class="budget-unbudgeted">
                 {% for row in budget_summary.unbudgeted %}
@@ -129,6 +220,8 @@
 
         <h3>Monthly budgets</h3>
         {% set has_any_budget = (budget_form_rows|selectattr('default', 'ne', none)|list)|length > 0 %}
+        {% set initial_total = (budget_form_rows|selectattr('default', 'ne', none)|sum(attribute='default')) + (budget_other_amount or 0) %}
+        {% set month_snapshots = budget_month_snapshots|default([]) %}
         <form action="{{ url_for('budget.save_budget_defaults') }}" class="budget-defaults-form" id="budget-defaults-form" method="post">
             <input name="month" type="hidden" value="{{ month_filter }}">
 
@@ -137,21 +230,14 @@
                     <span>Set budgets manually{% if budget_form_rows %} <span class="budget-manual-count muted">· {{ budget_form_rows|length }} categor{{ 'y' if budget_form_rows|length == 1 else 'ies' }}</span>{% endif %}</span>
                 </summary>
                 <div class="budget-manual-body">
-                    <p class="muted small-hint">These amounts apply to every month. Leave a field empty for no budget.</p>
-
                     {% if budget_form_rows %}
                         <div class="budget-tools">
-                            <label class="budget-search-field">
-                                <span class="sr-only">Search categories</span>
-                                <input id="budget-search-input" placeholder="Search categories…" type="search">
-                            </label>
-                            <div class="budget-fill-tools">
-                                <button class="btn-secondary" id="budget-fill-history-btn" type="button">Fill from history</button>
-                                <div class="budget-distribute">
-                                    <input aria-label="Total amount to distribute" id="budget-distribute-total" min="0" placeholder="Total" step="0.01" type="number" inputmode="decimal">
-                                    <button class="btn-secondary" id="budget-distribute-btn" type="button">Distribute</button>
-                                </div>
+                            <div class="budget-distribute">
+                                <input aria-label="Total amount to distribute" id="budget-distribute-total" min="0" placeholder="Total" step="0.01" type="number" inputmode="decimal">
+                                <button class="btn-secondary" id="budget-distribute-btn" type="button">Distribute</button>
                             </div>
+                            <p class="muted small-hint">Splits the total across categories by their average spending over the last 3 months. Fixed categories keep their own amount.</p>
+                            <button aria-controls="budget-modal-copy" aria-expanded="false" class="btn-secondary" id="budget-copy-month-btn" type="button" {% if not month_snapshots %}disabled title="No month has its own amounts yet (set one with ✎)"{% endif %}>Copy from another month…</button>
                             <p aria-live="polite" class="muted small-hint" id="budget-tools-status"></p>
                         </div>
 
@@ -160,8 +246,6 @@
                                 {{ budget_default_row(row) }}
                             {% endfor %}
                         </div>
-
-                        <p class="muted" hidden id="budget-search-empty">No categories match.</p>
                     {% else %}
                         <p class="muted">No expense categories yet.</p>
                     {% endif %}
@@ -171,6 +255,8 @@
                         <input min="0" name="other_amount" placeholder="—" step="0.01" type="number" inputmode="decimal" value="{% if budget_other_amount is not none %}{{ '%.2f'|format(budget_other_amount) }}{% endif %}">
                     </label>
                     <p class="muted small-hint">Covers categories without their own budget.</p>
+
+                    <p class="budget-total-live" aria-live="polite" id="budget-total-live">Total monthly budget: <b id="budget-total-live-amount">{{ initial_total|money }}</b></p>
 
                     <button type="submit">Save budgets</button>
                 </div>

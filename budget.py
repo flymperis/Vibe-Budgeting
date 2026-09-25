@@ -57,6 +57,12 @@ def migrate_budgets(conn: sqlite3.Connection) -> None:
             fixed INTEGER NOT NULL DEFAULT 1 CHECK (fixed IN (0, 1)),
             PRIMARY KEY (user_id, category_id)
         );
+
+        CREATE TABLE IF NOT EXISTS budget_month_cleared (
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            ym TEXT NOT NULL,
+            PRIMARY KEY (user_id, ym)
+        );
         """
     )
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(budget_settings)")}
@@ -165,9 +171,44 @@ def set_override(conn, user_id, category_id, ym: str, amount: float | None) -> N
     )
 
 
+def is_month_cleared(conn: sqlite3.Connection, user_id: int, ym: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM budget_month_cleared WHERE user_id = ? AND ym = ?",
+            (int(user_id), ym),
+        ).fetchone()
+        is not None
+    )
+
+
+def clear_month(conn: sqlite3.Connection, user_id: int, ym: str) -> None:
+    """Wipe one month's budget entirely: mark it cleared (so defaults and
+    "everything else" stop applying to it) and drop its existing overrides.
+    The user can then set individual overrides for `ym`, or restore_month()
+    to go back to the normal monthly budgets."""
+    uid = int(user_id)
+    conn.execute(
+        "INSERT OR IGNORE INTO budget_month_cleared (user_id, ym) VALUES (?, ?)",
+        (uid, ym),
+    )
+    conn.execute(
+        "DELETE FROM category_budget_overrides WHERE user_id = ? AND ym = ?",
+        (uid, ym),
+    )
+
+
+def restore_month(conn: sqlite3.Connection, user_id: int, ym: str) -> None:
+    """Undo clear_month(): `ym` goes back to using defaults/other_amount as
+    usual. Any overrides set for `ym` after it was cleared are kept."""
+    conn.execute(
+        "DELETE FROM budget_month_cleared WHERE user_id = ? AND ym = ?",
+        (int(user_id), ym),
+    )
+
+
 def fixed_categories(conn: sqlite3.Connection, user_id: int) -> set[int]:
     """Category ids the user has marked "fixed" (e.g. rent) — never auto-adjusted
-    by copy-last-month or the frontend's distribute helper."""
+    by the frontend's distribute helper."""
     return {
         int(row["category_id"])
         for row in conn.execute(
@@ -219,8 +260,14 @@ def budget_for_month(conn: sqlite3.Connection, user_id: int, ym: str) -> dict:
     even when nothing was spent. Categories with spending but no budget go in
     unbudgeted, and are kept out of the totals so the headline figure compares
     like with like.
+
+    When `ym` has been cleared (clear_month), category defaults and
+    "everything else" are ignored for this month only — only an explicit
+    override for `ym` counts as a budget, so right after clearing every
+    category with spending shows up as unbudgeted.
     """
     uid = int(user_id)
+    cleared = is_month_cleared(conn, uid, ym)
     start_d, end_d = month_bounds_dates(ym)
     categories = conn.execute(
         """
@@ -252,7 +299,7 @@ def budget_for_month(conn: sqlite3.Connection, user_id: int, ym: str) -> dict:
     for cat in categories:
         cid = int(cat["id"])
         spent = _money(spent_by_category.get(cid, 0.0))
-        default_amount = cat["default_amount"]
+        default_amount = None if cleared else cat["default_amount"]
         override_amount = cat["override_amount"]
         if default_amount is None and override_amount is None:
             if spent:
@@ -275,7 +322,7 @@ def budget_for_month(conn: sqlite3.Connection, user_id: int, ym: str) -> dict:
 
     unbudgeted_spent = _money(sum(r["spent"] for r in unbudgeted))
 
-    other_amount = get_other_amount(conn, uid)
+    other_amount = None if cleared else get_other_amount(conn, uid)
     other = None
     if other_amount is not None:
         other = {
@@ -294,6 +341,7 @@ def budget_for_month(conn: sqlite3.Connection, user_id: int, ym: str) -> dict:
         over.append(other)
     return {
         "ym": ym,
+        "cleared": cleared,
         "rows": rows,
         "unbudgeted": unbudgeted,
         "unbudgeted_spent": unbudgeted_spent,
@@ -436,63 +484,39 @@ def spending_history(
     return result
 
 
-def copy_previous_month_actuals(
-    conn: sqlite3.Connection, user_id: int, ym: str, *, info: dict | None = None
-) -> int:
-    """Overwrite `ym`'s overrides with the previous month's net spending, per category.
-
-    Only categories with net spending > 0 in the previous month are touched.
-    Fixed categories (e.g. rent) are skipped — they keep their default/override
-    as-is regardless of what was actually spent. When the user has an
-    "everything else" amount set, only categories that already carry their own
-    budget (a default, or an override for `ym`) are copied — otherwise copying
-    an unbudgeted category would both give it its own override and keep
-    counting towards "everything else", double-booking the spend. Returns the
-    number of categories copied.
-
-    When `info` is passed a dict, it is filled in with `"had_spending"` (any
-    category spent something last month) and `"skipped"` (how many of those
-    were filtered out by the fixed/other_amount rules) — enough for a caller
-    to tell "nothing was spent" apart from "everything spent was excluded".
+def month_budget_snapshots(conn: sqlite3.Connection, user_id: int, limit: int = 24) -> list[dict]:
+    """Months the user actually set an override for, newest first, each with
+    the *effective* budget (override if set for that month, else the
+    category's default) for every category that has one or the other.
+    Categories with neither are omitted. For a cleared month, defaults don't
+    apply — its effective amounts are its overrides only, so a cleared month
+    with no overrides left simply isn't listed. Meant to let the frontend
+    offer "copy budgets from month X" without a server round-trip: the caller
+    picks a snapshot and prefills the manual-budgets form with it client-side.
     """
     uid = int(user_id)
-    prev_ym = _shift_month(ym, -1)
-    start_d, end_d = month_bounds_dates(prev_ym)
-    rows = conn.execute(
-        """
-        SELECT category_id, COALESCE(-SUM(amount), 0) AS net
-        FROM expenses
-        WHERE user_id = ? AND date(spent_at) >= date(?) AND date(spent_at) < date(?)
-        GROUP BY category_id
-        HAVING net > 0
-        """,
-        (uid, start_d, end_d),
-    ).fetchall()
-    spent_count = len(rows)
+    defaults = default_budgets(conn, uid)
+    cleared_yms = {
+        str(row["ym"]) for row in conn.execute(
+            "SELECT ym FROM budget_month_cleared WHERE user_id = ?", (uid,)
+        )
+    }
 
-    fixed_ids = fixed_categories(conn, uid)
-    if fixed_ids:
-        rows = [row for row in rows if int(row["category_id"]) not in fixed_ids]
+    overrides_by_ym: dict[str, dict[int, float]] = {}
+    for row in conn.execute(
+        "SELECT ym, category_id, amount FROM category_budget_overrides WHERE user_id = ? ORDER BY ym DESC",
+        (uid,),
+    ):
+        ym = str(row["ym"])
+        overrides_by_ym.setdefault(ym, {})[int(row["category_id"])] = float(row["amount"])
 
-    if get_other_amount(conn, uid) is not None:
-        defaults = default_budgets(conn, uid)
-        override_category_ids = {
-            int(row["category_id"])
-            for row in conn.execute(
-                "SELECT category_id FROM category_budget_overrides WHERE user_id = ? AND ym = ?",
-                (uid, ym),
-            )
-        }
-        rows = [
-            row
-            for row in rows
-            if int(row["category_id"]) in defaults or int(row["category_id"]) in override_category_ids
-        ]
-
-    for row in rows:
-        set_override(conn, uid, int(row["category_id"]), ym, _money(row["net"]))
-
-    if info is not None:
-        info["had_spending"] = spent_count > 0
-        info["skipped"] = spent_count - len(rows)
-    return len(rows)
+    result = []
+    for ym in sorted(overrides_by_ym, reverse=True)[:limit]:
+        if ym in cleared_yms:
+            amounts = dict(overrides_by_ym[ym])
+        else:
+            amounts = dict(defaults)
+            amounts.update(overrides_by_ym[ym])
+        if amounts:
+            result.append({"ym": ym, "amounts": amounts})
+    return result
