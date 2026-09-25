@@ -69,6 +69,18 @@ def fetch_coingecko_prices(coin_ids, force=False):
         with _price_cache_lock:
             return {cid: cached["prices"][cid] for cid in coin_ids if cid in cached["prices"]}
 
+def peek_coingecko_prices(coin_ids) -> dict:
+    """Return whatever is in the in-process cache for these coin ids, without
+    making a network call. Used to render prices on panels other than
+    Investments (e.g. after a client-side panel switch) at zero cost."""
+    if not coin_ids:
+        return {}
+    now = time.time()
+    with _price_cache_lock:
+        if _price_cache["prices"] and (now - _price_cache["fetched_at"]) < PRICE_CACHE_TTL:
+            return {cid: _price_cache["prices"][cid] for cid in coin_ids if cid in _price_cache["prices"]}
+    return {}
+
 def fetch_coingecko_history_eur(coin_id: str, price_date_iso: str) -> float | None:
     """CoinGecko daily snapshot for a calendar date (dd-mm-yyyy query param)."""
     date_param = _coingecko_history_date_param(price_date_iso)
@@ -303,6 +315,18 @@ def _listing_price_to_usd(symbol, price):
         if rate:
             return price * rate
     return price
+
+def peek_finnhub_quotes(symbols) -> dict:
+    """Return whatever is in the in-process cache for these symbols, without
+    making a network call. Used to render prices on panels other than
+    Investments (e.g. after a client-side panel switch) at zero cost."""
+    if not symbols:
+        return {}
+    now = time.time()
+    with _stock_price_cache_lock:
+        if _stock_price_cache["prices"] and (now - _stock_price_cache["fetched_at"]) < PRICE_CACHE_TTL:
+            return {sym: _stock_price_cache["prices"][sym] for sym in symbols if sym in _stock_price_cache["prices"]}
+    return {}
 
 def fetch_finnhub_quotes(symbols, force=False):
     if not symbols:

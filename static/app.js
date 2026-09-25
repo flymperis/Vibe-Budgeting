@@ -22,6 +22,22 @@
     }
     syncHomePanelBodyClass();
 
+    // Panels switch client-side without a reload, so live investment prices
+    // (fetched only when the server itself renders panel=investments) can be
+    // stale/missing the first time a user reaches Investments from another
+    // panel. Each investments-section carries data-prices-loaded, rendered by
+    // the server; when the section we're switching to says "0", force a full
+    // reload so the server fetches live prices. The server always sets
+    // data-prices-loaded="1" when it renders panel=investments, so this can't
+    // loop, and it never fires on a normal full load of that panel (the
+    // section is already marked loaded by the time this code runs).
+    function investmentsSectionNeedsReload(sectionId) {
+        const section = sectionId
+            ? document.getElementById(sectionId)
+            : document.querySelector(".investments-section.active") || document.getElementById("investments-crypto");
+        return !!(section && section.getAttribute("data-prices-loaded") === "0");
+    }
+
     const savedTheme = localStorage.getItem("theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const theme = savedTheme || (prefersDark ? "dark" : "light");
@@ -327,6 +343,10 @@
             var panelKey = panelMap2[panelTarget];
             if (panelKey) {
                 syncShellUrl(panelKey);
+                if (panelKey === "investments" && investmentsSectionNeedsReload(sectionId)) {
+                    window.location.reload();
+                    return;
+                }
             }
         });
     });
@@ -369,6 +389,10 @@
             const panelValue = panelMap[target];
             if (panelValue) {
                 syncShellUrl(panelValue);
+                if (panelValue === "investments" && investmentsSectionNeedsReload()) {
+                    window.location.reload();
+                    return;
+                }
             }
         });
     });

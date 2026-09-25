@@ -1,12 +1,20 @@
 <section class="panel {% if active_panel == 'investments' %}active{% endif %}" id="panel-investments">
     <div class="investments-body">
-            <div class="investments-section {% if investments_section == 'crypto' %}active{% endif %}" id="investments-crypto">
+            <div class="investments-section {% if investments_section == 'crypto' %}active{% endif %}" id="investments-crypto" data-prices-loaded="{{ '1' if crypto_prices_loaded else '0' }}">
                 <h2>Crypto Portfolio</h2>
+
+                {% if not crypto_prices_loaded and crypto_holdings %}
+                    <p class="muted crypto-prices-hint">
+                        Prices aren't loaded yet for this view.
+                        <a href="{{ url_for('dashboard.index', panel='investments', investments_section='crypto', month=month_filter) }}">Open Investments</a>
+                        to fetch current values.
+                    </p>
+                {% endif %}
 
                 <div class="stats crypto-summary-cards">
                     <div class="card">
                         <p>Portfolio Value</p>
-                        <strong>{{ crypto_total_value|money }}</strong>
+                        <strong>{% if crypto_prices_loaded %}{{ crypto_total_value|money }}{% else %}<span class="muted">—</span>{% endif %}</strong>
                     </div>
                     <div class="card">
                         <p>Total Invested</p>
@@ -14,16 +22,20 @@
                     </div>
                     <div class="card">
                         <p>P&L</p>
+                        {% if crypto_prices_loaded %}
                         <strong class="{% if crypto_total_pnl >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">
-                            {{ crypto_total_pnl|money("€", true) }} 
+                            {{ crypto_total_pnl|money("€", true) }}
                             {% if crypto_total_invested > 0 %}({{ "%+.1f"|format(crypto_total_pnl_pct) }}%){% endif %}
                         </strong>
+                        {% else %}
+                        <strong><span class="muted">—</span></strong>
+                        {% endif %}
                     </div>
                 </div>
 
                 <div class="crypto-refresh-row">
                     <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='investments', investments_section='crypto', refresh_prices=1, month=month_filter) }}">Refresh Prices</a>
-                    {% if crypto_prices_age %}
+                    {% if crypto_prices_loaded and crypto_prices_age %}
                         <span class="muted crypto-prices-age">Updated {{ crypto_prices_age }}</span>
                     {% endif %}
                 </div>
@@ -245,17 +257,25 @@
                 </div>
             </div>
 
-            <div class="investments-section {% if investments_section == 'stocks' %}active{% endif %}" id="investments-stocks">
+            <div class="investments-section {% if investments_section == 'stocks' %}active{% endif %}" id="investments-stocks" data-prices-loaded="{{ '1' if stock_prices_loaded else '0' }}">
                 <h2>Stocks Portfolio</h2>
                 {% if not finnhub_configured %}
                     <p class="flash flash-error">Optional: set <code>FINNHUB_API_KEY</code> for symbol search. Live prices use Yahoo (yfinance) as fallback.</p>
                 {% endif %}
                 <p class="muted small-hint">Symbol: use what your broker shows (e.g. <strong>VUAA.EU</strong> on Freedom24). Live prices resolve via the underlying listing (e.g. VUAA.DE) and display in <strong>USD</strong>. Click <strong>Refresh Prices</strong> after adding a holding.</p>
 
+                {% if not stock_prices_loaded and stock_holdings %}
+                    <p class="muted crypto-prices-hint">
+                        Prices aren't loaded yet for this view.
+                        <a href="{{ url_for('dashboard.index', panel='investments', investments_section='stocks', month=month_filter) }}">Open Investments</a>
+                        to fetch current values.
+                    </p>
+                {% endif %}
+
                 <div class="stats crypto-summary-cards">
                     <div class="card">
                         <p>Portfolio Value</p>
-                        <strong>{{ stock_total_value|money("$") }}</strong>
+                        <strong>{% if stock_prices_loaded %}{{ stock_total_value|money("$") }}{% else %}<span class="muted">—</span>{% endif %}</strong>
                     </div>
                     <div class="card">
                         <p>Total Invested</p>
@@ -263,16 +283,20 @@
                     </div>
                     <div class="card">
                         <p>P&L</p>
+                        {% if stock_prices_loaded %}
                         <strong class="{% if stock_total_pnl >= 0 %}crypto-pnl-positive{% else %}crypto-pnl-negative{% endif %}">
-                            {{ stock_total_pnl|money("$", true) }} 
+                            {{ stock_total_pnl|money("$", true) }}
                             {% if stock_total_invested > 0 %}({{ "%+.1f"|format(stock_total_pnl_pct) }}%){% endif %}
                         </strong>
+                        {% else %}
+                        <strong><span class="muted">—</span></strong>
+                        {% endif %}
                     </div>
                 </div>
 
                 <div class="crypto-refresh-row">
                     <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='investments', investments_section='stocks', refresh_stock_prices=1, month=month_filter) }}">Refresh Prices</a>
-                    {% if stock_prices_age %}
+                    {% if stock_prices_loaded and stock_prices_age %}
                         <span class="muted crypto-prices-age">Updated {{ stock_prices_age }}</span>
                     {% endif %}
                 </div>

@@ -10,7 +10,15 @@ from config import ALLOWED_PANELS, FINNHUB_API_KEY, LIST_PAGE_SIZE, TRANSFER_LOG
 from db import get_connection
 from finance import _empty_expense_pivot, account_balance_at_cutoff, apply_recurring_entries, balance_line_chart_spec, build_monthly_chart_rows, cash_flow_chart_spec, category_spend_ranking, compute_crypto_holdings, compute_stock_holdings, expense_pivot_for_report_year, fetch_account_balances_through, monthly_cash_flow_for_year, monthly_crypto_portfolio_values_for_year, monthly_stock_portfolio_values_for_year, monthly_total_balances_for_year, portfolio_baseline_before_year
 from helpers import month_bounds_dates, normalize_investments_section, normalize_list_page, normalize_optional_category_id, normalize_report_account, normalize_reports_section, normalize_settings_section, normalize_year, resolve_list_month_filter, resolve_month_filter_from_request
-from prices import PRICE_CACHE_TTL, _price_cache, _stock_price_cache, fetch_coingecko_prices, fetch_finnhub_quotes
+from prices import (
+    PRICE_CACHE_TTL,
+    _price_cache,
+    _stock_price_cache,
+    fetch_coingecko_prices,
+    fetch_finnhub_quotes,
+    peek_coingecko_prices,
+    peek_finnhub_quotes,
+)
 
 bp = Blueprint("dashboard", __name__)
 
@@ -340,9 +348,23 @@ def index():
 
     crypto_holdings_raw = compute_crypto_holdings(crypto_txs)
 
+    # Live price lookups are synchronous outbound HTTP calls (CoinGecko/Finnhub)
+    # that would otherwise run on every page load regardless of which panel is
+    # showing, since panel switching happens client-side after the initial
+    # render (see static/app.js). Only hit the network when the Investments
+    # panel is actually being served or a refresh was explicitly requested;
+    # elsewhere, reuse whatever is already in the in-process cache (free) so
+    # switching panels client-side still shows recent values when available.
     force_refresh = request.args.get("refresh_prices") == "1"
     coin_ids = [h["coin_id"] for h in crypto_holdings_raw]
-    crypto_prices = fetch_coingecko_prices(coin_ids, force=force_refresh) if coin_ids else {}
+    need_live_crypto = active_panel == "investments" or force_refresh
+    if not coin_ids:
+        crypto_prices = {}
+    elif need_live_crypto:
+        crypto_prices = fetch_coingecko_prices(coin_ids, force=force_refresh)
+    else:
+        crypto_prices = peek_coingecko_prices(coin_ids)
+    crypto_prices_loaded = need_live_crypto or set(coin_ids) <= set(crypto_prices)
 
     crypto_total_value = 0.0
     crypto_total_invested = 0.0
@@ -389,7 +411,14 @@ def index():
     stock_holdings_raw = compute_stock_holdings(stock_txs)
     stock_symbols = [h["symbol"] for h in stock_holdings_raw]
     force_stock_refresh = request.args.get("refresh_stock_prices") == "1"
-    stock_prices = fetch_finnhub_quotes(stock_symbols, force=force_stock_refresh) if stock_symbols else {}
+    need_live_stock = active_panel == "investments" or force_stock_refresh
+    if not stock_symbols:
+        stock_prices = {}
+    elif need_live_stock:
+        stock_prices = fetch_finnhub_quotes(stock_symbols, force=force_stock_refresh)
+    else:
+        stock_prices = peek_finnhub_quotes(stock_symbols)
+    stock_prices_loaded = need_live_stock or set(stock_symbols) <= set(stock_prices)
 
     stock_total_value = 0.0
     stock_total_invested = 0.0
@@ -622,6 +651,7 @@ def index():
         crypto_total_pnl=crypto_total_pnl,
         crypto_total_pnl_pct=crypto_total_pnl_pct,
         crypto_prices_age=crypto_prices_age,
+        crypto_prices_loaded=crypto_prices_loaded,
         stock_holdings=stock_holdings_raw,
         stock_transactions=stock_txs,
         stock_total_value=stock_total_value,
@@ -629,5 +659,6 @@ def index():
         stock_total_pnl=stock_total_pnl,
         stock_total_pnl_pct=stock_total_pnl_pct,
         stock_prices_age=stock_prices_age,
+        stock_prices_loaded=stock_prices_loaded,
         finnhub_configured=bool(FINNHUB_API_KEY),
     )
