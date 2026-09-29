@@ -905,7 +905,7 @@
                 const current = modalConfigs.filter(function (entry) {
                     return !entry.modal.hidden;
                 })[0];
-                // Carry the amount and notes across so switching Expense/Income
+                // Carry the amount, date and notes across so switching Expense/Income
                 // mid-entry doesn't throw away what was already typed.
                 if (current && current !== target) {
                     const fromAmount = current.modal.querySelector(".home-modal-amount-input");
@@ -928,6 +928,11 @@
                     const toNotes = target.modal.querySelector("textarea[name='notes']");
                     if (fromNotes && toNotes) {
                         toNotes.value = fromNotes.value;
+                    }
+                    const fromDate = current.modal.querySelector("input[type='date']");
+                    const toDate = target.modal.querySelector("input[type='date']");
+                    if (fromDate && toDate) {
+                        toDate.value = fromDate.value;
                     }
                 }
                 openModal(target.modal, target.buttons);

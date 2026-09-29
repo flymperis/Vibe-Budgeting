@@ -3421,10 +3421,19 @@ form + form {
 }
 
 /* Date inputs render in the UA's monospace face like textareas do; match the
-   row's font so "Date" rows read like every other grouped row. */
+   row's font so "Date" rows read like every other grouped row. The base form
+   padding plus the mobile 44px min-height (content-box) also made the row
+   ~20px taller than Category/Account, so drop both and let the input reach
+   into the row's own vertical padding: same row height, whole row tappable. */
 .home-modal-field input[type="date"] {
     font: inherit;
     color: var(--text);
+    box-sizing: border-box;
+    min-height: 0;
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+    margin-top: -0.65rem;
+    margin-bottom: -0.65rem;
 }
 
 /* --- More sheet: inset grouped list of the six overflow sections --------- */

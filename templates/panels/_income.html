@@ -23,6 +23,7 @@
                 <option value="{{ account.id }}">{{ account.name }}</option>
             {% endfor %}
         </select>
+        <input aria-label="Date" name="received_at" type="date" value="{{ transfer_default_date }}">
         <button type="submit">Add Income</button>
     </form>
 

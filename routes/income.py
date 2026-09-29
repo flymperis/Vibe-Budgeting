@@ -24,6 +24,7 @@ def add_income():
     amount = request.form.get("amount", "0").strip()
     account_raw = request.form.get("account_id", "").strip()
     category_raw = request.form.get("category_id", "").strip()
+    received_at_raw = request.form.get("received_at", "").strip()
 
     if category_raw and account_raw:
         try:
@@ -32,7 +33,7 @@ def add_income():
         except (TypeError, ValueError):
             flash("Invalid category or account.", "error")
             return redirect_home()
-        received_at = datetime.now().date().isoformat()
+        received_at = normalize_txn_day_from_form(received_at_raw)
         conn = get_connection()
         if not _user_owns_category(conn, category_id, g.user_id, expense=False) or not _user_owns_account(
             conn, account_id, g.user_id

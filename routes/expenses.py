@@ -13,6 +13,7 @@ def add_expense():
     amount = request.form.get("amount", "0").strip()
     category_raw = request.form.get("category_id", "").strip()
     account_raw = request.form.get("account_id", "").strip()
+    spent_at_raw = request.form.get("spent_at", "").strip()
 
     if category_raw and account_raw:
         try:
@@ -21,7 +22,7 @@ def add_expense():
         except (TypeError, ValueError):
             flash("Invalid category or account.", "error")
             return redirect_home()
-        spent_at = datetime.now().date().isoformat()
+        spent_at = normalize_txn_day_from_form(spent_at_raw)
         conn = get_connection()
         if not _user_owns_category(conn, category_id, g.user_id, expense=True) or not _user_owns_account(
             conn, account_id, g.user_id

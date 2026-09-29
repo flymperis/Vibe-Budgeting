@@ -283,6 +283,10 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <div class="home-modal-field">
+                        <label for="home-expense-date">Date</label>
+                        <input id="home-expense-date" name="spent_at" type="date" value="{{ transfer_default_date }}">
+                    </div>
                     <div class="home-modal-field home-modal-field-notes">
                         <label for="home-expense-notes">Notes</label>
                         <textarea id="home-expense-notes" name="notes" placeholder="Notes" rows="2"></textarea>
@@ -332,6 +336,10 @@
                                 <option value="{{ account.id }}">{{ account.name }}</option>
                             {% endfor %}
                         </select>
+                    </div>
+                    <div class="home-modal-field">
+                        <label for="home-income-date">Date</label>
+                        <input id="home-income-date" name="received_at" type="date" value="{{ transfer_default_date }}">
                     </div>
                     <div class="home-modal-field home-modal-field-notes">
                         <label for="home-income-notes">Notes</label>

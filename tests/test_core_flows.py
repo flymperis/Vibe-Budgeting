@@ -130,6 +130,40 @@ def test_add_income_entry(client):
     assert row["amount"] == 1500.0
 
 
+def test_add_expense_and_income_with_chosen_date(client):
+    register_and_login(client, "hana")
+    home = client.get("/").get_data(as_text=True)
+
+    # Both add forms offer a date field so an entry can be back-dated.
+    assert 'name="spent_at" type="date"' in _panel_html(home, "expenses")
+    assert 'name="received_at" type="date"' in _panel_html(home, "income")
+
+    for path, date_field, notes, panel in (
+        ("/expenses/add", "spent_at", "old lunch", "expenses"),
+        ("/income/add", "received_at", "old bonus", "income"),
+    ):
+        resp = client.post(
+            path,
+            data={
+                "notes": notes,
+                "amount": "12",
+                "category_id": _first_id(home, "category_id", panel),
+                "account_id": _first_id(home, "account_id", panel),
+                date_field: "2026-03-14",
+                "_csrf_token": csrf_token(client),
+            },
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+
+    conn = vb_app.get_connection()
+    expense = conn.execute("SELECT spent_at FROM expenses WHERE notes = 'old lunch'").fetchone()
+    income = conn.execute("SELECT received_at FROM income_entries WHERE notes = 'old bonus'").fetchone()
+    conn.close()
+    assert expense["spent_at"][:10] == "2026-03-14"
+    assert income["received_at"][:10] == "2026-03-14"
+
+
 def test_add_account_and_category(client):
     register_and_login(client, "frank")
     token = csrf_token(client)
