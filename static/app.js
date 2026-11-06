@@ -815,6 +815,29 @@
         }
     })();
 
+    (function setupAccountTypeFields() {
+        // Settings account forms: the limit/statement/due inputs only mean
+        // something for a credit card, so they follow the type select. Without
+        // JS they simply stay visible and the server ignores them for banks.
+        document.querySelectorAll("form.account-form").forEach(function (form) {
+            const typeSelect = form.querySelector("[data-account-type]");
+            const cardFields = form.querySelector("[data-card-fields]");
+            const opening = form.querySelector("input[name='opening_balance']");
+            if (!typeSelect || !cardFields) {
+                return;
+            }
+            function sync() {
+                const isCard = typeSelect.value === "credit";
+                cardFields.hidden = !isCard;
+                if (opening) {
+                    opening.placeholder = opening.getAttribute(isCard ? "data-card-placeholder" : "data-bank-placeholder") || opening.placeholder;
+                }
+            }
+            typeSelect.addEventListener("change", sync);
+            sync();
+        });
+    })();
+
     (function setupHomeQuickModals() {
         // The FAB is a second trigger for the same expense sheet the quick-bar
         // button opens, so both are listed for that one modal/kind pair.

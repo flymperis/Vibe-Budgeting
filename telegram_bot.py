@@ -618,7 +618,11 @@ def format_balances(conn: sqlite3.Connection, user_id: int, balance_fn) -> str:
         return "No accounts yet."
     lines = ["Balances:"]
     for row in rows:
-        lines.append(f"• {row['name']}: {row['current_balance']:.2f}€")
+        line = f"• {row['name']}: {row['current_balance']:.2f}€"
+        if row["account_type"] == "credit" and row["credit_limit"]:
+            available = float(row["credit_limit"]) + float(row["current_balance"])
+            line += f" (card, {available:.2f}€ available)"
+        lines.append(line)
     return "\n".join(lines)
 
 

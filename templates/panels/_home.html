@@ -1,4 +1,4 @@
-{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart, account_avatar %}
+{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart, account_balances_list %}
 <section class="panel {% if active_panel == 'home' %}active{% endif %}" id="panel-home">
     <h2 class="home-title">{{ month_heading }}</h2>
     <p class="muted small-hint home-intro">
@@ -60,23 +60,7 @@
         </button>
     </div>
 
-    <ul class="home-balances-list">
-        {% for account in account_balances %}
-            <li class="home-balances-row">
-                {{ account_avatar(account.name) }}
-                <span class="home-balances-name">{{ account.name }}</span>
-                <span class="home-balances-amount-pill {{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</span>
-            </li>
-        {% else %}
-            <li class="home-balances-row home-balances-empty">No accounts yet.</li>
-        {% endfor %}
-        {% if account_balances %}
-            <li class="home-balances-row home-balances-total">
-                <span class="home-balances-name">Total (all accounts)</span>
-                <span class="home-balances-amount-pill {{ accounts_total_balance|amount_class }}">{{ accounts_total_balance|money }}</span>
-            </li>
-        {% endif %}
-    </ul>
+    {{ account_balances_list(account_balances, card_status_by_id, accounts_cash_total, accounts_cards_total, accounts_total_balance, month_filter) }}
 
     <ul class="home-links-list">
         <li>

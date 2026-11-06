@@ -67,6 +67,47 @@ def _normalize_header_key(value):
         return ""
     return str(value).strip().lower()
 
+# The card columns are optional on import, so older exports with only
+# name/opening_balance still load as plain bank accounts.
+ACCOUNT_HEADERS = ["name", "opening_balance", "account_type", "credit_limit", "statement_day", "due_day"]
+
+
+def _account_card_fields(row, idx, errors):
+    """(account_type, credit_limit, statement_day, due_day) from an Accounts
+    row, or None after recording an error."""
+    raw_type = str(row.get("account_type") or "").strip().lower()
+    if raw_type in ("", "bank"):
+        return ("bank", None, None, None)
+    if raw_type not in ("credit", "credit card", "card"):
+        errors.append(f"{SHEET_ACCOUNTS} row {idx}: account_type must be bank or credit")
+        return None
+    limit = None
+    raw_limit = row.get("credit_limit")
+    if raw_limit is not None and str(raw_limit).strip() != "":
+        try:
+            limit = float(raw_limit)
+        except (TypeError, ValueError):
+            limit = -1.0
+        if limit < 0:
+            errors.append(f"{SHEET_ACCOUNTS} row {idx}: invalid credit_limit")
+            return None
+    days = []
+    for key in ("statement_day", "due_day"):
+        raw_day = row.get(key)
+        if raw_day is None or str(raw_day).strip() == "":
+            days.append(None)
+            continue
+        try:
+            day = int(float(raw_day))
+        except (TypeError, ValueError):
+            day = 0
+        if not 1 <= day <= 31:
+            errors.append(f"{SHEET_ACCOUNTS} row {idx}: {key} must be 1-31")
+            return None
+        days.append(day)
+    return ("credit", limit, days[0], days[1])
+
+
 def _sheet_as_dicts(ws):
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
@@ -165,12 +206,24 @@ def _build_export_workbook(conn, user_id):
     ws_meta.append(["budget_cleared_months", ",".join(cleared_months)])
 
     ws_accounts = wb.create_sheet(SHEET_ACCOUNTS)
-    ws_accounts.append(["name", "opening_balance"])
+    ws_accounts.append(ACCOUNT_HEADERS)
     for row in conn.execute(
-        "SELECT name, opening_balance FROM accounts WHERE user_id = ? ORDER BY name",
+        """
+        SELECT name, opening_balance, account_type, credit_limit, statement_day, due_day
+        FROM accounts WHERE user_id = ? ORDER BY name
+        """,
         (uid,),
     ):
-        ws_accounts.append([row["name"], row["opening_balance"]])
+        ws_accounts.append(
+            [
+                row["name"],
+                row["opening_balance"],
+                row["account_type"],
+                row["credit_limit"],
+                row["statement_day"],
+                row["due_day"],
+            ]
+        )
 
     ws_ec = wb.create_sheet(SHEET_EXPENSE_CATEGORIES)
     ws_ec.append(["name"])
@@ -344,8 +397,8 @@ def _build_migration_template_workbook():
     ws_meta.append(["kind", "migration_template"])
 
     ws_accounts = wb.create_sheet(SHEET_ACCOUNTS)
-    ws_accounts.append(["name", "opening_balance"])
-    ws_accounts.append(["Main", 0])
+    ws_accounts.append(ACCOUNT_HEADERS)
+    ws_accounts.append(["Main", 0, "bank", None, None, None])
 
     ws_ec = wb.create_sheet(SHEET_EXPENSE_CATEGORIES)
     ws_ec.append(["name"])
@@ -803,14 +856,25 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
                 except (TypeError, ValueError):
                     errors.append(f"{SHEET_ACCOUNTS} row {idx}: invalid opening_balance")
                     continue
+            card_fields = _account_card_fields(row, idx, errors)
+            if card_fields is None:
+                continue
             conn.execute(
-                "INSERT OR IGNORE INTO accounts(user_id, name, opening_balance) VALUES (?, ?, ?)",
-                (uid, name, opening_balance),
+                """
+                INSERT OR IGNORE INTO accounts
+                    (user_id, name, opening_balance, account_type, credit_limit, statement_day, due_day)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (uid, name, opening_balance, *card_fields),
             )
             if sync_opening_balances:
                 conn.execute(
-                    "UPDATE accounts SET opening_balance = ? WHERE user_id = ? AND name = ?",
-                    (opening_balance, uid, name),
+                    """
+                    UPDATE accounts
+                    SET opening_balance = ?, account_type = ?, credit_limit = ?, statement_day = ?, due_day = ?
+                    WHERE user_id = ? AND name = ?
+                    """,
+                    (opening_balance, *card_fields, uid, name),
                 )
 
         if errors:

@@ -3212,6 +3212,80 @@ form + form {
     font-weight: 800;
 }
 
+.home-balances-subtotal .home-balances-name {
+    font-weight: 500;
+    color: var(--muted);
+}
+
+/* Credit card rows: the name/amount line plus limit and statement lines. */
+.home-balances-card {
+    align-items: flex-start;
+}
+
+.home-card-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.home-card-line {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 2rem;
+}
+
+.home-card-meta {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.home-card-bar {
+    height: 6px;
+}
+
+.home-card-statement {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.card-statement-soon { color: var(--color-warning, #b45309); }
+.card-statement-overdue { color: var(--neg); font-weight: 600; }
+.card-statement-paid { color: var(--pos); }
+
+.home-card-pay {
+    flex: 0 0 auto;
+    margin-left: auto;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-weight: 600;
+    color: var(--accent);
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    text-decoration: none;
+}
+
+/* Settings: card-only inputs ride inline with the rest of the account form. */
+.account-card-fields {
+    display: contents;
+}
+
+.account-card-fields[hidden] {
+    display: none;
+}
+
+.account-form .account-card-fields input[type="number"] {
+    width: 130px;
+}
+
 /* --- Home: "more" links as grouped rows with chevrons (all widths) ------- */
 
 .home-links-list {

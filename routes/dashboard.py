@@ -8,7 +8,7 @@ import time
 
 from config import ALLOWED_PANELS, FINNHUB_API_KEY, LIST_PAGE_SIZE, TRANSFER_LOG_LIMIT
 from db import get_connection
-from finance import _empty_expense_pivot, account_balance_at_cutoff, apply_recurring_entries, balance_line_chart_spec, build_monthly_chart_rows, cash_flow_chart_spec, category_spend_ranking, compute_crypto_holdings, compute_stock_holdings, expense_pivot_for_report_year, fetch_account_balances_through, monthly_cash_flow_for_year, monthly_crypto_portfolio_values_for_year, monthly_stock_portfolio_values_for_year, monthly_total_balances_for_year, portfolio_baseline_before_year
+from finance import _empty_expense_pivot, account_balance_at_cutoff, apply_recurring_entries, balance_line_chart_spec, build_monthly_chart_rows, cash_flow_chart_spec, category_spend_ranking, compute_crypto_holdings, compute_stock_holdings, expense_pivot_for_report_year, fetch_account_balances_through, is_credit_card, monthly_cash_flow_for_year, monthly_crypto_portfolio_values_for_year, monthly_stock_portfolio_values_for_year, monthly_total_balances_for_year, portfolio_baseline_before_year, summarize_account_balances
 from helpers import month_bounds_dates, normalize_investments_section, normalize_list_page, normalize_optional_category_id, normalize_report_account, normalize_reports_section, normalize_settings_section, normalize_year, resolve_list_month_filter, resolve_month_filter_from_request
 from prices import (
     PRICE_CACHE_TTL,
@@ -148,7 +148,7 @@ def index():
     ).fetchall()
 
     accounts = conn.execute(
-        "SELECT id, name, opening_balance FROM accounts WHERE user_id = ? ORDER BY name",
+        "SELECT id, name, opening_balance, account_type, credit_limit, statement_day, due_day FROM accounts WHERE user_id = ? ORDER BY name",
         (uid,),
     ).fetchall()
 
@@ -279,7 +279,11 @@ def index():
         """,
         (uid, TRANSFER_LOG_LIMIT),
     ).fetchall()
-    accounts_total_balance = sum(float(r["current_balance"]) for r in account_balances)
+    # Card statements are judged on the last day the balances cover.
+    balance_as_of_d = datetime.strptime(balance_cutoff_d, "%Y-%m-%d").date() - timedelta(days=1)
+    balance_summary = summarize_account_balances(conn, uid, account_balances, balance_as_of_d)
+    card_status_by_id = balance_summary["card_status_by_id"]
+    accounts_total_balance = balance_summary["net_total"]
 
     year_start_d = f"{year_filter:04d}-01-01"
     year_end_d = f"{year_filter + 1:04d}-01-01"
@@ -332,6 +336,20 @@ def index():
         )
     yearly_total_delta = yearly_total_income - yearly_total_expenses
     transfer_default_date = datetime.now().date().isoformat()
+    # "Pay card" links land here with ?pay_card=<id>: the card goes in To, the
+    # first non-card account in From, and any unpaid statement in Amount.
+    transfer_from_id = int(accounts[0]["id"]) if accounts else None
+    transfer_to_id = int(accounts[1]["id"]) if len(accounts) > 1 else transfer_from_id
+    transfer_amount_default = None
+    pay_card_id = request.args.get("pay_card", type=int)
+    if pay_card_id in card_status_by_id and len(accounts) > 1:
+        others = [a for a in accounts if int(a["id"]) != pay_card_id]
+        funding = [a for a in others if not is_credit_card(a)] or others
+        transfer_from_id = int(funding[0]["id"])
+        transfer_to_id = pay_card_id
+        statement = card_status_by_id[pay_card_id]["statement"]
+        if statement and statement["remaining"] > 0:
+            transfer_amount_default = f"{statement['remaining']:.2f}"
 
     investments_section = normalize_investments_section(request.args.get("investments_section"))
 
@@ -607,6 +625,9 @@ def index():
         total_income=total_income,
         net_balance=total_income - total_expenses,
         accounts_total_balance=accounts_total_balance,
+        accounts_cash_total=balance_summary["cash_total"],
+        accounts_cards_total=balance_summary["cards_total"],
+        card_status_by_id=card_status_by_id,
         expense_breakdown=expense_breakdown,
         income_breakdown=income_breakdown,
         account_balances=account_balances,
@@ -631,6 +652,9 @@ def index():
         balance_scope_hint=balance_scope_hint,
         cal=calendar,
         transfer_default_date=transfer_default_date,
+        transfer_from_id=transfer_from_id,
+        transfer_to_id=transfer_to_id,
+        transfer_amount_default=transfer_amount_default,
         transfer_log_limit=TRANSFER_LOG_LIMIT,
         report_year=report_year,
         reports_section=reports_section,

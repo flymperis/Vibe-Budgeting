@@ -150,6 +150,7 @@ def migrate_schema(conn):
     migrate_txn_dates_to_day(conn)
     migrate_recurring_entries(conn)
     migrate_users_multitenancy(conn)
+    migrate_credit_cards(conn)
     migrate_crypto_transactions(conn)
     migrate_stock_transactions(conn)
     migrate_crypto_month_prices(conn)
@@ -264,6 +265,33 @@ def migrate_users_multitenancy(conn):
     conn.execute(f"ALTER TABLE income_entries ADD COLUMN user_id INTEGER NOT NULL DEFAULT {uid}")
     conn.execute(f"ALTER TABLE account_transfers ADD COLUMN user_id INTEGER NOT NULL DEFAULT {uid}")
     conn.execute(f"ALTER TABLE recurring_entries ADD COLUMN user_id INTEGER NOT NULL DEFAULT {uid}")
+
+def migrate_credit_cards(conn):
+    """Card settings live on the account row. A credit card is still an
+    ordinary account whose balance goes negative as it is used; these columns
+    only change how that balance is presented (owed / available / statement)."""
+    cols = _column_names(conn, "accounts")
+    if not cols:
+        return
+    if "account_type" not in cols:
+        conn.execute(
+            "ALTER TABLE accounts ADD COLUMN account_type TEXT NOT NULL DEFAULT 'bank' "
+            "CHECK (account_type IN ('bank', 'credit'))"
+        )
+    if "credit_limit" not in cols:
+        conn.execute(
+            "ALTER TABLE accounts ADD COLUMN credit_limit REAL CHECK (credit_limit IS NULL OR credit_limit >= 0)"
+        )
+    if "statement_day" not in cols:
+        conn.execute(
+            "ALTER TABLE accounts ADD COLUMN statement_day INTEGER "
+            "CHECK (statement_day IS NULL OR (statement_day >= 1 AND statement_day <= 31))"
+        )
+    if "due_day" not in cols:
+        conn.execute(
+            "ALTER TABLE accounts ADD COLUMN due_day INTEGER "
+            "CHECK (due_day IS NULL OR (due_day >= 1 AND due_day <= 31))"
+        )
 
 def seed_user_defaults(conn, user_id):
     uid = int(user_id)

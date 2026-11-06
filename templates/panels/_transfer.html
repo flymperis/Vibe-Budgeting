@@ -1,4 +1,4 @@
-{% from "_macros.html" import account_avatar %}
+{% from "_macros.html" import account_avatar, account_balances_list %}
 <section class="panel {% if active_panel == 'transfer' %}active{% endif %}" id="panel-transfer">
     <h2 class="home-title">Transfer</h2>
     <p class="muted small-hint home-intro">
@@ -18,7 +18,7 @@
                             <label for="transfer-from">From</label>
                             <select id="transfer-from" name="from_account_id" required data-picker>
                                 {% for account in accounts %}
-                                    <option value="{{ account.id }}" data-balance="{{ account_balance_by_id.get(account.id, 0)|money }}">{{ account.name }}</option>
+                                    <option value="{{ account.id }}" data-balance="{{ account_balance_by_id.get(account.id, 0)|money }}" {% if account.id == transfer_from_id %}selected{% endif %}>{{ account.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -28,11 +28,12 @@
                         <div class="home-modal-field">
                             <label for="transfer-to">To</label>
                             {# Defaults to the second account (when there is one) so From
-                               and To do not start out equal - see setupTransferForm in
+                               and To do not start out equal (or to the card a "Pay card"
+                               link came from) - see setupTransferForm in
                                app.js for the live "choose two different accounts" guard. #}
                             <select id="transfer-to" name="to_account_id" required data-picker>
                                 {% for account in accounts %}
-                                    <option value="{{ account.id }}" data-balance="{{ account_balance_by_id.get(account.id, 0)|money }}" {% if loop.index0 == 1 %}selected{% endif %}>{{ account.name }}</option>
+                                    <option value="{{ account.id }}" data-balance="{{ account_balance_by_id.get(account.id, 0)|money }}" {% if account.id == transfer_to_id %}selected{% endif %}>{{ account.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
@@ -41,7 +42,7 @@
 
                     <div class="home-modal-amount-field">
                         <label class="sr-only" for="transfer-amount">Amount</label>
-                        <input id="transfer-amount" class="home-modal-amount-input" min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number">
+                        <input id="transfer-amount" class="home-modal-amount-input" min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number"{% if transfer_amount_default %} value="{{ transfer_amount_default }}"{% endif %}>
                     </div>
 
                     <div class="home-modal-fields">
@@ -65,19 +66,7 @@
         <div class="transfer-side-col">
             {% if account_balances %}
                 <h3 class="home-balances-heading">Account balances</h3>
-                <ul class="home-balances-list">
-                    {% for account in account_balances %}
-                        <li class="home-balances-row">
-                            {{ account_avatar(account.name) }}
-                            <span class="home-balances-name">{{ account.name }}</span>
-                            <span class="home-balances-amount-pill {{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</span>
-                        </li>
-                    {% endfor %}
-                    <li class="home-balances-row home-balances-total">
-                        <span class="home-balances-name">Total (all accounts)</span>
-                        <span class="home-balances-amount-pill {{ accounts_total_balance|amount_class }}">{{ accounts_total_balance|money }}</span>
-                    </li>
-                </ul>
+                {{ account_balances_list(account_balances, card_status_by_id, accounts_cash_total, accounts_cards_total, accounts_total_balance, month_filter, pay_links=false) }}
             {% endif %}
 
             <h3 class="transfer-log-heading">Last {{ transfer_log_limit }} transfers</h3>

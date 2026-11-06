@@ -6,18 +6,75 @@ from helpers import _parse_opening_balance, normalize_txn_day_from_form, redirec
 bp = Blueprint("accounts", __name__)
 
 
+def _account_fields_from_form(form):
+    """Name, signed opening balance and card settings from an account form, or
+    (None, message) when something is invalid.
+
+    For a credit card the opening balance is entered as the amount owed, so it
+    is stored negative like any spending on the card would leave it.
+    """
+    opening_balance = _parse_opening_balance(form.get("opening_balance"))
+    if opening_balance is None:
+        return None, "Invalid opening balance."
+    account_type = "credit" if form.get("account_type") == "credit" else "bank"
+    fields = {
+        "name": form.get("name", "").strip(),
+        "account_type": account_type,
+        "opening_balance": opening_balance,
+        "credit_limit": None,
+        "statement_day": None,
+        "due_day": None,
+    }
+    if account_type == "bank":
+        return fields, None
+
+    fields["opening_balance"] = -abs(opening_balance) or 0.0
+    limit_raw = (form.get("credit_limit") or "").strip()
+    if limit_raw:
+        try:
+            fields["credit_limit"] = float(limit_raw)
+        except ValueError:
+            return None, "Invalid credit limit."
+        if fields["credit_limit"] < 0:
+            return None, "Invalid credit limit."
+    for key, label in (("statement_day", "statement day"), ("due_day", "payment due day")):
+        raw = (form.get(key) or "").strip()
+        if not raw:
+            continue
+        try:
+            day = int(raw)
+        except ValueError:
+            return None, f"Invalid {label}."
+        if not 1 <= day <= 31:
+            return None, f"The {label} must be between 1 and 31."
+        fields[key] = day
+    if fields["due_day"] and not fields["statement_day"]:
+        return None, "Set the statement day too, so the due date can be worked out."
+    return fields, None
+
 @bp.route("/accounts/add", methods=["POST"])
 def add_account():
-    name = request.form.get("name", "").strip()
-    opening_balance = _parse_opening_balance(request.form.get("opening_balance"))
-    if opening_balance is None:
-        flash("Invalid opening balance.", "error")
+    fields, error = _account_fields_from_form(request.form)
+    if error:
+        flash(error, "error")
         return redirect_home()
-    if name:
+    if fields["name"]:
         conn = get_connection()
         conn.execute(
-            "INSERT OR IGNORE INTO accounts(user_id, name, opening_balance) VALUES (?, ?, ?)",
-            (g.user_id, name, opening_balance),
+            """
+            INSERT OR IGNORE INTO accounts
+                (user_id, name, opening_balance, account_type, credit_limit, statement_day, due_day)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                g.user_id,
+                fields["name"],
+                fields["opening_balance"],
+                fields["account_type"],
+                fields["credit_limit"],
+                fields["statement_day"],
+                fields["due_day"],
+            ),
         )
         conn.commit()
         conn.close()
@@ -38,16 +95,29 @@ def delete_account(account_id):
 
 @bp.route("/accounts/<int:account_id>/edit", methods=["POST"])
 def edit_account(account_id):
-    name = request.form.get("name", "").strip()
-    opening_balance = _parse_opening_balance(request.form.get("opening_balance"))
-    if opening_balance is None:
-        flash("Invalid opening balance.", "error")
+    fields, error = _account_fields_from_form(request.form)
+    if error:
+        flash(error, "error")
         return redirect_home()
-    if name:
+    if fields["name"]:
         conn = get_connection()
         conn.execute(
-            "UPDATE accounts SET name = ?, opening_balance = ? WHERE id = ? AND user_id = ?",
-            (name, opening_balance, account_id, g.user_id),
+            """
+            UPDATE accounts
+            SET name = ?, opening_balance = ?, account_type = ?, credit_limit = ?,
+                statement_day = ?, due_day = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (
+                fields["name"],
+                fields["opening_balance"],
+                fields["account_type"],
+                fields["credit_limit"],
+                fields["statement_day"],
+                fields["due_day"],
+                account_id,
+                g.user_id,
+            ),
         )
         conn.commit()
         conn.close()

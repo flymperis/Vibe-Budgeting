@@ -158,3 +158,78 @@
 <span class="{{ cls }}" aria-hidden="true">{{ (name or '?')[0]|upper }}</span>
 {%- endif %}
 {%- endmacro %}
+
+{# Account balance list shared by Home and Transfer. Credit cards keep their
+   signed balance in the pill and add the limit left and the open statement;
+   with any card present the total splits into cash, cards and net. #}
+{% macro account_balances_list(account_balances, card_status_by_id, cash_total, cards_total, net_total, month_filter, pay_links=true) -%}
+<ul class="home-balances-list">
+    {% for account in account_balances %}
+        {% set card = card_status_by_id.get(account.id) %}
+        {% if card %}
+            <li class="home-balances-row home-balances-card">
+                {{ account_avatar(account.name) }}
+                <div class="home-card-body">
+                    <div class="home-card-line">
+                        <span class="home-balances-name">{{ account.name }}</span>
+                        <span class="home-balances-amount-pill {{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</span>
+                    </div>
+                    {% if card.limit %}
+                        <p class="home-card-meta">{{ card.available|money }} available of {{ card.limit|money }}</p>
+                        <div class="budget-bar-wrap home-card-bar" role="progressbar" aria-label="Credit limit used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ card.used_pct|round|int }}">
+                            <div class="budget-bar budget-{{ card.used_level }}" style="width: {{ [[card.used_pct, 100]|min, 0]|max }}%"></div>
+                        </div>
+                    {% endif %}
+                    {% set st = card.statement %}
+                    {% if st or (pay_links and card.owed > 0) %}
+                        <div class="home-card-statement">
+                            {% if st %}
+                                <span class="card-statement-{{ st.state }}">
+                                    {%- if st.state == 'none' -%}
+                                        Nothing due from the {{ st.closed_on.day }} {{ st.closed_on.strftime('%b') }} statement
+                                    {%- elif st.state == 'paid' -%}
+                                        {{ st.closed_on.day }} {{ st.closed_on.strftime('%b') }} statement paid
+                                    {%- else -%}
+                                        Statement <b>{{ st.remaining|money }}</b>{% if st.paid > 0 %} left of {{ st.amount|money }}{% endif %}
+                                        {%- if st.due_on %} &middot; {% if st.state == 'overdue' %}was due{% else %}due{% endif %} {{ st.due_on.day }} {{ st.due_on.strftime('%b') }}{% endif %}
+                                    {%- endif -%}
+                                </span>
+                            {% endif %}
+                            {% if pay_links and card.owed > 0 %}
+                                <a class="home-card-pay" href="{{ url_for('dashboard.index', panel='transfer', month=month_filter, pay_card=account.id) }}">Pay card</a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </li>
+        {% else %}
+            <li class="home-balances-row">
+                {{ account_avatar(account.name) }}
+                <span class="home-balances-name">{{ account.name }}</span>
+                <span class="home-balances-amount-pill {{ account.current_balance|amount_class }}">{{ account.current_balance|money }}</span>
+            </li>
+        {% endif %}
+    {% else %}
+        <li class="home-balances-row home-balances-empty">No accounts yet.</li>
+    {% endfor %}
+    {% if account_balances and card_status_by_id %}
+        <li class="home-balances-row home-balances-subtotal">
+            <span class="home-balances-name">Cash &amp; bank</span>
+            <span class="home-balances-amount-pill {{ cash_total|amount_class }}">{{ cash_total|money }}</span>
+        </li>
+        <li class="home-balances-row home-balances-subtotal">
+            <span class="home-balances-name">Credit cards</span>
+            <span class="home-balances-amount-pill {{ cards_total|amount_class }}">{{ cards_total|money }}</span>
+        </li>
+        <li class="home-balances-row home-balances-total">
+            <span class="home-balances-name">Net (all accounts)</span>
+            <span class="home-balances-amount-pill {{ net_total|amount_class }}">{{ net_total|money }}</span>
+        </li>
+    {% elif account_balances %}
+        <li class="home-balances-row home-balances-total">
+            <span class="home-balances-name">Total (all accounts)</span>
+            <span class="home-balances-amount-pill {{ net_total|amount_class }}">{{ net_total|money }}</span>
+        </li>
+    {% endif %}
+</ul>
+{%- endmacro %}

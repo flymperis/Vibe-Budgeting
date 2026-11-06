@@ -118,6 +118,10 @@ def fetch_account_balances_through(conn, balance_cutoff_d, user_id):
         SELECT
             a.id,
             a.name,
+            a.account_type,
+            a.credit_limit,
+            a.statement_day,
+            a.due_day,
             a.opening_balance
                 + COALESCE(income_totals.total_income, 0)
                 + COALESCE(expense_totals.total_expenses, 0)
@@ -163,6 +167,126 @@ def fetch_account_balances_through(conn, balance_cutoff_d, user_id):
             uid,
         ),
     ).fetchall()
+
+CARD_DUE_SOON_DAYS = 7
+
+def is_credit_card(account) -> bool:
+    return (account["account_type"] or "bank") == "credit"
+
+def last_statement_close(as_of_d, statement_day: int):
+    """Most recent statement closing date on or before as_of_d. A closing day
+    past the end of a short month closes on that month's last day."""
+    close = _due_date_in_month(f"{as_of_d.year:04d}-{as_of_d.month:02d}", statement_day)
+    if close > as_of_d:
+        prev = as_of_d.replace(day=1) - timedelta(days=1)
+        close = _due_date_in_month(f"{prev.year:04d}-{prev.month:02d}", statement_day)
+    return close
+
+def statement_due_date(close_d, due_day: int):
+    """First due_day strictly after the statement closes (same or next month)."""
+    due = _due_date_in_month(f"{close_d.year:04d}-{close_d.month:02d}", due_day)
+    if due <= close_d:
+        nxt = close_d.replace(day=28) + timedelta(days=4)
+        due = _due_date_in_month(f"{nxt.year:04d}-{nxt.month:02d}", due_day)
+    return due
+
+def _card_payments_between(conn, user_id, account_id, after_d, through_d) -> float:
+    """Money paid into a card after after_d up to and including through_d:
+    transfers into it plus income booked straight onto it."""
+    row = conn.execute(
+        """
+        SELECT
+            COALESCE((
+                SELECT SUM(amount) FROM account_transfers
+                WHERE user_id = ? AND to_account_id = ?
+                  AND date(transferred_at) > date(?) AND date(transferred_at) <= date(?)
+            ), 0)
+            + COALESCE((
+                SELECT SUM(amount) FROM income_entries
+                WHERE user_id = ? AND account_id = ?
+                  AND date(received_at) > date(?) AND date(received_at) <= date(?)
+            ), 0) AS paid
+        """,
+        (user_id, account_id, after_d, through_d, user_id, account_id, after_d, through_d),
+    ).fetchone()
+    return float(row["paid"] or 0)
+
+def credit_card_status(conn, user_id, account, as_of_d) -> dict:
+    """Owed / available / statement figures for one credit-card balance row
+    (from fetch_account_balances_through), as of the day as_of_d.
+
+    The balance stays signed like every other account (spending makes it
+    negative), so owed is its negation; a positive balance is money the card
+    owes back. The statement is what was owed when it last closed, less what
+    has been paid into the card since.
+    """
+    uid = int(user_id)
+    aid = int(account["id"])
+    balance = float(account["current_balance"])
+    owed = max(0.0, -balance)
+    limit = account["credit_limit"]
+    status = {
+        "owed": owed,
+        "credit": max(0.0, balance),
+        "limit": float(limit) if limit else None,
+        "available": None,
+        "used_pct": None,
+        "used_level": "ok",
+        "statement": None,
+    }
+    if status["limit"]:
+        status["available"] = status["limit"] + balance
+        status["used_pct"] = owed / status["limit"] * 100
+        if status["used_pct"] >= 100:
+            status["used_level"] = "over"
+        elif status["used_pct"] >= 80:
+            status["used_level"] = "warn"
+
+    statement_day = account["statement_day"]
+    if statement_day:
+        close_d = last_statement_close(as_of_d, int(statement_day))
+        closed_cutoff = (close_d + timedelta(days=1)).isoformat()
+        statement_owed = max(0.0, -account_balance_at_cutoff(conn, closed_cutoff, uid, aid))
+        paid = _card_payments_between(conn, uid, aid, close_d.isoformat(), as_of_d.isoformat())
+        remaining = max(0.0, statement_owed - paid)
+        due_d = statement_due_date(close_d, int(account["due_day"])) if account["due_day"] else None
+        if statement_owed < 0.005:
+            state = "none"
+        elif remaining < 0.005:
+            state = "paid"
+        elif due_d and as_of_d > due_d:
+            state = "overdue"
+        elif due_d and (due_d - as_of_d).days <= CARD_DUE_SOON_DAYS:
+            state = "soon"
+        else:
+            state = "open"
+        status["statement"] = {
+            "closed_on": close_d,
+            "amount": statement_owed,
+            "paid": min(paid, statement_owed),
+            "remaining": remaining,
+            "due_on": due_d,
+            "state": state,
+        }
+    return status
+
+def summarize_account_balances(conn, user_id, rows, as_of_d) -> dict:
+    """Card statuses plus cash-vs-card totals for a balance list."""
+    card_status_by_id = {}
+    cash_total = 0.0
+    cards_total = 0.0
+    for row in rows:
+        if is_credit_card(row):
+            card_status_by_id[int(row["id"])] = credit_card_status(conn, user_id, row, as_of_d)
+            cards_total += float(row["current_balance"])
+        else:
+            cash_total += float(row["current_balance"])
+    return {
+        "card_status_by_id": card_status_by_id,
+        "cash_total": cash_total,
+        "cards_total": cards_total,
+        "net_total": cash_total + cards_total,
+    }
 
 def month_snap_cutoff(year: int, month_num: int, today_d) -> str:
     """Exclusive date cutoff for balance/portfolio snapshots (matches bank balance chart)."""
