@@ -4,9 +4,10 @@ import re
 import secrets
 
 
-# 2 added the Transfers/Stocks/Crypto/Recurring sheets, 3 the Budgets sheet.
+# 2 added the Transfers/Stocks/Crypto/Recurring sheets, 3 the Budgets sheet,
+# 4 the Recurring interval columns.
 # Older workbooks still import: sheets added later are optional on the way in.
-EXPORT_FORMAT_VERSION = 3
+EXPORT_FORMAT_VERSION = 4
 
 LIST_PAGE_SIZE = 75
 

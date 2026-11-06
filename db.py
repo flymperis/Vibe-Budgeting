@@ -1,5 +1,7 @@
+from datetime import date, datetime
 from werkzeug.security import check_password_hash, generate_password_hash
 import budget
+import calendar
 import integrations
 import os
 import re
@@ -416,6 +418,28 @@ def migrate_recurring_entries(conn):
         conn.execute(
             "ALTER TABLE recurring_entries ADD COLUMN months_to_run INTEGER CHECK (months_to_run IS NULL OR months_to_run > 0)"
         )
+    # A rule repeats every `interval_count` weeks/months/years, counted from
+    # `start_date` (the first occurrence). months_to_run is really "how many
+    # occurrences" — for the original monthly rules the two are the same.
+    # Occurrences dated before `not_before` are skipped (but still counted):
+    # that is how pre-interval rules keep their old "never before created_at"
+    # rule, and how an edited schedule avoids re-posting the past.
+    if "interval_unit" not in cols:
+        conn.execute(
+            "ALTER TABLE recurring_entries ADD COLUMN interval_unit TEXT NOT NULL DEFAULT 'month' "
+            "CHECK (interval_unit IN ('week', 'month', 'year'))"
+        )
+    if "interval_count" not in cols:
+        conn.execute(
+            "ALTER TABLE recurring_entries ADD COLUMN interval_count INTEGER NOT NULL DEFAULT 1 "
+            "CHECK (interval_count >= 1)"
+        )
+    if "start_date" not in cols:
+        conn.execute("ALTER TABLE recurring_entries ADD COLUMN start_date TEXT")
+    if "not_before" not in cols:
+        conn.execute("ALTER TABLE recurring_entries ADD COLUMN not_before TEXT")
+    # The key is the occurrence's period: YYYY-MM for monthly/yearly rules
+    # (one per month at most), YYYY-MM-DD for weekly ones.
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS recurring_applied (
@@ -426,6 +450,35 @@ def migrate_recurring_entries(conn):
         )
         """
     )
+    backfill_recurring_start_dates(conn)
+
+
+def legacy_recurring_start(created_d, day_of_month):
+    """(start_date, not_before) that make a rule behave like the original
+    monthly-only rules: counted from the month it was created, never posting
+    a due date earlier than its creation day."""
+    last = calendar.monthrange(created_d.year, created_d.month)[1]
+    start = date(created_d.year, created_d.month, min(int(day_of_month), last))
+    return start.isoformat(), created_d.isoformat()
+
+
+def backfill_recurring_start_dates(conn):
+    """Give rules without a start_date (made before intervals existed, or
+    imported from an older workbook) the start that preserves their old
+    schedule. Idempotent: only touches rows whose start_date is still NULL."""
+    rows = conn.execute(
+        "SELECT id, day_of_month, created_at FROM recurring_entries WHERE start_date IS NULL"
+    ).fetchall()
+    for row in rows:
+        try:
+            created_d = datetime.strptime(str(row["created_at"])[:10], "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            created_d = datetime.now().date()
+        start, not_before = legacy_recurring_start(created_d, row["day_of_month"])
+        conn.execute(
+            "UPDATE recurring_entries SET start_date = ?, not_before = COALESCE(not_before, ?) WHERE id = ?",
+            (start, not_before, row["id"]),
+        )
 
 def migrate_account_transfers(conn):
     conn.execute(

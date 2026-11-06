@@ -379,20 +379,29 @@
                     </optgroup>
                 </select>
                 <label class="month-label" for="recurring-amount">Amount (positive)</label>
-                <input id="recurring-amount" min="0.01" name="amount" placeholder="Amount per month" required step="0.01" type="number">
+                <input id="recurring-amount" min="0.01" name="amount" placeholder="Amount each time" required step="0.01" type="number">
                 <label class="month-label" for="recurring-account">Account</label>
                 <select id="recurring-account" name="account_id" required data-picker>
                     {% for account in accounts %}
                         <option value="{{ account.id }}">{{ account.name }}</option>
                     {% endfor %}
                 </select>
-                <label class="month-label" for="recurring-dom">Day of month</label>
-                <input id="recurring-dom" max="31" min="1" name="day_of_month" required type="number" value="1">
+                <label class="month-label" for="recurring-interval-count">Repeat every</label>
+                <div class="recurring-interval-field">
+                    <input id="recurring-interval-count" class="recurring-interval-count" max="99" min="1" name="interval_count" required type="number" value="1">
+                    <select class="recurring-interval-unit" name="interval_unit" aria-label="Repeat unit">
+                        <option value="week">week(s)</option>
+                        <option value="month" selected>month(s)</option>
+                        <option value="year">year(s)</option>
+                    </select>
+                </div>
+                <label class="month-label" for="recurring-start-date">First date</label>
+                <input id="recurring-start-date" name="start_date" required type="date" value="{{ transfer_default_date }}">
                 <label class="checkbox-inline recurring-enabled-label">
                     <input checked data-recurring-indefinite-toggle name="indefinitely" type="checkbox" value="1"> Indefinitely
                 </label>
                 <div data-recurring-months-wrap hidden>
-                    <label class="month-label" for="recurring-months">Run for how many months</label>
+                    <label class="month-label" for="recurring-months">Run how many times</label>
                     <input id="recurring-months" data-recurring-months-input min="1" name="months_to_run" placeholder="e.g. 12" type="number">
                 </div>
                 <label class="month-label" for="recurring-notes">Notes (optional)</label>

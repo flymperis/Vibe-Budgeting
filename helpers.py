@@ -379,8 +379,36 @@ def _parse_recurring_duration(form):
         return None
     months_to_run = normalize_optional_positive_int(form.get("months_to_run"))
     if months_to_run is None:
-        raise ValueError("Choose how many months the recurring rule should run, or enable Indefinitely.")
+        raise ValueError("Choose how many times the recurring rule should run, or enable Indefinitely.")
     return months_to_run
+
+RECURRING_INTERVAL_UNITS = ("week", "month", "year")
+RECURRING_MAX_INTERVAL = 99
+
+def _parse_recurring_schedule(form):
+    """(interval_unit, interval_count, start_date) from a rule form.
+
+    start_date is a YYYY-MM-DD string, or None when the form has no
+    start_date field at all (older clients post only day_of_month). Missing
+    unit/count mean the original "every month"."""
+    unit = (form.get("interval_unit") or "month").strip().lower()
+    if unit not in RECURRING_INTERVAL_UNITS:
+        raise ValueError("Repeat unit must be weeks, months or years.")
+    count_raw = (form.get("interval_count") or "1").strip() or "1"
+    try:
+        count = int(count_raw)
+    except ValueError:
+        raise ValueError("Repeat every must be a whole number.") from None
+    if not 1 <= count <= RECURRING_MAX_INTERVAL:
+        raise ValueError(f"Repeat every must be between 1 and {RECURRING_MAX_INTERVAL}.")
+    if "start_date" not in form:
+        return unit, count, None
+    raw = (form.get("start_date") or "").strip()
+    try:
+        start = datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("Choose the date of the first entry.") from None
+    return unit, count, start.isoformat()
 
 def _stock_redirect():
     return redirect_home(panel="investments", settings_section="stocks")

@@ -21,24 +21,68 @@ def _due_date_in_month(ym: str, day_of_month: int):
     d = min(day_of_month, last)
     return datetime(y, m, d).date()
 
-def _month_iter(start_ym: str, end_ym: str):
-    y, m = map(int, start_ym.split("-", 1))
-    ey, em = map(int, end_ym.split("-", 1))
-    while (y, m) <= (ey, em):
-        yield f"{y:04d}-{m:02d}"
-        m += 1
-        if m > 12:
-            m = 1
-            y += 1
+RECURRING_UNITS = ("week", "month", "year")
+
+
+def _parse_iso_date(raw):
+    if raw is None:
+        return None
+    try:
+        return datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+def recurring_occurrences(unit, count, start_d, day_of_month, until_d, times=None):
+    """Yield (due_date, period_key) for each occurrence of a rule up to until_d.
+
+    Monthly/yearly rules land on day_of_month (clamped to the month's last day)
+    in every `count`-th month/year from start_d's month and are keyed YYYY-MM;
+    weekly rules land every `count` weeks from start_d and are keyed by date.
+    `times` caps how many occurrences there are at all, counted from start_d.
+    """
+    count = max(1, int(count or 1))
+    k = 0
+    while times is None or k < times:
+        if unit == "week":
+            due = start_d + timedelta(weeks=count * k)
+            key = due.isoformat()
+        else:
+            step = count * (12 if unit == "year" else 1)
+            idx = start_d.year * 12 + (start_d.month - 1) + k * step
+            ym = f"{idx // 12:04d}-{idx % 12 + 1:02d}"
+            due = _due_date_in_month(ym, int(day_of_month))
+            key = ym
+        if due > until_d:
+            return
+        yield due, key
+        k += 1
+
+def recurring_key_date(key, day_of_month):
+    """Due date an applied period key stands for (YYYY-MM-DD, or YYYY-MM on day_of_month)."""
+    if len(str(key)) == 7:
+        return _due_date_in_month(str(key), int(day_of_month))
+    return _parse_iso_date(key)
+
+def last_posted_recurring_date(conn, recurring_id, day_of_month):
+    """Latest due date a rule has already posted (or been marked as posted)."""
+    dates = [
+        recurring_key_date(r["ym"], day_of_month)
+        for r in conn.execute(
+            "SELECT ym FROM recurring_applied WHERE recurring_id = ?",
+            (recurring_id,),
+        )
+    ]
+    dates = [d for d in dates if d is not None]
+    return max(dates) if dates else None
 
 def apply_recurring_entries(conn, user_id):
-    """Insert expense/income rows for due recurring rules (catch-up through current month)."""
+    """Insert expense/income rows for due recurring rules (catch-up through today)."""
     uid = int(user_id)
     today = datetime.now().date()
-    today_ym = f"{today.year:04d}-{today.month:02d}"
     rules = conn.execute(
         """
-        SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at, months_to_run
+        SELECT id, entry_type, amount, category_id, account_id, day_of_month, notes, created_at,
+               months_to_run, interval_unit, interval_count, start_date, not_before
         FROM recurring_entries
         WHERE enabled = 1 AND user_id = ?
         """,
@@ -46,29 +90,30 @@ def apply_recurring_entries(conn, user_id):
     ).fetchall()
     posted = 0
     for rule in rules:
-        created_d = _parse_row_created_date(rule)
-        start_ym = f"{created_d.year:04d}-{created_d.month:02d}"
+        start_d = _parse_iso_date(rule["start_date"])
+        not_before = _parse_iso_date(rule["not_before"])
+        if start_d is None:
+            # backfill_recurring_start_dates runs at startup and after every
+            # import, so this is only a safety net: the original monthly rule.
+            created_d = _parse_row_created_date(rule)
+            start_d = created_d.replace(day=1)
+            not_before = not_before or created_d
+        unit = rule["interval_unit"] if rule["interval_unit"] in RECURRING_UNITS else "month"
         note_text = (rule["notes"] or "").strip()
         prefix = "[Recurring] "
         full_notes = f"{prefix}{note_text}" if note_text else prefix.strip()
+        times = normalize_optional_positive_int(rule["months_to_run"])
 
-        for ym in _month_iter(start_ym, today_ym):
-            months_to_run = normalize_optional_positive_int(rule["months_to_run"])
-            if months_to_run is not None:
-                year_num, month_num = map(int, ym.split("-", 1))
-                month_index = (year_num - created_d.year) * 12 + (month_num - created_d.month) + 1
-                if month_index > months_to_run:
-                    break
+        for due, key in recurring_occurrences(
+            unit, rule["interval_count"], start_d, rule["day_of_month"], today, times
+        ):
+            if not_before is not None and due < not_before:
+                continue
             exists = conn.execute(
                 "SELECT 1 FROM recurring_applied WHERE recurring_id = ? AND ym = ?",
-                (rule["id"], ym),
+                (rule["id"], key),
             ).fetchone()
             if exists:
-                continue
-            due = _due_date_in_month(ym, rule["day_of_month"])
-            if due < created_d:
-                continue
-            if today < due:
                 continue
             et = rule["entry_type"]
             if et == "expense":
@@ -105,7 +150,7 @@ def apply_recurring_entries(conn, user_id):
                 continue
             conn.execute(
                 "INSERT INTO recurring_applied (recurring_id, ym) VALUES (?, ?)",
-                (rule["id"], ym),
+                (rule["id"], key),
             )
             posted += 1
     return posted

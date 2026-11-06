@@ -4,7 +4,7 @@ from openpyxl import Workbook, load_workbook
 
 import budget
 from config import EXPORT_FORMAT_VERSION, SHEET_ACCOUNTS, SHEET_BUDGETS, SHEET_CRYPTO, SHEET_EXPENSES, SHEET_EXPENSE_CATEGORIES, SHEET_INCOME, SHEET_INCOME_CATEGORIES, SHEET_META, SHEET_RECURRING, SHEET_STOCKS, SHEET_TRANSFERS
-from db import get_connection
+from db import backfill_recurring_start_dates, get_connection
 from helpers import _lookup_account_id, _lookup_category_id
 
 # Column order for the sheets added in format version 2. Used for both the
@@ -54,6 +54,13 @@ RECURRING_COLUMNS = [
     "enabled",
     "created_at",
     "applied_months",
+    # Added in format version 4; a sheet without them imports as the original
+    # monthly rules (see backfill_recurring_start_dates). months_to_run counts
+    # occurrences, which for those monthly rules is the number of months.
+    "interval_unit",
+    "interval_count",
+    "start_date",
+    "not_before",
 ]
 # Added in format version 3. A blank month is the category's default monthly
 # budget; YYYY-MM is an override for that month alone. `fixed` (1/0) is only
@@ -340,7 +347,8 @@ def _build_export_workbook(conn, user_id):
         SELECT r.id, r.entry_type, r.amount,
                COALESCE(c.name, ic.name) AS category_name,
                a.name AS account_name, r.day_of_month, r.months_to_run,
-               r.notes, r.enabled, r.created_at
+               r.notes, r.enabled, r.created_at,
+               r.interval_unit, r.interval_count, r.start_date, r.not_before
         FROM recurring_entries r
         JOIN accounts a ON a.id = r.account_id
         LEFT JOIN categories c ON r.entry_type = 'expense' AND c.id = r.category_id
@@ -361,8 +369,9 @@ def _build_export_workbook(conn, user_id):
                 (row["id"],),
             )
         ]
-        values = [row[c] for c in RECURRING_COLUMNS if c != "applied_months"]
-        ws_rec.append(values + [",".join(applied)])
+        ws_rec.append(
+            [",".join(applied) if c == "applied_months" else row[c] for c in RECURRING_COLUMNS]
+        )
 
     ws_bud = wb.create_sheet(SHEET_BUDGETS)
     ws_bud.append(BUDGET_COLUMNS)
@@ -532,6 +541,22 @@ def _optional_text(row, key):
     return "" if value is None else str(value).strip()
 
 
+def _optional_iso_date(row, key, sheet, row_num, errors):
+    """YYYY-MM-DD from a text or date cell, or None when blank."""
+    value = row.get(key)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if hasattr(value, "isoformat"):
+        return value.isoformat()[:10]
+    try:
+        return datetime.strptime(str(value).strip()[:10], "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        errors.append(f"{sheet} row {row_num}: invalid {key} (expected YYYY-MM-DD)")
+        return None
+
+
 def _collect_import_transfers(rows):
     errors = []
     out = []
@@ -616,7 +641,8 @@ def _parse_applied_months(raw, sheet, row_num, errors):
         ym = chunk.strip()
         if not ym:
             continue
-        if not re.fullmatch(r"\d{4}-\d{2}", ym):
+        # YYYY-MM for monthly/yearly rules, YYYY-MM-DD for weekly ones.
+        if not re.fullmatch(r"\d{4}-\d{2}(-\d{2})?", ym):
             errors.append(f"{sheet} row {row_num}: invalid applied_months entry {ym!r}")
             continue
         months.append(ym)
@@ -657,7 +683,16 @@ def _collect_import_recurring(rows):
                 errors.append(str(exc))
                 continue
         applied = _parse_applied_months(row.get("applied_months"), SHEET_RECURRING, idx, errors)
-        if amount and cat_name and acc_name and day is not None:
+        unit = str(row.get("interval_unit") or "month").strip().lower()
+        if unit not in ("week", "month", "year"):
+            errors.append(f"{SHEET_RECURRING} row {idx}: interval_unit must be week, month or year")
+            unit = None
+        interval_count = _parse_excel_number(
+            row, "interval_count", SHEET_RECURRING, idx, errors, default=1, minimum=1
+        )
+        start_date = _optional_iso_date(row, "start_date", SHEET_RECURRING, idx, errors)
+        not_before = _optional_iso_date(row, "not_before", SHEET_RECURRING, idx, errors)
+        if amount and cat_name and acc_name and day is not None and unit and interval_count:
             out.append(
                 (
                     entry_type,
@@ -670,6 +705,10 @@ def _collect_import_recurring(rows):
                     enabled,
                     created_at,
                     applied,
+                    unit,
+                    int(interval_count),
+                    start_date,
+                    not_before,
                 )
             )
     return out, errors
@@ -1056,6 +1095,7 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
         for (
             entry_type, amount, cat_name, acc_name, day, months_to_run,
             notes, enabled, created_at, applied_months,
+            interval_unit, interval_count, start_date, not_before,
         ) in insert_recurring:
             category_id = _lookup_category_id(conn, cat_name, uid, expense=entry_type == "expense")
             account_id = _lookup_account_id(conn, acc_name, uid)
@@ -1088,11 +1128,22 @@ def _run_import_workbook(wb, replace_movements, sync_opening_balances, user_id):
                      months_to_run, notes, enabled),
                 )
             rule_id = cursor.lastrowid
+            conn.execute(
+                """
+                UPDATE recurring_entries
+                SET interval_unit = ?, interval_count = ?, start_date = ?, not_before = ?
+                WHERE id = ?
+                """,
+                (interval_unit, interval_count, start_date, not_before, rule_id),
+            )
             for ym in applied_months:
                 conn.execute(
                     "INSERT OR IGNORE INTO recurring_applied (recurring_id, ym) VALUES (?, ?)",
                     (rule_id, ym),
                 )
+        # Rules from a pre-interval workbook have no start_date: give them the
+        # one that keeps their original monthly schedule.
+        backfill_recurring_start_dates(conn)
 
         for cat_name, month, amount, fixed in insert_budgets:
             category_id = _lookup_category_id(conn, cat_name, uid, expense=True)

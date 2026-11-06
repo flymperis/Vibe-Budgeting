@@ -282,6 +282,37 @@ h3 {
     white-space: nowrap;
 }
 
+/* "Every [2] [weeks]" and "First date [..]" on a rule: keep each label with
+   its inputs when the inline form wraps. */
+.recurring-interval-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: nowrap;
+}
+
+.recurring-interval-label {
+    font-size: 0.88rem;
+    white-space: nowrap;
+}
+
+.recurring-rule-form .recurring-interval-field input.recurring-interval-count,
+.home-modal-dialog .recurring-add-form .recurring-interval-field .recurring-interval-count {
+    width: 4.5rem;
+    min-width: 0;
+    flex: 0 0 auto;
+}
+
+.home-modal-dialog .recurring-add-form .recurring-interval-field .recurring-interval-unit {
+    flex: 1 1 auto;
+    width: auto;
+}
+
+.home-modal-dialog .recurring-add-form .recurring-interval-field {
+    display: flex;
+    width: 100%;
+}
+
 .sr-only {
     position: absolute;
     width: 1px;
