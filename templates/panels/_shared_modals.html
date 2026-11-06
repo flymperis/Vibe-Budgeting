@@ -1,0 +1,160 @@
+{# Add/edit-expense and settle-up sheets for the open group. Direct <body>
+   descendants like the other .home-modal sheets (an inactive panel is
+   display:none, so a modal nested in it could never show). #}
+{% set sd = shared_data %}
+{% set sel = sd.selected %}
+{% if sel %}
+{% set own_accounts = accounts|rejectattr('id', 'equalto', sd.ledger_account_id)|list %}
+<div id="shared-modal-expense" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="shared-modal-expense-title">
+    <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close expense dialog"></button>
+    <div class="home-modal-dialog shared-modal-dialog">
+        <div class="home-modal-handle" aria-hidden="true"></div>
+        <div class="home-modal-header">
+            <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+            <h3 id="shared-modal-expense-title" class="home-modal-title" data-title-add="New shared expense" data-title-edit="Edit shared expense">New shared expense</h3>
+            <button type="submit" form="shared-expense-form" class="home-modal-save">Save</button>
+        </div>
+        <form id="shared-expense-form" action="{{ url_for('shared.add_expense', group_id=sel.id) }}" data-add-action="{{ url_for('shared.add_expense', group_id=sel.id) }}" data-edit-action="{{ url_for('shared.edit_expense', expense_id=0) }}" data-self-id="{{ sel.me_id }}" class="panel-add-form home-quick-form shared-expense-form" method="post">
+            <input name="month" type="hidden" value="{{ month_filter }}">
+            <div class="home-modal-amount-field">
+                <label class="sr-only" for="shared-expense-amount">Amount</label>
+                <input id="shared-expense-amount" class="home-modal-amount-input" inputmode="decimal" min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number">
+            </div>
+            <div class="home-modal-fields">
+                <div class="home-modal-field home-modal-field-notes">
+                    <label for="shared-expense-description">Description</label>
+                    <input id="shared-expense-description" maxlength="60" name="description" placeholder="e.g. Dinner, Groceries, Fuel" required type="text">
+                </div>
+                <div class="home-modal-field">
+                    <label for="shared-expense-paid-by">Paid by</label>
+                    <select id="shared-expense-paid-by" name="paid_by" required data-picker>
+                        {% for m in sel.members %}
+                            <option value="{{ m.id }}" {% if m.is_me %}selected{% endif %}>{{ m.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="home-modal-field">
+                    <label for="shared-expense-date">Date</label>
+                    <input id="shared-expense-date" name="spent_on" type="date" value="{{ transfer_default_date }}">
+                </div>
+                <div class="home-modal-field">
+                    <label for="shared-expense-method">Split</label>
+                    <select id="shared-expense-method" name="split_method" data-split-method data-picker>
+                        {% for key, label in sd.split_methods %}
+                            <option value="{{ key }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="shared-split-list" data-split-list>
+                {% for m in sel.members %}
+                    <div class="shared-split-row" data-person-id="{{ m.id }}">
+                        <label class="shared-split-who">
+                            <input checked data-split-include name="include_{{ m.id }}" type="checkbox" value="1">
+                            <span>{{ m.name }}</span>
+                        </label>
+                        <input aria-label="{{ m.name }}'s part" class="shared-split-value" data-split-value hidden inputmode="decimal" min="0" name="value_{{ m.id }}" step="any" type="number">
+                        <span class="shared-split-share" data-split-share></span>
+                    </div>
+                {% endfor %}
+                <p class="shared-split-status" data-split-status aria-live="polite"></p>
+            </div>
+
+            <div class="shared-record">
+                <label class="checkbox-inline">
+                    <input checked data-record-toggle name="record_personal" type="checkbox" value="1">
+                    Add my part to my budget
+                </label>
+                <div class="home-modal-fields" data-record-fields>
+                    <div class="home-modal-field">
+                        <label for="shared-expense-category">My share's category</label>
+                        <select id="shared-expense-category" name="category_id" data-picker>
+                            {% for category in categories %}
+                                <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="home-modal-field" data-paid-from-field>
+                        <label for="shared-expense-account">Paid from</label>
+                        <select id="shared-expense-account" name="account_id" data-picker>
+                            {% for account in own_accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <p class="muted small-hint" data-record-hint></p>
+            </div>
+            <button type="submit" class="home-modal-submit">Save expense</button>
+        </form>
+    </div>
+</div>
+
+<div id="shared-modal-settle" class="home-modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="shared-modal-settle-title">
+    <button type="button" class="home-modal-backdrop" data-home-modal-close aria-label="Close settle up dialog"></button>
+    <div class="home-modal-dialog shared-modal-dialog">
+        <div class="home-modal-handle" aria-hidden="true"></div>
+        <div class="home-modal-header">
+            <button type="button" class="home-modal-close" data-home-modal-close aria-label="Close">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+            <h3 id="shared-modal-settle-title" class="home-modal-title">Settle up</h3>
+            <button type="submit" form="shared-settle-form" class="home-modal-save">Save</button>
+        </div>
+        {% set first_suggestion = sel.suggestions[0] if sel.suggestions else none %}
+        <form id="shared-settle-form" action="{{ url_for('shared.add_settlement', group_id=sel.id) }}" data-self-id="{{ sel.me_id }}" class="panel-add-form home-quick-form shared-settle-form" method="post">
+            <input name="month" type="hidden" value="{{ month_filter }}">
+            <div class="home-modal-amount-field">
+                <label class="sr-only" for="shared-settle-amount">Amount</label>
+                <input id="shared-settle-amount" class="home-modal-amount-input" inputmode="decimal" min="0.01" name="amount" placeholder="0.00" required step="0.01" type="number" value="{{ '%.2f'|format(first_suggestion.amount) if first_suggestion else '' }}">
+            </div>
+            <div class="home-modal-fields">
+                <div class="home-modal-field">
+                    <label for="shared-settle-from">Who paid</label>
+                    <select id="shared-settle-from" name="from_person_id" required data-picker>
+                        {% for m in sel.members %}
+                            <option value="{{ m.id }}" {% if (first_suggestion and m.id == first_suggestion.from_id) or (not first_suggestion and m.is_me) %}selected{% endif %}>{{ m.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="home-modal-field">
+                    <label for="shared-settle-to">Paid to</label>
+                    <select id="shared-settle-to" name="to_person_id" required data-picker>
+                        {% for m in sel.members %}
+                            <option value="{{ m.id }}" {% if (first_suggestion and m.id == first_suggestion.to_id) or (not first_suggestion and loop.index == 2) %}selected{% endif %}>{{ m.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="home-modal-field">
+                    <label for="shared-settle-date">Date</label>
+                    <input id="shared-settle-date" name="paid_on" type="date" value="{{ transfer_default_date }}">
+                </div>
+                <div class="home-modal-field">
+                    <label for="shared-settle-notes">Note</label>
+                    <input id="shared-settle-notes" maxlength="60" name="notes" placeholder="e.g. Bank transfer, cash" type="text">
+                </div>
+            </div>
+            <div class="shared-record" data-settle-record>
+                <label class="checkbox-inline">
+                    <input checked data-record-toggle name="record_personal" type="checkbox" value="1">
+                    Record in my accounts
+                </label>
+                <div class="home-modal-fields" data-record-fields>
+                    <div class="home-modal-field">
+                        <label for="shared-settle-account" data-settle-account-label>Account</label>
+                        <select id="shared-settle-account" name="account_id" data-picker>
+                            {% for account in own_accounts %}
+                                <option value="{{ account.id }}">{{ account.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <button type="submit" class="home-modal-submit">Record payment</button>
+        </form>
+    </div>
+</div>
+{% endif %}

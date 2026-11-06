@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import budget
 import calendar
 import integrations
+import shared
 import telegram_bot
 import time
 
@@ -593,6 +594,8 @@ def index():
         else []
     )
 
+    shared_data = shared.panel_context(conn, uid, request.args.get("group", type=int))
+
     user_integrations = integrations.get_user_integrations(conn, uid)
     telegram_server = telegram_bot.server_config_for_form(conn)
     telegram_link = telegram_bot.get_telegram_link(conn, uid)
@@ -700,4 +703,5 @@ def index():
         stock_prices_age=stock_prices_age,
         stock_prices_loaded=stock_prices_loaded,
         finnhub_configured=bool(FINNHUB_API_KEY),
+        shared_data=shared_data,
     )

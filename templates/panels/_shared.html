@@ -1,0 +1,372 @@
+{% set sd = shared_data %}
+{% set sel = sd.selected %}
+{% set own_accounts = accounts|rejectattr('id', 'equalto', sd.ledger_account_id)|list %}
+{% macro person_avatar(name, is_me=false) -%}
+<span class="home-balances-avatar shared-avatar{% if is_me %} shared-avatar-self{% endif %}" aria-hidden="true">{{ (name or '?')[0]|upper }}</span>
+{%- endmacro %}
+{% macro edit_icon() -%}
+<svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z"/></svg>
+{%- endmacro %}
+<section class="panel {% if active_panel == 'shared' %}active{% endif %}" id="panel-shared">
+{% if not sel %}
+    <h2>Shared expenses</h2>
+    <p class="muted small-hint">
+        Split bills with friends, flatmates or a trip group and keep track of who owes whom.
+        Link a person to their Vibe Budgeting login and the group is shared with them too.
+        Your share of a bill can go straight into your budget, and what you lend or borrow
+        shows up in a “Shared balances” account.
+    </p>
+
+    {% if sd.invitations %}
+        <h3>Invitations</h3>
+        <ul class="home-balances-list shared-invitations">
+            {% for inv in sd.invitations %}
+                <li class="home-balances-row">
+                    {{ person_avatar(inv.owner) }}
+                    <span class="home-balances-name"><b>{{ inv.owner }}</b> <span class="muted">invited you to</span> <b>{{ inv.name }}</b></span>
+                    <form action="{{ url_for('shared.accept_invite', group_id=inv.id) }}" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <button class="shared-record-btn" type="submit">Join</button>
+                    </form>
+                    <form action="{{ url_for('shared.decline_invite', group_id=inv.id) }}" method="post">
+                        <input name="month" type="hidden" value="{{ month_filter }}">
+                        <button class="btn-secondary shared-record-btn" type="submit">Decline</button>
+                    </form>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <div class="home-summary-hero shared-hero">
+        <p class="home-summary-hero-label">
+            {% if sd.net > 0 %}Overall, you are owed{% elif sd.net < 0 %}Overall, you owe{% else %}You are all settled up{% endif %}
+        </p>
+        <strong class="home-summary-hero-amount {{ sd.net|amount_class }}">{{ sd.net|abs|money }}</strong>
+        <div class="home-summary-hero-pills">
+            <span class="home-summary-pill home-summary-pill-income">You are owed <b>{{ sd.owed_to_me|money }}</b></span>
+            <span class="home-summary-pill home-summary-pill-expense">You owe <b>{{ sd.i_owe|money }}</b></span>
+        </div>
+    </div>
+
+    {% if sd.friend_balances %}
+        <h3>Friends</h3>
+        <ul class="home-balances-list">
+            {% for f in sd.friend_balances %}
+                <li class="home-balances-row">
+                    {{ person_avatar(f.name) }}
+                    <span class="home-balances-name">{{ f.name }}</span>
+                    <span class="shared-balance-word muted">{% if f.amount > 0 %}owes you{% else %}you owe{% endif %}</span>
+                    <span class="home-balances-amount-pill {{ f.amount|amount_class }}">{{ f.amount|abs|money }}</span>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <h3>Groups</h3>
+    {% if sd.groups %}
+        <ul class="home-links-list shared-group-list">
+            {% for grp in sd.groups %}
+                <li>
+                    <a class="home-links-row shared-group-row" href="{{ url_for('dashboard.index', panel='shared', group=grp.id, month=month_filter) }}">
+                        <span class="shared-group-main">
+                            <span class="shared-group-name">{{ grp.name }}{% if grp.shared_with_users %} <span class="shared-tag">shared</span>{% endif %}</span>
+                            <span class="muted shared-group-members">{{ grp.member_names|join(', ') }}</span>
+                        </span>
+                        <span class="shared-group-balance {{ grp.my_net|amount_class }}">
+                            {% if grp.my_net > 0 %}you get back <b>{{ grp.my_net|money }}</b>
+                            {% elif grp.my_net < 0 %}you owe <b>{{ grp.my_net|abs|money }}</b>
+                            {% else %}<span class="muted">settled up</span>{% endif %}
+                        </span>
+                        <span class="home-links-chevron" aria-hidden="true"></span>
+                    </a>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted">No groups yet. Create one for a trip, your flat or a regular dinner.</p>
+    {% endif %}
+
+    <details class="shared-card" {% if not sd.groups and not sd.invitations %}open{% endif %}>
+        <summary class="shared-card-summary">+ New group</summary>
+        <form action="{{ url_for('shared.add_group') }}" class="shared-form" method="post">
+            <input name="month" type="hidden" value="{{ month_filter }}">
+            <label class="month-label" for="shared-group-name">Group name</label>
+            <input id="shared-group-name" maxlength="60" name="name" placeholder="e.g. Crete trip, Flat 3B" required type="text">
+            {% if sd.contacts %}
+                <fieldset class="shared-member-picks">
+                    <legend class="month-label">Members (you are always included)</legend>
+                    {% for p in sd.contacts %}
+                        <label class="checkbox-inline"><input name="member_ids" type="checkbox" value="{{ p.id }}"> {{ p.name }}{% if p.login %} <span class="muted">@{{ p.login }}</span>{% endif %}</label>
+                    {% endfor %}
+                </fieldset>
+            {% endif %}
+            <label class="month-label" for="shared-group-usernames">Invite Vibe Budgeting users (usernames, comma separated)</label>
+            <input id="shared-group-usernames" name="usernames" placeholder="e.g. anna, nikos" type="text" autocapitalize="off" autocomplete="off">
+            <label class="month-label" for="shared-group-new-members">People without an account (names, comma separated)</label>
+            <input id="shared-group-new-members" name="new_members" placeholder="e.g. Grandma, Kostas" type="text">
+            <button type="submit">Create group</button>
+        </form>
+    </details>
+
+    <h3>People</h3>
+    <form action="{{ url_for('shared.add_person') }}" class="inline-form shared-add-person" method="post">
+        <input name="month" type="hidden" value="{{ month_filter }}">
+        <input aria-label="Names to add" name="name" placeholder="Add people (comma separated)" required type="text">
+        <button type="submit">Add</button>
+    </form>
+    {% if sd.contacts %}
+        <ul class="home-balances-list shared-people-list">
+            {% for p in sd.contacts %}
+                <li class="home-balances-row">
+                    {{ person_avatar(p.name) }}
+                    <span class="home-balances-name">{{ p.name }}{% if p.login %} <span class="shared-tag" title="Linked to this Vibe Budgeting user">@{{ p.login }}</span>{% endif %}</span>
+                    <span class="muted shared-people-count">{{ p.group_count }} group{% if p.group_count != 1 %}s{% endif %}</span>
+                    <details class="shared-person-edit">
+                        <summary class="btn-icon btn-icon-edit" title="Edit {{ p.name }}">
+                            <span class="visually-hidden">Edit {{ p.name }}</span>
+                            {{ edit_icon() }}
+                        </summary>
+                        <div class="shared-person-edit-body">
+                            <form action="{{ url_for('shared.rename_person', person_id=p.id) }}" class="inline-form" method="post">
+                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                <input aria-label="Name" maxlength="60" name="name" required type="text" value="{{ p.name }}">
+                                <button type="submit">Save</button>
+                            </form>
+                            {% if p.login %}
+                                {% if p.group_count == 0 %}
+                                    <form action="{{ url_for('shared.unlink_person', person_id=p.id) }}" method="post">
+                                        <input name="month" type="hidden" value="{{ month_filter }}">
+                                        <button class="btn-secondary" type="submit">Unlink from @{{ p.login }}</button>
+                                    </form>
+                                {% else %}
+                                    <p class="muted small-hint">Linked to @{{ p.login }}.</p>
+                                {% endif %}
+                            {% else %}
+                                <form action="{{ url_for('shared.link_person', person_id=p.id) }}" class="inline-form" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <input aria-label="Their username" autocapitalize="off" autocomplete="off" name="username" placeholder="Their username" required type="text">
+                                    <button class="btn-secondary" type="submit">Link</button>
+                                </form>
+                                <p class="muted small-hint">Linking invites them to the groups they're in.</p>
+                            {% endif %}
+                            {% if p.group_count == 0 %}
+                                <form action="{{ url_for('shared.delete_person', person_id=p.id) }}" data-confirm="Remove {{ p.name }}?" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <button class="btn-danger" type="submit">Remove</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </details>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+{% else %}
+    <a class="shared-back-link" href="{{ url_for('dashboard.index', panel='shared', month=month_filter) }}">&larr; All groups</a>
+    <h2 class="shared-group-title">{{ sel.name }}</h2>
+    <p class="muted shared-group-members">{{ sel.member_names|join(' · ') }}{% if not sel.is_owner %} · created by {{ sel.owner_name }}{% endif %}</p>
+
+    <div class="home-summary-hero shared-hero">
+        <p class="home-summary-hero-label">
+            {% if sel.my_net > 0 %}You get back{% elif sel.my_net < 0 %}You owe{% else %}You are settled up{% endif %}
+        </p>
+        <strong class="home-summary-hero-amount {{ sel.my_net|amount_class }}">{{ sel.my_net|abs|money }}</strong>
+        <div class="home-summary-hero-pills">
+            <span class="home-summary-pill">Group spending <b>{{ sel.total_spent|money }}</b></span>
+        </div>
+    </div>
+
+    <div class="home-quick-bar shared-quick-bar">
+        <button id="shared-btn-expense" type="button" class="btn-home-quick btn-home-quick-expense" aria-expanded="false" aria-controls="shared-modal-expense">+ Add expense</button>
+        <button id="shared-btn-settle" type="button" class="btn-home-quick btn-home-quick-income" aria-expanded="false" aria-controls="shared-modal-settle">Settle up</button>
+    </div>
+
+    <h3>Balances</h3>
+    <ul class="home-balances-list">
+        {% for m in sel.members %}
+            <li class="home-balances-row">
+                {{ person_avatar(m.name, m.is_me) }}
+                <span class="home-balances-name">{{ m.name }}
+                    {% if m.status == 'invited' %}<span class="shared-tag shared-tag-pending">invited</span>
+                    {% elif m.status == 'declined' %}<span class="shared-tag shared-tag-pending">declined</span>
+                    {% elif m.is_user and not m.is_me %}<span class="shared-tag">@{{ m.login }}</span>{% endif %}
+                </span>
+                <span class="shared-balance-word muted">{% if m.net > 0 %}gets back{% elif m.net < 0 %}owes{% else %}settled up{% endif %}</span>
+                {% if m.net != 0 %}<span class="home-balances-amount-pill {{ m.net|amount_class }}">{{ m.net|abs|money }}</span>{% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+
+    {% if sel.suggestions %}
+        <h3>Suggested payments</h3>
+        <p class="muted small-hint">The fewest payments that settle everyone in this group.</p>
+        <ul class="home-balances-list">
+            {% for s in sel.suggestions %}
+                <li class="home-balances-row shared-suggestion{% if s.involves_me %} shared-suggestion-mine{% endif %}">
+                    <span class="home-balances-name"><b>{{ s.from_name }}</b> <span class="muted">pays</span> <b>{{ s.to_name }}</b></span>
+                    <span class="home-balances-amount-pill">{{ s.amount|money }}</span>
+                    <button class="btn-secondary shared-record-btn" data-shared-settle-prefill data-from="{{ s.from_id }}" data-to="{{ s.to_id }}" data-amount="{{ '%.2f'|format(s.amount) }}" type="button">Record</button>
+                </li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+
+    <h3>Activity</h3>
+    {% if sel.activity %}
+        <ul class="shared-activity">
+            {% for a in sel.activity %}
+                {% if a.kind == 'expense' %}
+                    <li class="shared-activity-row">
+                        <div class="shared-activity-date">{{ a.date|txn_day }}</div>
+                        <div class="shared-activity-body">
+                            <div class="shared-activity-line">
+                                <span class="shared-activity-title">{{ a.description }}</span>
+                                <span class="shared-activity-amount">{{ a.amount|money }}</span>
+                            </div>
+                            <div class="shared-activity-line muted">
+                                <span>{{ a.paid_by_name }} paid · split {{ a.method_label|lower }}</span>
+                                <span class="shared-activity-effect {{ a.effect|amount_class }}">
+                                    {%- if a.effect > 0 -%}{{ a.effect_text }} {{ a.effect|money }}
+                                    {%- elif a.effect < 0 -%}{{ a.effect_text }} {{ a.effect|abs|money }}
+                                    {%- else -%}{{ a.effect_text }}{%- endif -%}
+                                </span>
+                            </div>
+                            {% if a.involved and not a.recorded %}
+                                <p class="shared-unrecorded">Not in your budget yet</p>
+                            {% elif a.record_incomplete %}
+                                <p class="shared-unrecorded">Only partly in your budget: pick {% if a.i_paid %}the account you paid from{% else %}a category{% endif %} below</p>
+                            {% endif %}
+                            <details class="shared-activity-details">
+                                <summary>Details · added by {{ a.added_by }}{% if a.recorded %} · in your budget{% endif %}</summary>
+                                <ul class="shared-split-breakdown">
+                                    {% for s in a.splits %}
+                                        <li><span>{{ s.name }}</span><span>{{ s.share|money }}{% if s.input_value and a.split_method == 'percent' %} ({{ s.input_value }}%){% elif s.input_value and a.split_method == 'shares' %} ({{ s.input_value }} share{% if s.input_value != '1' %}s{% endif %}){% endif %}</span></li>
+                                    {% endfor %}
+                                </ul>
+                                {% if a.involved %}
+                                    <form action="{{ url_for('shared.record_expense', expense_id=a.id) }}" class="inline-form shared-record-form" method="post">
+                                        <input name="month" type="hidden" value="{{ month_filter }}">
+                                        {% if a.my_share %}
+                                            <select aria-label="Category for your share" name="category_id" required>
+                                                {% for category in categories %}
+                                                    <option value="{{ category.id }}" {% if a.payload.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        {% endif %}
+                                        {% if a.i_paid %}
+                                            <select aria-label="Account you paid from" name="account_id" required>
+                                                {% for account in own_accounts %}
+                                                    <option value="{{ account.id }}" {% if a.payload.account_id == account.id %}selected{% endif %}>{{ account.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        {% endif %}
+                                        <button class="btn-secondary" type="submit">{% if a.recorded %}Update my budget{% else %}Add to my budget{% endif %}</button>
+                                    </form>
+                                {% endif %}
+                                <div class="shared-activity-actions">
+                                    <button class="btn-secondary" data-shared-edit="{{ a.payload|tojson|forceescape }}" type="button">Edit</button>
+                                    {% if a.recorded %}
+                                        <form action="{{ url_for('shared.unrecord_expense', expense_id=a.id) }}" method="post">
+                                            <input name="month" type="hidden" value="{{ month_filter }}">
+                                            <button class="btn-secondary" type="submit">Remove from my budget</button>
+                                        </form>
+                                    {% endif %}
+                                    <form action="{{ url_for('shared.delete_expense', expense_id=a.id) }}" data-confirm="Delete “{{ a.description }}” for everyone in the group? Entries it added to anyone's accounts go too." method="post">
+                                        <input name="month" type="hidden" value="{{ month_filter }}">
+                                        <button class="btn-danger" type="submit">Delete</button>
+                                    </form>
+                                </div>
+                            </details>
+                        </div>
+                    </li>
+                {% else %}
+                    <li class="shared-activity-row shared-activity-payment">
+                        <div class="shared-activity-date">{{ a.date|txn_day }}</div>
+                        <div class="shared-activity-body">
+                            <div class="shared-activity-line">
+                                <span class="shared-activity-title">{{ a.from_name }} paid {{ a.to_name }}</span>
+                                <span class="shared-activity-amount">{{ a.amount|money }}</span>
+                            </div>
+                            <div class="shared-activity-line muted">
+                                <span>Payment{% if a.notes %} · {{ a.notes }}{% endif %} · added by {{ a.added_by }}{% if a.recorded %} · in your accounts{% endif %}</span>
+                                <form action="{{ url_for('shared.delete_settlement', settlement_id=a.id) }}" class="shared-inline-delete" data-confirm="Delete this payment for everyone in the group?" method="post">
+                                    <input name="month" type="hidden" value="{{ month_filter }}">
+                                    <button class="btn-link-danger" type="submit">Delete</button>
+                                </form>
+                            </div>
+                            {% if a.involved %}
+                                {% if a.recorded %}
+                                    <form action="{{ url_for('shared.unrecord_settlement', settlement_id=a.id) }}" class="shared-inline-delete" method="post">
+                                        <input name="month" type="hidden" value="{{ month_filter }}">
+                                        <button class="btn-link" type="submit">Remove from my accounts</button>
+                                    </form>
+                                {% else %}
+                                    <form action="{{ url_for('shared.record_settlement', settlement_id=a.id) }}" class="inline-form shared-record-form" method="post">
+                                        <input name="month" type="hidden" value="{{ month_filter }}">
+                                        <span class="shared-unrecorded">Not in your accounts yet</span>
+                                        <select aria-label="{% if a.i_paid %}Account you paid from{% else %}Account you received into{% endif %}" name="account_id" required>
+                                            {% for account in own_accounts %}
+                                                <option value="{{ account.id }}">{{ account.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <button class="btn-secondary" type="submit">{% if a.i_paid %}Record as paid from{% else %}Record as received into{% endif %} this account</button>
+                                    </form>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </li>
+                {% endif %}
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="muted">No expenses yet. Add the first bill with “+ Add expense”.</p>
+    {% endif %}
+
+    <details class="shared-card">
+        <summary class="shared-card-summary">Group settings</summary>
+        <div class="shared-form">
+            <form action="{{ url_for('shared.rename_group', group_id=sel.id) }}" class="inline-form" method="post">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                <input aria-label="Group name" maxlength="60" name="name" required type="text" value="{{ sel.name }}">
+                <button type="submit">Rename</button>
+            </form>
+
+            <p class="month-label">Members</p>
+            <ul class="shared-member-list">
+                {% for m in sel.members %}
+                    <li>
+                        <span>{{ m.name }}{% if m.login and not m.is_me %} <span class="muted">@{{ m.login }}</span>{% endif %}{% if m.is_owner %} <span class="muted">· creator</span>{% endif %}{% if m.status != 'active' %} <span class="muted">· {{ m.status }}</span>{% endif %}</span>
+                        {% if m.removable %}
+                            <form action="{{ url_for('shared.remove_member', group_id=sel.id, person_id=m.id) }}" {% if m.is_me %}data-confirm="Leave “{{ sel.name }}”?"{% endif %} method="post">
+                                <input name="month" type="hidden" value="{{ month_filter }}">
+                                <button class="btn-link-danger" type="submit">{% if m.is_me %}Leave{% else %}Remove{% endif %}</button>
+                            </form>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+            <form action="{{ url_for('shared.add_member', group_id=sel.id) }}" class="shared-add-member" method="post">
+                <input name="month" type="hidden" value="{{ month_filter }}">
+                {% if sel.addable_contacts %}
+                    <select aria-label="Person to add" name="person_id">
+                        <option value="">Choose from your people…</option>
+                        {% for p in sel.addable_contacts %}
+                            <option value="{{ p.id }}">{{ p.name }}{% if p.login %} (@{{ p.login }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                {% endif %}
+                <input aria-label="Usernames to invite" autocapitalize="off" autocomplete="off" name="usernames" placeholder="Invite by username" type="text">
+                <input aria-label="New people without an account" name="new_members" placeholder="Or names without an account" type="text">
+                <button type="submit">Add</button>
+            </form>
+
+            {% if sel.is_owner %}
+                <form action="{{ url_for('shared.delete_group', group_id=sel.id) }}" data-confirm="Delete the group “{{ sel.name }}” for everyone, with all its expenses and payments? Entries it added to anyone's accounts are removed too." method="post">
+                    <input name="month" type="hidden" value="{{ month_filter }}">
+                    <button class="btn-danger" type="submit">Delete group</button>
+                </form>
+            {% endif %}
+        </div>
+    </details>
+{% endif %}
+</section>

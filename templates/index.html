@@ -99,6 +99,12 @@
                     <span class="menu-item-text">Budget</span>
                 </span>
             </button>
+            <button class="menu-item {% if active_panel == 'shared' %}active{% endif %}" data-target="panel-shared" type="button">
+                <span class="menu-item-inner">
+                    <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    <span class="menu-item-text">Shared</span>
+                </span>
+            </button>
             <button class="menu-item {% if active_panel == 'summary' %}active{% endif %}" data-target="panel-summary" type="button">
                 <span class="menu-item-inner">
                     <svg class="menu-item-icon" aria-hidden="true" viewBox="0 0 24 24"><rect height="18" rx="2" width="18" x="3" y="3"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
@@ -168,6 +174,8 @@
                 {% include "panels/_transfer.html" %}
 
                 {% include "panels/_budget.html" %}
+
+                {% include "panels/_shared.html" %}
 
                 {% include "panels/_summary.html" %}
 
@@ -411,6 +419,8 @@
         </div>
     </div>
 
+    {% include "panels/_shared_modals.html" %}
+
     {# Budget panel's "Copy from another month" modal. Lives here (a direct
        <body> descendant, like the other modals) rather than inside the
        Budget panel's own <form>/<details> — a <div id="panel-budget"> that
@@ -468,7 +478,7 @@
                 <svg aria-hidden="true" viewBox="0 0 24 24"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
                 <span>Reports</span>
             </button>
-            <button class="bottom-nav-item {% if active_panel in ['recurring', 'transfer', 'budget', 'summary', 'yearly', 'investments', 'settings'] %}active{% endif %}" id="more-nav-btn" type="button" aria-haspopup="dialog" aria-expanded="false">
+            <button class="bottom-nav-item {% if active_panel in ['recurring', 'transfer', 'budget', 'shared', 'summary', 'yearly', 'investments', 'settings'] %}active{% endif %}" id="more-nav-btn" type="button" aria-haspopup="dialog" aria-expanded="false">
                 <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
                 <span>More</span>
             </button>
@@ -506,6 +516,13 @@
                     <span class="menu-item-inner">
                         <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4"/></svg></span>
                         <span class="menu-item-text">Budget</span>
+                        <span class="more-sheet-chevron" aria-hidden="true"></span>
+                    </span>
+                </button>
+                <button class="menu-item {% if active_panel == 'shared' %}active{% endif %}" data-target="panel-shared" type="button">
+                    <span class="menu-item-inner">
+                        <span class="more-sheet-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                        <span class="menu-item-text">Shared</span>
                         <span class="more-sheet-chevron" aria-hidden="true"></span>
                     </span>
                 </button>

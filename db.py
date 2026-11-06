@@ -5,6 +5,7 @@ import calendar
 import integrations
 import os
 import re
+import shared
 import sqlite3
 import sys
 import telegram_bot
@@ -160,6 +161,7 @@ def migrate_schema(conn):
     integrations.migrate_user_integrations(conn)
     telegram_bot.migrate_telegram(conn)
     budget.migrate_budgets(conn)
+    shared.migrate_shared(conn)
     migrate_add_indexes(conn)
 
 def migrate_add_indexes(conn):

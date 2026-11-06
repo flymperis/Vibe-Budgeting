@@ -49,6 +49,7 @@ ALLOWED_PANELS = {
     "transfer",
     "summary",
     "budget",
+    "shared",
     "yearly",
     "reports",
     "investments",

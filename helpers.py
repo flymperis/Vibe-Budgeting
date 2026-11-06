@@ -235,6 +235,7 @@ def resolve_active_panel():
             ("/income/", "income"),
             ("/transfers/", "transfer"),
             ("/recurring/", "recurring"),
+            ("/shared/", "shared"),
             ("/crypto/", "investments"),
             ("/stocks/", "investments"),
         ):

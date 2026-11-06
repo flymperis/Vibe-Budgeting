@@ -19,7 +19,7 @@ from config import CSRF_FIELD_NAME, _CSRF_EXEMPT_ENDPOINTS, _CSRF_SAFE_METHODS, 
 from db import DB_PATH, _prepare_sqlite_storage, get_connection, init_db
 from finance import fetch_account_balances_through
 from helpers import coerce_txn_day, get_csrf_token
-from routes import accounts, auth, budget, categories, dashboard, data_io, expenses, income, investments, recurring, settings
+from routes import accounts, auth, budget, categories, dashboard, data_io, expenses, income, investments, recurring, settings, shared
 
 
 def _resolve_secret_key():
@@ -74,6 +74,7 @@ for module in (
     categories,
     recurring,
     budget,
+    shared,
     investments,
     settings,
     data_io,

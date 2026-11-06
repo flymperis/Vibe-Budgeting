@@ -380,6 +380,7 @@
                 "panel-recurring": "recurring",
                 "panel-transfer": "transfer",
                 "panel-budget": "budget",
+                "panel-shared": "shared",
                 "panel-summary": "summary",
                 "panel-yearly": "yearly",
                 "panel-reports": "reports",
@@ -846,6 +847,8 @@
             { modal: document.getElementById("home-modal-income"), buttons: [document.getElementById("home-btn-income")], kind: "income" },
             { modal: document.getElementById("recurring-modal-add"), buttons: [document.getElementById("recurring-btn-add")], kind: "recurring" },
             { modal: document.getElementById("budget-modal-copy"), buttons: [document.getElementById("budget-copy-month-btn")], kind: "budget-copy" },
+            { modal: document.getElementById("shared-modal-expense"), buttons: [document.getElementById("shared-btn-expense")], kind: "shared-expense" },
+            { modal: document.getElementById("shared-modal-settle"), buttons: [document.getElementById("shared-btn-settle")], kind: "shared-settle" },
         ].map(function (entry) {
             entry.buttons = entry.buttons.filter(Boolean);
             return entry;
@@ -1690,4 +1693,242 @@
             }
         });
     });
+})();
+
+/* Shared expenses: live split preview in the add/edit sheet, the add-vs-edit
+   mode of that sheet, and settle-up prefills from the suggested payments.
+   Opening the sheets goes through their trigger buttons so the existing
+   home-modal plumbing (focus, Escape, backdrop) stays in one place. */
+(function () {
+    const expenseForm = document.getElementById("shared-expense-form");
+    const settleForm = document.getElementById("shared-settle-form");
+    if (!expenseForm && !settleForm) {
+        return;
+    }
+
+    function toCents(raw) {
+        const n = parseFloat(String(raw || "").replace(",", "."));
+        return isNaN(n) || n < 0 ? 0 : Math.round(n * 100);
+    }
+
+    function fmt(cents) {
+        const sign = cents < 0 ? "-" : "";
+        const abs = Math.abs(cents);
+        const whole = Math.floor(abs / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return sign + whole + "," + String(abs % 100).padStart(2, "0") + " €";
+    }
+
+    // Same largest-remainder rounding as shared.allocate on the server.
+    function allocate(total, weights) {
+        const sum = weights.reduce(function (a, b) { return a + b; }, 0);
+        if (sum <= 0) {
+            return weights.map(function () { return 0; });
+        }
+        const exact = weights.map(function (w) { return (total * w) / sum; });
+        const parts = exact.map(Math.floor);
+        let left = total - parts.reduce(function (a, b) { return a + b; }, 0);
+        const order = exact
+            .map(function (x, i) { return { i: i, frac: x - parts[i] }; })
+            .sort(function (a, b) { return b.frac - a.frac || a.i - b.i; });
+        for (let k = 0; k < order.length && left > 0; k++, left--) {
+            parts[order[k].i] += 1;
+        }
+        return parts;
+    }
+
+    let prefilling = false;
+
+    // The data-picker buttons only relabel themselves on "change", which
+    // neither form.reset() nor setting .value fires.
+    function syncPickers(form) {
+        form.querySelectorAll("select[data-picker]").forEach(function (select) {
+            select.dispatchEvent(new Event("change"));
+        });
+    }
+
+    if (expenseForm) {
+        const selfId = expenseForm.getAttribute("data-self-id");
+        const amountInput = expenseForm.querySelector("input[name='amount']");
+        const methodSelect = expenseForm.querySelector("[data-split-method]");
+        const paidBySelect = expenseForm.querySelector("select[name='paid_by']");
+        const rows = Array.prototype.slice.call(expenseForm.querySelectorAll(".shared-split-row"));
+        const status = expenseForm.querySelector("[data-split-status]");
+        const recordToggle = expenseForm.querySelector("[data-record-toggle]");
+        const recordFields = expenseForm.querySelector("[data-record-fields]");
+        const paidFromField = expenseForm.querySelector("[data-paid-from-field]");
+        const categoryField = expenseForm.querySelector("select[name='category_id']").closest(".home-modal-field");
+        const recordHint = expenseForm.querySelector("[data-record-hint]");
+        const title = document.getElementById("shared-modal-expense-title");
+        const placeholders = { exact: "0.00", percent: "%", shares: "1" };
+
+        function refresh() {
+            const method = methodSelect.value;
+            const total = toCents(amountInput.value);
+            const shares = {};
+            rows.forEach(function (row) {
+                const include = row.querySelector("[data-split-include]");
+                const value = row.querySelector("[data-split-value]");
+                include.hidden = method !== "equal";
+                value.hidden = method === "equal";
+                value.placeholder = placeholders[method] || "";
+                value.step = method === "exact" ? "0.01" : "any";
+            });
+
+            let message = "";
+            let ok = true;
+            if (method === "equal") {
+                const included = rows.filter(function (r) { return r.querySelector("[data-split-include]").checked; });
+                const parts = allocate(total, included.map(function () { return 1; }));
+                included.forEach(function (r, i) { shares[r.dataset.personId] = parts[i]; });
+                ok = included.length > 0;
+                message = ok ? (total ? "About " + fmt(parts[parts.length - 1] || 0) + " each" : "") : "Pick at least one person.";
+            } else if (method === "exact") {
+                let assigned = 0;
+                rows.forEach(function (r) {
+                    const c = toCents(r.querySelector("[data-split-value]").value);
+                    shares[r.dataset.personId] = c;
+                    assigned += c;
+                });
+                const left = total - assigned;
+                ok = left === 0;
+                message = left === 0 ? "Adds up." : left > 0 ? fmt(left) + " left to assign" : fmt(-left) + " too much";
+            } else {
+                const weights = rows.map(function (r) {
+                    const n = parseFloat(String(r.querySelector("[data-split-value]").value || "").replace(",", "."));
+                    return isNaN(n) || n < 0 ? 0 : n;
+                });
+                const sum = weights.reduce(function (a, b) { return a + b; }, 0);
+                const parts = allocate(total, weights);
+                rows.forEach(function (r, i) { shares[r.dataset.personId] = parts[i]; });
+                if (method === "percent") {
+                    ok = Math.abs(sum - 100) < 0.01;
+                    message = ok ? "Adds up to 100%." : "Total " + (Math.round(sum * 100) / 100) + "% of 100%";
+                } else {
+                    ok = sum > 0;
+                    message = ok ? sum + " share" + (sum === 1 ? "" : "s") + " in total" : "Give someone a share.";
+                }
+            }
+            rows.forEach(function (r) {
+                const c = shares[r.dataset.personId];
+                r.querySelector("[data-split-share]").textContent = c ? fmt(c) : "";
+            });
+            status.textContent = message;
+            status.classList.toggle("is-bad", !ok);
+
+            const iPaid = paidBySelect.value === selfId;
+            const myShare = shares[selfId] || 0;
+            recordFields.hidden = !recordToggle.checked;
+            paidFromField.hidden = !iPaid;
+            categoryField.hidden = myShare === 0;
+            if (!iPaid && myShare === 0) {
+                recordHint.textContent = "You are not part of this bill, so nothing goes into your budget.";
+            } else if (!recordToggle.checked) {
+                recordHint.textContent = "";
+            } else if (iPaid) {
+                const lent = total - myShare;
+                recordHint.textContent = (myShare ? fmt(myShare) + " goes to your budget" : "Nothing goes to your budget") +
+                    (lent > 0 ? "; the " + fmt(lent) + " you lent moves to Shared balances." : ".");
+            } else {
+                recordHint.textContent = fmt(myShare) + " goes to your budget, owed through Shared balances.";
+            }
+        }
+
+        function resetToAdd() {
+            expenseForm.reset();
+            expenseForm.action = expenseForm.getAttribute("data-add-action");
+            title.textContent = title.getAttribute("data-title-add");
+            syncPickers(expenseForm);
+            refresh();
+        }
+
+        function loadForEdit(data) {
+            expenseForm.reset();
+            expenseForm.action = expenseForm.getAttribute("data-edit-action").replace(/\/0\/edit$/, "/" + data.id + "/edit");
+            title.textContent = title.getAttribute("data-title-edit");
+            amountInput.value = data.amount;
+            expenseForm.querySelector("input[name='description']").value = data.description;
+            expenseForm.querySelector("input[name='spent_on']").value = data.spent_on;
+            paidBySelect.value = String(data.paid_by);
+            methodSelect.value = data.split_method;
+            rows.forEach(function (r) {
+                const pid = r.dataset.personId;
+                r.querySelector("[data-split-include]").checked = data.included.indexOf(Number(pid)) !== -1;
+                r.querySelector("[data-split-value]").value = data.values[pid] || "";
+            });
+            recordToggle.checked = !!data.record_personal;
+            if (data.category_id) {
+                expenseForm.querySelector("select[name='category_id']").value = String(data.category_id);
+            }
+            if (data.account_id) {
+                expenseForm.querySelector("select[name='account_id']").value = String(data.account_id);
+            }
+            syncPickers(expenseForm);
+            refresh();
+        }
+
+        expenseForm.addEventListener("input", refresh);
+        expenseForm.addEventListener("change", refresh);
+
+        const addBtn = document.getElementById("shared-btn-expense");
+        if (addBtn) {
+            addBtn.addEventListener("click", function () {
+                if (!prefilling) {
+                    resetToAdd();
+                }
+            });
+        }
+        document.querySelectorAll("[data-shared-edit]").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                let data;
+                try {
+                    data = JSON.parse(btn.getAttribute("data-shared-edit"));
+                } catch (e) {
+                    return;
+                }
+                loadForEdit(data);
+                if (addBtn) {
+                    prefilling = true;
+                    addBtn.click();
+                    prefilling = false;
+                }
+            });
+        });
+        refresh();
+    }
+
+    if (settleForm) {
+        const selfId = settleForm.getAttribute("data-self-id");
+        const fromSel = settleForm.querySelector("select[name='from_person_id']");
+        const toSel = settleForm.querySelector("select[name='to_person_id']");
+        const record = settleForm.querySelector("[data-settle-record]");
+        const recordToggle = settleForm.querySelector("[data-record-toggle]");
+        const recordFields = settleForm.querySelector("[data-record-fields]");
+        const accountLabel = settleForm.querySelector("[data-settle-account-label]");
+
+        function refreshSettle() {
+            const iPay = fromSel.value === selfId;
+            const iReceive = toSel.value === selfId;
+            record.hidden = !(iPay || iReceive);
+            recordFields.hidden = !recordToggle.checked;
+            accountLabel.textContent = iPay ? "Paid from" : "Received into";
+        }
+        settleForm.addEventListener("change", refreshSettle);
+        refreshSettle();
+
+        const settleBtn = document.getElementById("shared-btn-settle");
+        document.querySelectorAll("[data-shared-settle-prefill]").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                fromSel.value = btn.getAttribute("data-from");
+                toSel.value = btn.getAttribute("data-to");
+                settleForm.querySelector("input[name='amount']").value = btn.getAttribute("data-amount");
+                syncPickers(settleForm);
+                refreshSettle();
+                if (settleBtn) {
+                    prefilling = true;
+                    settleBtn.click();
+                    prefilling = false;
+                }
+            });
+        });
+    }
 })();

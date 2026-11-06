@@ -5275,3 +5275,411 @@ select:disabled {
         width: auto;
     }
 }
+
+/* --- Shared expenses ---------------------------------------------------- */
+
+/* Several rows below set display on elements JS hides with [hidden]. */
+#panel-shared [hidden],
+.shared-expense-form [hidden],
+.shared-settle-form [hidden] {
+    display: none !important;
+}
+
+.shared-hero {
+    margin-bottom: 1rem;
+}
+
+.shared-avatar {
+    border-radius: 999px;
+}
+
+.shared-avatar-self {
+    background: var(--accent);
+    color: var(--accent-content);
+}
+
+.shared-balance-word {
+    flex: 0 0 auto;
+    font-size: 0.8rem;
+}
+
+.shared-group-row {
+    align-items: center;
+}
+
+.shared-group-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.shared-group-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shared-group-members {
+    font-size: 0.8rem;
+    font-weight: 400;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shared-group-balance {
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-align: right;
+}
+
+.shared-card {
+    margin: 0 0 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border-c);
+    border-radius: 12px;
+}
+
+.shared-card-summary {
+    cursor: pointer;
+    padding: 0.75rem 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.shared-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0 0.85rem 0.9rem;
+}
+
+.shared-member-picks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.shared-member-picks legend {
+    width: 100%;
+    margin-bottom: 0.3rem;
+}
+
+.shared-add-person {
+    margin-bottom: 0.75rem;
+}
+
+.shared-people-count {
+    flex: 0 0 auto;
+    font-size: 0.8rem;
+}
+
+.shared-person-edit {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.shared-person-edit > summary {
+    list-style: none;
+}
+
+.shared-person-edit > summary::-webkit-details-marker {
+    display: none;
+}
+
+.shared-person-edit-body {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 16rem;
+    padding: 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border-c);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+.shared-back-link {
+    display: inline-block;
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.shared-group-title {
+    margin-bottom: 0.15rem;
+}
+
+.shared-quick-bar {
+    margin-bottom: 1rem;
+}
+
+.shared-suggestion-mine .home-balances-name {
+    color: var(--accent);
+}
+
+.shared-record-btn {
+    flex: 0 0 auto;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.85rem;
+}
+
+.shared-activity {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.shared-activity-row {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.7rem 0.85rem;
+    border-bottom: 1px solid var(--border-c);
+}
+
+.shared-activity-row:last-child {
+    border-bottom: 0;
+}
+
+.shared-activity-date {
+    flex: 0 0 5.6rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    padding-top: 0.1rem;
+}
+
+.shared-activity-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.shared-activity-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.85rem;
+}
+
+.shared-activity-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shared-activity-amount {
+    flex: 0 0 auto;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.shared-activity-effect {
+    flex: 0 0 auto;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.shared-activity-payment .shared-activity-title {
+    font-weight: 500;
+}
+
+.shared-activity-details > summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.shared-split-breakdown {
+    list-style: none;
+    margin: 0.4rem 0;
+    padding: 0;
+    font-size: 0.85rem;
+}
+
+.shared-split-breakdown li {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.15rem 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.shared-activity-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.shared-inline-delete {
+    flex: 0 0 auto;
+}
+
+.btn-link-danger {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--neg);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-link-danger:hover {
+    background: none;
+    text-decoration: underline;
+}
+
+.shared-member-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.shared-member-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border-c);
+}
+
+/* Add/edit sheet: one row per member with include tick or value input. */
+.shared-split-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0.75rem 0;
+    padding: 0.6rem 0.75rem;
+    background: var(--surface-alt);
+    border-radius: 12px;
+}
+
+.shared-split-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 2.2rem;
+}
+
+.shared-split-who {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.shared-split-value {
+    width: 6.5rem;
+    flex: 0 0 auto;
+}
+
+.shared-split-share {
+    flex: 0 0 5.5rem;
+    text-align: right;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.shared-split-status {
+    margin: 0.2rem 0 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.shared-split-status.is-bad {
+    color: var(--neg);
+    font-weight: 600;
+}
+
+.shared-record {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.shared-record .small-hint {
+    margin: 0;
+}
+
+.shared-tag {
+    display: inline-block;
+    margin-left: 0.3rem;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    vertical-align: middle;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.shared-tag-pending {
+    color: var(--muted);
+    background: color-mix(in srgb, var(--muted) 16%, transparent);
+}
+
+.shared-invitations form {
+    flex: 0 0 auto;
+}
+
+.shared-unrecorded {
+    margin: 0.1rem 0 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--color-warning, #b45309);
+}
+
+.shared-record-form {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.35rem 0;
+}
+
+.shared-add-member {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.shared-add-member input,
+.shared-add-member select {
+    flex: 1 1 10rem;
+    min-width: 0;
+}
+
+.btn-link {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-link:hover {
+    background: none;
+    text-decoration: underline;
+}
