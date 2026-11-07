@@ -1,4 +1,5 @@
 from flask import Flask, abort, g, redirect, request, session, url_for
+from datetime import timedelta
 import hmac
 import mimetypes
 import os
@@ -63,6 +64,11 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     # Enable only when served over HTTPS (set VB_SECURE_COOKIES=true behind TLS).
     SESSION_COOKIE_SECURE=_env_flag("VB_SECURE_COOKIES", False),
+    # Logins are permanent sessions: without an expiry the cookie is dropped
+    # whenever an iOS home-screen app is closed. Flask pushes the expiry
+    # forward on every request, so an app opened at least once a year never
+    # asks for the password again.
+    PERMANENT_SESSION_LIFETIME=timedelta(days=365),
 )
 
 for module in (

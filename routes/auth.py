@@ -30,6 +30,7 @@ def login():
         password_hash = row["password_hash"] if row else _DUMMY_PASSWORD_HASH
         password_ok = check_password_hash(password_hash, password)
         if row and password_ok:
+            session.permanent = True
             session["user_id"] = row["id"]
             session["username"] = username
             nxt = _safe_next_url(request.form.get("next")) or _safe_next_url(request.args.get("next"))
@@ -72,6 +73,7 @@ def register():
             flash("That username is already taken.", "error")
             return render_template("register.html")
         conn.close()
+        session.permanent = True
         session["user_id"] = uid
         session["username"] = username
         flash("Account created.", "success")

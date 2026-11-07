@@ -26,6 +26,37 @@ def test_logout_requires_csrf_then_succeeds(client):
     assert resp.status_code in (302, 308)  # bounced to /login once logged out
 
 
+def _session_cookie_header(resp) -> str:
+    cookies = [h for h in resp.headers.getlist("Set-Cookie") if h.startswith("session=")]
+    assert cookies, "login did not set a session cookie"
+    return cookies[-1]
+
+
+def test_login_cookie_survives_closing_the_app(app, client):
+    """A cookie without Expires is dropped whenever an iOS home-screen app is
+    closed, so logins must set a long-lived expiry."""
+    from datetime import datetime, timedelta, timezone
+    from email.utils import parsedate_to_datetime
+
+    from .conftest import _extract_csrf
+
+    register_and_login(client, "pwa-user")
+
+    fresh = app.test_client()
+    token = _extract_csrf(fresh.get("/login").get_data(as_text=True))
+    resp = fresh.post(
+        "/login",
+        data={"username": "pwa-user", "password": "correct-horse-battery-staple", "_csrf_token": token},
+    )
+    assert resp.status_code in (302, 303)
+
+    header = _session_cookie_header(resp)
+    match = re.search(r"Expires=([^;]+)", header)
+    assert match, f"session cookie has no expiry: {header}"
+    expires = parsedate_to_datetime(match.group(1))
+    assert expires - datetime.now(timezone.utc) > timedelta(days=300)
+
+
 def test_dashboard_loads_every_panel(client):
     register_and_login(client, "carol")
     for panel in sorted(config.ALLOWED_PANELS):
