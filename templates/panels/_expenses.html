@@ -11,10 +11,8 @@
         {% if expense_filter_category_id %}
             <input name="exp_category" type="hidden" value="{{ expense_filter_category_id }}">
         {% endif %}
-        <div class="notes-field">
-            <textarea name="notes" placeholder="Notes — add #tags to group, e.g. #trip2026" rows="2"></textarea>
-            {{ tag_suggestions(recent_tags) }}
-        </div>
+        <textarea name="notes" placeholder="Notes — add #tags to group, e.g. #trip2026" rows="2"></textarea>
+        {{ tag_suggestions(recent_tags) }}
         <div class="amount-sign-field" data-amount-sign-field>
             <button type="button" class="amount-sign-toggle" data-amount-sign-toggle aria-pressed="false" aria-label="Amount sign: expense">&minus;</button>
             <input name="amount" placeholder="Amount" required step="any" type="number">

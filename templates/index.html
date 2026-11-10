@@ -569,6 +569,7 @@
     </button>
 
     {# Bank badges keyed by account name, for the JS select pickers (setupSelectPickers). #}
+    <script type="application/json" id="tag-names">{{ (all_tag_names or [])|tojson }}</script>
     <script type="application/json" id="bank-badges">{{ bank_badges_for((accounts or [])|map(attribute='name'))|tojson }}</script>
     <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </body>

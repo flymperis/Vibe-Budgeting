@@ -479,7 +479,8 @@ def index():
     reports_tags = tags.summary(conn, uid)
     selected_tag = (request.args.get("tag") or "").strip()
     reports_tag = tags.detail(conn, uid, selected_tag) if selected_tag else None
-    recent_tags = [t["tag"] for t in reports_tags[:8]]
+    recent_tags = tags.chip_tags(reports_tags, today_d)
+    all_tag_names = [t["tag"] for t in reports_tags]
     report_account_id = normalize_report_account(request.args.get("report_account"), conn, uid)
     report_account_label = "All accounts"
     if report_account_id is not None:
@@ -677,6 +678,7 @@ def index():
         reports_tag=reports_tag,
         selected_tag=selected_tag,
         recent_tags=recent_tags,
+        all_tag_names=all_tag_names,
         report_account_id=report_account_id,
         report_account_label=report_account_label,
         report_live_balance=report_live_balance,

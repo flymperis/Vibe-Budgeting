@@ -87,7 +87,8 @@ def test_web_tag_report_adds_up_across_categories(client):
 
     listing = client.get("/?panel=expenses").get_data(as_text=True)
     assert 'class="tag-chip" href="/?panel=reports&amp;reports_section=tags&amp;tag=trip2026"' in listing
-    assert 'data-add-tag="' in listing  # recent-tag chips under the notes field
+    assert 'data-tag-suggest' in listing and 'data-add-tag="' not in listing  # July is too long ago for chips
+    assert '<script type="application/json" id="tag-names">' in listing and "trip2026" in listing.split('id="tag-names">')[1][:200]
     report = client.get("/?panel=reports&reports_section=tags").get_data(as_text=True)
     assert "#TRIP2026" in report or "#trip2026" in report
     one = client.get("/?panel=reports&reports_section=tags&tag=trip2026").get_data(as_text=True)
@@ -145,3 +146,10 @@ def test_shared_bill_keeps_its_tag_in_my_share(client, tg):
     detail = tags.detail(conn, uid, "πάρτι")
     conn.close()
     assert detail["spent"] == 15.0  # only my share is my spending
+
+
+def test_chips_offer_only_a_few_recently_used_tags():
+    from datetime import date
+    rows = [{"tag": f"t{i}", "last": f"2026-11-{10 - i:02d}"} for i in range(9)] + [{"tag": "old", "last": "2026-01-01"}]
+    assert tags.chip_tags(rows, date(2026, 11, 10)) == ["t0", "t1", "t2", "t3", "t4", "t5"]
+    assert tags.chip_tags([{"tag": "old", "last": "2026-08-01"}], date(2026, 11, 10)) == []

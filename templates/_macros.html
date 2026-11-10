@@ -235,12 +235,13 @@
 {%- endmacro %}
 
 
+{# Recent tags as toggle chips under a notes field. The container is always
+   there (empty and hidden when there is nothing to show) because typing "#"
+   fills it with matching tags from the whole list (app.js). #}
 {% macro tag_suggestions(tags) -%}
-{%- if tags %}
-<div class="tag-suggest" aria-label="Recent tags">
-    {%- for t in tags %}
-    <button class="tag-chip tag-chip-add" data-add-tag="{{ t }}" type="button">#{{ t }}</button>
-    {%- endfor %}
+<div class="tag-suggest" data-tag-suggest aria-label="Tags">
+    {%- for t in tags -%}
+    <button class="tag-chip tag-chip-add" data-add-tag="{{ t }}" aria-pressed="false" type="button">#{{ t }}</button>
+    {%- endfor -%}
 </div>
-{%- endif %}
 {%- endmacro %}

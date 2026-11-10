@@ -11,10 +11,8 @@
         {% if income_filter_category_id %}
             <input name="inc_category" type="hidden" value="{{ income_filter_category_id }}">
         {% endif %}
-        <div class="notes-field">
-            <textarea name="notes" placeholder="Notes — add #tags to group, e.g. #trip2026" rows="2"></textarea>
-            {{ tag_suggestions(recent_tags) }}
-        </div>
+        <textarea name="notes" placeholder="Notes — add #tags to group, e.g. #trip2026" rows="2"></textarea>
+        {{ tag_suggestions(recent_tags) }}
         <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
         <select name="category_id" required>
             {% for category in income_categories %}

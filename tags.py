@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import timedelta
 from urllib.parse import urlencode
 
 from markupsafe import Markup, escape
@@ -149,6 +150,18 @@ def detail(conn, user_id: int, tag: str) -> dict | None:
 
 def recent(conn, user_id: int, limit: int = 8) -> list[str]:
     return [t["tag"] for t in summary(conn, user_id)[:limit]]
+
+
+CHIP_LIMIT = 6
+CHIP_RECENT_DAYS = 90
+
+
+def chip_tags(rows: list[dict], today, limit: int = CHIP_LIMIT, days: int = CHIP_RECENT_DAYS) -> list[str]:
+    """The few tags offered as one-tap chips under a notes field: used in the
+    last `days` days, most recent first. Older ones are still found by typing
+    "#" (see the full list the page carries)."""
+    cutoff = (today - timedelta(days=days)).isoformat()
+    return [t["tag"] for t in rows if t["last"] >= cutoff][:limit]
 
 
 # --- display ------------------------------------------------------------------------

@@ -7,26 +7,152 @@
     const menuButtons = document.querySelectorAll(".menu-item, .bottom-nav-item[data-target]");
     const panels = document.querySelectorAll(".panel");
 
-    // Recent-tag chips under notes fields: tapping one appends "#tag" to the
-    // notes (or a shared bill's description) of the same form. Registered up
+    // Tag chips under notes fields (templates/_macros.html tag_suggestions).
+    // A chip toggles its tag in the notes (or a shared bill's description);
+    // typing "#" plus a few letters swaps the recent chips for matching tags
+    // from the whole list, and picking one completes the word. Registered up
     // here because later sections of this file return early on some pages.
-    document.addEventListener("click", function (e) {
-        const chip = e.target.closest("[data-add-tag]");
-        if (!chip) {
-            return;
+    (function () {
+        const NOTES_FIELDS = "textarea[name=notes], input[name=notes], input[name=description]";
+        const SUGGEST_LIMIT = 6;
+        let allTags = [];
+        try {
+            allTags = JSON.parse((document.getElementById("tag-names") || {}).textContent || "[]");
+        } catch (err) {
+            allTags = [];
         }
-        const form = chip.closest("form");
-        const field = form && form.querySelector("textarea[name=notes], input[name=notes], input[name=description]");
-        if (!field) {
-            return;
+
+        // Same rule as tags.tag_key on the server: no "#", no case, no accents.
+        function foldTag(text) {
+            return String(text).replace(/^#/, "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
         }
-        const tag = "#" + chip.dataset.addTag;
-        const words = field.value.toLowerCase().split(/\s+/);
-        if (!words.includes(tag.toLowerCase())) {
-            field.value = (field.value.trim() + " " + tag).trim();
+
+        function tagsIn(value) {
+            return new Set((value.match(/#[\p{L}\p{N}_-]+/gu) || []).map(foldTag));
         }
-        field.focus();
-    });
+
+        function removeTag(value, tag) {
+            const wanted = foldTag(tag);
+            return value
+                .split(/(\s+)/)
+                .filter(function (part) {
+                    return !(part.startsWith("#") && foldTag(part.replace(/[.,;:!?)]+$/, "")) === wanted);
+                })
+                .join("")
+                .replace(/[ \t]{2,}/g, " ")
+                .trim();
+        }
+
+        function partsOf(container) {
+            const form = container.closest("form");
+            return { form: form, field: form && form.querySelector(NOTES_FIELDS) };
+        }
+
+        function chip(tag, completes) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "tag-chip tag-chip-add" + (completes ? " tag-chip-complete" : "");
+            button.dataset.addTag = tag;
+            if (completes) {
+                button.dataset.complete = "1";
+            } else {
+                button.setAttribute("aria-pressed", "false");
+            }
+            button.textContent = "#" + tag;
+            return button;
+        }
+
+        function sync(container, field) {
+            const present = tagsIn(field.value);
+            container.querySelectorAll("[data-add-tag]:not([data-complete])").forEach(function (button) {
+                const on = present.has(foldTag(button.dataset.addTag));
+                button.setAttribute("aria-pressed", on ? "true" : "false");
+                button.classList.toggle("is-on", on);
+            });
+        }
+
+        // The "#abc" being typed just before the caret, if any.
+        function typedTag(field) {
+            const caret = field.selectionStart == null ? field.value.length : field.selectionStart;
+            const match = field.value.slice(0, caret).match(/(^|\s)#([\p{L}\p{N}_-]+)$/u);
+            return match ? { text: match[2], end: caret, start: caret - match[2].length - 1 } : null;
+        }
+
+        function showRecent(container) {
+            if (container.dataset.mode === "complete") {
+                container.replaceChildren(...(container._recent || []));
+                container.dataset.mode = "recent";
+            }
+        }
+
+        function refresh(container, field) {
+            if (!container._recent) {
+                container._recent = Array.from(container.children);
+            }
+            const typed = typedTag(field);
+            const present = tagsIn(field.value);
+            const matches = typed
+                ? allTags.filter(function (tag) {
+                    const key = foldTag(tag);
+                    return key.startsWith(foldTag(typed.text)) && key !== foldTag(typed.text) && !present.has(key);
+                }).slice(0, SUGGEST_LIMIT)
+                : [];
+            if (matches.length) {
+                container.replaceChildren(...matches.map(function (tag) { return chip(tag, true); }));
+                container.dataset.mode = "complete";
+            } else {
+                showRecent(container);
+            }
+            sync(container, field);
+        }
+
+        document.addEventListener("click", function (e) {
+            const button = e.target.closest("[data-add-tag]");
+            const container = button && button.closest("[data-tag-suggest]");
+            const field = container && partsOf(container).field;
+            if (!field) {
+                return;
+            }
+            const tag = button.dataset.addTag;
+            if (button.dataset.complete) {
+                const typed = typedTag(field);
+                if (typed) {
+                    field.value = field.value.slice(0, typed.start) + "#" + tag + " " + field.value.slice(typed.end).replace(/^\s+/, "");
+                    const caret = typed.start + tag.length + 2;
+                    field.setSelectionRange(caret, caret);
+                } else {
+                    field.value = (field.value.trim() + " #" + tag).trim();
+                }
+            } else if (tagsIn(field.value).has(foldTag(tag))) {
+                field.value = removeTag(field.value, tag);
+            } else {
+                field.value = (field.value.trim() + " #" + tag).trim();
+            }
+            // Completions come from typing only; after a tap show the recent chips.
+            showRecent(container);
+            sync(container, field);
+            field.focus();
+        });
+
+        document.addEventListener("input", function (e) {
+            const field = e.target.closest && e.target.closest(NOTES_FIELDS);
+            const container = field && field.form && field.form.querySelector("[data-tag-suggest]");
+            if (container) {
+                refresh(container, field);
+            }
+        });
+
+        // Forms are reset after a quick add; put the recent chips back.
+        document.addEventListener("reset", function (e) {
+            const container = e.target.querySelector && e.target.querySelector("[data-tag-suggest]");
+            if (container) {
+                setTimeout(function () {
+                    showRecent(container);
+                    sync(container, partsOf(container).field);
+                }, 0);
+            }
+        }, true);
+    })();
 
     // Mirrors the active panel onto <body> for CSS that needs to key off it
     // but should not depend on :has() support: .is-home-panel shows the

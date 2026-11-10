@@ -3506,6 +3506,13 @@ form + form {
 
 .home-modal-field-notes {
     align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+/* Tag chips get a line of their own under the label and the notes. */
+.home-modal-field-notes .tag-suggest {
+    flex: 1 0 100%;
+    margin: 0.1rem 0 0;
 }
 
 /* Textareas default to a monospace font and carry the base form padding, so
@@ -5730,27 +5737,38 @@ select:disabled {
     background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-/* Notes textarea plus its tag buttons, sized like the textarea used to be. */
-.notes-field {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 260px;
-    min-width: 220px;
+.tag-suggest:empty {
+    display: none;
 }
 
-.notes-field textarea,
-:is(#panel-expenses, #panel-income) .panel-add-form .notes-field textarea {
-    flex: none;
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
+/* A tag already in the notes: tapping it again takes it out. */
+.tag-suggest .tag-chip-add.is-on,
+:is(#panel-home, #panel-expenses, #panel-income, #panel-recurring, #panel-transfer) .tag-suggest .tag-chip-add.is-on {
+    background: var(--accent);
+    color: var(--accent-content);
+    border-color: var(--accent);
 }
 
-/* The add forms stack into a column here, where a 260px basis would become height. */
-@media (max-width: 900px) {
-    .notes-field {
-        flex: 0 0 auto;
-        min-width: 0;
+/* Completions while typing "#…" are dashed so they read as suggestions. */
+.tag-suggest .tag-chip-complete,
+:is(#panel-home, #panel-expenses, #panel-income, #panel-recurring, #panel-transfer) .tag-suggest .tag-chip-complete {
+    border-style: dashed;
+}
+
+/* Expense/income add forms are one wrapping flex row that stretches every
+   control to the tallest one. On wide screens the tag chips get a line of
+   their own under that row (before the submit button) so the row keeps the
+   textarea's height; stacked on narrow screens they sit right under Notes,
+   where they are in the markup. */
+@media (min-width: 901px) {
+    :is(#panel-expenses, #panel-income) .panel-add-form > .tag-suggest {
+        order: 1;
+        flex: 1 0 100%;
+        margin: -0.15rem 0 0;
+    }
+
+    :is(#panel-expenses, #panel-income) .panel-add-form > button[type="submit"] {
+        order: 2;
     }
 }
 
