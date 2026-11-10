@@ -3,6 +3,7 @@ from urllib.error import HTTPError, URLError
 import integrations
 import json
 import telegram_bot
+import telegram_notify
 
 from db import get_connection
 from helpers import _integrations_from_request, redirect_home
@@ -145,4 +146,17 @@ def telegram_default_account():
         return redirect_home(panel="settings", settings_section="integrations")
     conn.close()
     flash("Telegram default account updated.", "success")
+    return redirect_home(panel="settings", settings_section="integrations")
+
+@bp.route("/settings/telegram/notifications", methods=["POST"])
+def telegram_notifications():
+    try:
+        prefs = telegram_notify.parse_prefs_form(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect_home(panel="settings", settings_section="integrations")
+    conn = get_connection()
+    telegram_notify.save_prefs(conn, g.user_id, prefs)
+    conn.close()
+    flash("Telegram notifications saved.", "success")
     return redirect_home(panel="settings", settings_section="integrations")

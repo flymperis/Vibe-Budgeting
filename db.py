@@ -9,6 +9,7 @@ import shared
 import sqlite3
 import sys
 import telegram_bot
+import telegram_notify
 
 
 def _sqlite_db_path():
@@ -160,6 +161,7 @@ def migrate_schema(conn):
     migrate_stock_month_prices(conn)
     integrations.migrate_user_integrations(conn)
     telegram_bot.migrate_telegram(conn)
+    telegram_notify.migrate(conn)
     budget.migrate_budgets(conn)
     shared.migrate_shared(conn)
     migrate_add_indexes(conn)

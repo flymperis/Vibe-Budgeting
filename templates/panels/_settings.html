@@ -249,6 +249,24 @@
                                 <button type="submit">Save default account</button>
                             </div>
                         </form>
+                        <form action="{{ url_for('settings.telegram_notifications') }}" class="integrations-form" method="post">
+                            <input name="month" type="hidden" value="{{ month_filter }}">
+                            <input name="next_panel" type="hidden" value="settings">
+                            <input name="settings_section" type="hidden" value="integrations">
+                            <p class="field-label">Notifications</p>
+                            {% for kind, label in telegram_notify_kinds.items() %}
+                                <label class="checkbox-row">
+                                    <input name="notify_{{ kind }}" type="checkbox" value="1" {% if telegram_notify_prefs[kind] %}checked{% endif %}>
+                                    <span>{{ label }}</span>
+                                </label>
+                            {% endfor %}
+                            <label class="field-label" for="telegram-card-days">Remind about card payments this many days before</label>
+                            <input id="telegram-card-days" max="14" min="1" name="card_days" required step="1" type="number" value="{{ telegram_notify_prefs.card_days }}">
+                            <p class="muted small-hint">Budget alerts need budgets switched on; card reminders need a statement and due day on the card. Summaries: Sunday 20:00 and the 1st at 09:00.</p>
+                            <div class="integrations-actions">
+                                <button type="submit">Save notifications</button>
+                            </div>
+                        </form>
                         <form action="{{ url_for('settings.telegram_unlink') }}" method="post">
                             <input name="month" type="hidden" value="{{ month_filter }}">
                             <input name="next_panel" type="hidden" value="settings">

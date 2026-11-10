@@ -22,6 +22,7 @@ Optional environment variables (set under `environment:` in `docker-compose.yml`
 | `ALLOW_REGISTRATION` | `true` or `false` — allow `/register`. |
 | `DATABASE_PATH` | Default `/app/data/database.db` (see `Dockerfile`). |
 | `FINNHUB_API_KEY` | Free key from [finnhub.io](https://finnhub.io) — live stock/ETF prices in **Investments → Stocks**. |
+| `TZ` | Time zone such as `Europe/Athens`. Sets what "today" is for new entries and when Telegram reminders and summaries go out; the container defaults to UTC. |
 
 Stack: Flask app served by Gunicorn in the container; SQLite database file on the mounted volume.
 
@@ -134,6 +135,16 @@ The budget app stays on Tailscale only (`http://personal-disk-share:5000`). Tele
 | photo of a receipt | Total, date and shop read via the OCR model; a caption can name the account or say it's shared |
 | `πόσα ξόδεψα σε delivery τον προηγούμενο μήνα;` | Answered from the database (the AI only plans the lookup) |
 | `/month` `/lastmonth` `/balance` `/owe` `/account` `/undo` `/help` | Commands |
+
+The bot also writes on its own (each can be switched off in **Settings → Integrations** or with `/notifications`):
+
+| Notification | When |
+|---|---|
+| Budget alert | A category passes 80% or 100% of its budget (08:00–23:00, and right after a bot entry) — needs budgets switched on |
+| Card payment | N days before the due date (default 3), on the day, and the day after if unpaid — needs a statement and due day on the card |
+| Bills | 09:00 the day before a recurring expense, with a warning if the account is short |
+| Weekly summary | Sunday 20:00: the week vs your 8-week average, top categories, budget so far, what's coming up |
+| Monthly summary | 1st of the month 09:00 (or the 2nd/3rd if the server was down): last month by category, vs the month before, budget result |
 
 Every entry comes with buttons to change its category, account or date, or undo it. Categories follow your own past
 choices: re-file `efood` under another category once and the bot uses that from then on. Without AI (or if Ollama is

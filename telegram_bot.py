@@ -26,6 +26,7 @@ from urllib.request import Request, urlopen
 import integrations
 import shared
 import telegram_ask
+import telegram_notify
 import telegram_parse as tp
 
 try:
@@ -38,6 +39,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 POLL_IDLE_SLEEP = 10
 POLL_ERROR_SLEEP = 5
 POLL_LONG_TIMEOUT = 30
+NOTIFY_EVERY = 60  # seconds between notification checks
 ALLOWED_UPDATES = ["message", "callback_query"]
 MAX_PHOTO_BYTES = 10 * 1024 * 1024
 
@@ -53,6 +55,7 @@ BOT_COMMANDS = [
     ("balance", "Account balances"),
     ("owe", "Who owes whom in shared groups"),
     ("account", "Default account for new entries"),
+    ("notifications", "Choose which reminders and summaries you get"),
     ("undo", "Remove the last entry made here"),
 ]
 
@@ -880,6 +883,7 @@ def _poll_loop(get_connection: Callable, balance_fn: Callable, lock_path: str) -
     print("[telegram] Polling started (Tailscale-safe, no public URL).", flush=True)
     offset = 0
     commands_token = None
+    last_notify = 0.0
     try:
         while True:
             conn = get_connection()
@@ -894,6 +898,9 @@ def _poll_loop(get_connection: Callable, balance_fn: Callable, lock_path: str) -
             if commands_token != config["bot_token"]:
                 set_bot_commands(config)
                 commands_token = config["bot_token"]
+            if time.monotonic() - last_notify >= NOTIFY_EVERY:
+                last_notify = time.monotonic()
+                _run_notifications(get_connection, config)
 
             updates, err = fetch_updates(config, offset)
             if err:
@@ -921,6 +928,20 @@ def _poll_loop(get_connection: Callable, balance_fn: Callable, lock_path: str) -
                 os.close(lock_fd)
             except OSError:
                 pass
+
+
+def _run_notifications(get_connection: Callable, config: dict) -> None:
+    conn = get_connection()
+    try:
+        telegram_notify.run(conn, _sender(config["bot_token"]))
+    except Exception:  # a failing reminder must not stop the bot
+        print(f"[telegram] Notifications failed:\n{traceback.format_exc()}", flush=True)
+    finally:
+        conn.close()
+
+
+def _sender(bot_token: str):
+    return lambda chat_id, text: send_message(chat_id, text, bot_token=bot_token) is not None
 
 
 def _report_failure(update: dict, config: dict) -> None:
@@ -960,7 +981,10 @@ Ask questions:
 
 Each entry has buttons to change category, account or date, or undo it.
 
-Commands: /month /lastmonth /balance /owe /account /undo /unlink"""
+The bot also writes on its own: budget alerts, card and bill reminders,
+a Sunday summary and a monthly one. /notifications turns each on or off.
+
+Commands: /month /lastmonth /balance /owe /account /notifications /undo /unlink"""
 
 START_TEXT = """Vibe Budgeting bot
 
@@ -1051,8 +1075,19 @@ def _handle_command(text: str, conn, user_id: int, chat_id, balance_fn, bot_toke
             bot_token=bot_token,
             reply_markup={"inline_keyboard": _grid(buttons, 2)},
         )
+    elif command in ("/notifications", "/notify"):
+        send_message(chat_id, "Notifications — tap to turn on or off:", bot_token=bot_token,
+                     reply_markup=_notify_keyboard(conn, user_id))
     else:
         send_message(chat_id, "Unknown command. /help lists what the bot understands.", bot_token=bot_token)
+
+
+def _notify_keyboard(conn, user_id: int) -> dict:
+    prefs = telegram_notify.get_prefs(conn, user_id)
+    return {"inline_keyboard": [
+        [{"text": ("✅ " if prefs[kind] else "▫️ ") + label.split(" (")[0], "callback_data": f"nt:{kind}"}]
+        for kind, label in telegram_notify.KINDS.items()
+    ]}
 
 
 def _image_file_id(message: dict) -> str | None:
@@ -1086,6 +1121,8 @@ def _record(conn, user_id: int, chat_id, txn: tp.Txn, plan, default_account_id, 
             send_message(chat_id, f"❌ {err}", bot_token=bot_token)
         return
     _send_entry(conn, user_id, chat_id, entry_id, bot_token, message_id)
+    if txn.type == "expense":
+        telegram_notify.after_entry(conn, user_id, chat_id, _sender(bot_token))
 
 
 def _handle_text(text: str, conn, user_id: int, chat_id, balance_fn, bot_token: str) -> None:
@@ -1173,6 +1210,14 @@ def handle_callback(cb: dict, conn, config: dict) -> None:
         answer_callback(cb["id"], "Saved" if ok else "Unknown account", bot_token=bot_token)
         if ok:
             edit_message(chat_id, message_id, f"Default account for new entries: {name}", bot_token=bot_token)
+        return
+
+    if parts[0] == "nt" and len(parts) == 2 and parts[1] in telegram_notify.KINDS:
+        prefs = telegram_notify.get_prefs(conn, uid)
+        prefs[parts[1]] = not prefs[parts[1]]
+        telegram_notify.save_prefs(conn, uid, prefs)
+        edit_keyboard(chat_id, message_id, _notify_keyboard(conn, uid), bot_token=bot_token)
+        answer_callback(cb["id"], "On" if prefs[parts[1]] else "Off", bot_token=bot_token)
         return
 
     if parts[0] != "e" or len(parts) < 3 or not parts[1].isdigit():

@@ -5,6 +5,7 @@ import calendar
 import integrations
 import shared
 import telegram_bot
+import telegram_notify
 import time
 
 from config import ALLOWED_PANELS, FINNHUB_API_KEY, LIST_PAGE_SIZE, TRANSFER_LOG_LIMIT
@@ -600,6 +601,7 @@ def index():
     telegram_server = telegram_bot.server_config_for_form(conn)
     telegram_link = telegram_bot.get_telegram_link(conn, uid)
     telegram_link_code = telegram_bot.get_active_link_code(conn, uid)
+    telegram_notify_prefs = telegram_notify.get_prefs(conn, uid)
     telegram_cfg = telegram_bot.get_server_config(conn)
     telegram_enabled = telegram_bot.is_configured(telegram_cfg)
     telegram_bot_username = None
@@ -616,6 +618,8 @@ def index():
         telegram_server=telegram_server,
         telegram_link=telegram_link,
         telegram_link_code=telegram_link_code,
+        telegram_notify_prefs=telegram_notify_prefs,
+        telegram_notify_kinds=telegram_notify.KINDS,
         telegram_enabled=telegram_enabled,
         telegram_bot_username=telegram_bot_username,
         categories=categories,
