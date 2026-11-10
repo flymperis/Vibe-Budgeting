@@ -7,6 +7,7 @@ import secrets
 import sys
 import threading
 
+import backup
 import tags
 import telegram_bot
 
@@ -170,6 +171,13 @@ def amount_class_filter(value):
     return "amount-zero"
 
 
+def arm_background_jobs() -> None:
+    """Start the per-process background threads (gunicorn's post_fork calls
+    this in the worker): the Telegram poller and the nightly backup."""
+    arm_telegram_poller()
+    backup.start_scheduler(DB_PATH)
+
+
 def arm_telegram_poller() -> None:
     global _telegram_poller_armed
     if _telegram_poller_armed:
@@ -196,5 +204,5 @@ if telegram_bot.is_configured(_boot_cfg):
 _conn_boot.close()
 
 if __name__ == "__main__":
-    arm_telegram_poller()
+    arm_background_jobs()
     app.run(host="0.0.0.0", port=5000)

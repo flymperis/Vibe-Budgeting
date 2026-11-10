@@ -11,6 +11,8 @@ services:
       # and summaries go out. Without it the container runs on UTC.
       - TZ=Europe/Athens
       # FINNHUB_API_KEY=your_key_here
+      # Nightly backups go to ./budget-data/backups; see README → Backups to change that.
+      # VB_BACKUP_DIR=/backups-on-another-disk
     volumes:
       - ./budget-data:/app/data
     restart: unless-stopped

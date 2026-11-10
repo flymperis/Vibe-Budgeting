@@ -94,6 +94,36 @@ because daisyUI's unprefixed names collide with classes this app already
 uses — `.card`, `.stats` and `.btn-secondary` all mean something else in
 `styles.css`.
 
+## Backups
+
+The app backs up its database every night at 03:30 (server time, see `TZ`), and straight away on start-up if the
+newest copy is more than a day old. Copies go to `backups/` next to the database (`./budget-data/backups` with the
+Docker setup above), are checked with SQLite's integrity check, and are named `vibe-budgeting-YYYY-MM-DD.db`. The
+14 newest daily copies are kept, plus the last copy of each of the 12 months before; nothing else in the folder is
+touched.
+
+| Variable | Purpose |
+|----------|---------|
+| `VB_BACKUP_DIR` | Folder for backups (default: `backups` next to the database). Point it at another disk to survive a disk failure. |
+| `VB_BACKUP_KEEP_DAYS` | Daily copies to keep (default 14; `0` turns nightly backups off). |
+| `VB_BACKUP_KEEP_MONTHS` | Monthly copies to keep (default 12). |
+| `VB_BACKUP_TIME` | Time of the nightly backup, `HH:MM` (default `03:30`). |
+
+Take a copy by hand, e.g. before an upgrade (the newest 5 per label are kept):
+
+```bash
+docker compose exec vibe-budgeting python -m backup --label predeploy
+```
+
+To restore: stop the container, copy the backup over the database, start it again.
+
+```bash
+docker compose stop
+cp budget-data/backups/vibe-budgeting-2026-11-10.db budget-data/database.db
+rm -f budget-data/database.db-wal budget-data/database.db-shm
+docker compose start
+```
+
 ## Tags
 
 Write `#tags` in the notes of any expense or income, e.g. `καφές #Λονδίνο2026` or `hotel #trip2026`, to see what a
