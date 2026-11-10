@@ -126,8 +126,9 @@
 
                 <h3>Local AI (Ollama)</h3>
                 <p class="muted small-hint">
-                    Required for Telegram. Every message is parsed by Ollama only
-                    (expenses and income). Unknown items → Other. No regex fallback.
+                    Used by the Telegram bot to read messages, receipts and questions.
+                    If Ollama is unreachable, simple messages like "coffee 3.50" are still
+                    recorded by a basic parser.
                 </p>
                 <form action="{{ url_for('settings.save_integrations') }}" class="integrations-form" method="post" id="integrations-ai-form">
                     <input name="month" type="hidden" value="{{ month_filter }}">
@@ -165,6 +166,17 @@
                     >
                     <datalist id="ai-model-options"></datalist>
                     <p class="muted small-hint" id="ai-models-status"></p>
+
+                    <label class="field-label" for="ai-ocr-model">Receipt OCR model (optional)</label>
+                    <input
+                        id="ai-ocr-model"
+                        list="ai-model-options"
+                        name="ai_ocr_model"
+                        placeholder="glm-ocr"
+                        type="text"
+                        value="{{ user_integrations.ai_ocr_model }}"
+                    >
+                    <p class="muted small-hint">Reads receipt photos sent to the Telegram bot. Leave blank to turn photos off.</p>
 
                     <label class="field-label" for="ai-timeout">Timeout (seconds)</label>
                     <input

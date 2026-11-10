@@ -1,0 +1,419 @@
+"""Telegram bot: parsing, recording, buttons, undo, shared bills, receipts and
+questions. Telegram and Ollama are replaced by fakes; the database is real."""
+
+import itertools
+import json
+from datetime import date, timedelta
+
+import pytest
+
+import app as vb_app
+import integrations
+import shared
+import telegram_bot
+import telegram_parse as tp
+
+from .conftest import csrf_token, register_and_login
+
+TODAY = date.today()
+_chat_ids = itertools.count(555000)
+_current = {"chat": None}
+
+
+# --- pure parsing -----------------------------------------------------------------
+
+
+def test_amounts_skip_dates_times_units_and_percentages():
+    assert [a.value for a in tp.find_amounts("χθες καφές 3.50")] == [3.5]
+    assert [a.value for a in tp.find_amounts("καφές 3, βενζίνη 40")] == [3.0, 40.0]
+    assert [a.value for a in tp.find_amounts("15ευρώ σουβλάκια")] == [15.0]
+    assert [a.value for a in tp.find_amounts("τυρί 400g 5,60")] == [5.6]
+    assert [a.value for a in tp.find_amounts("10/11 18:42 ΦΠΑ 13% total 19.01")] == [19.01]
+    assert tp.find_amounts("τι χρωστάω") == []
+
+
+def test_dates_from_words_and_numbers():
+    today = date(2026, 11, 10)
+    assert tp.detect_date("χθες καφές 3", today) == date(2026, 11, 9)
+    assert tp.detect_date("προχθές 5", today) == date(2026, 11, 8)
+    assert tp.detect_date("yesterday coffee 3", today) == date(2026, 11, 9)
+    assert tp.detect_date("5/11 ταξί 12", today) == date(2026, 11, 5)
+    assert tp.detect_date("20/12 δώρο 30", today) == date(2025, 12, 20)  # no future dates
+    assert tp.detect_date("σούπερ 19.01", today) is None  # an amount, not 19 January
+
+
+ACCOUNTS = [{"id": i, "name": n} for i, n in enumerate(
+    ["AlphaBank", "AlphaBank Bonus Visa", "Cash", "Piraeus", "Revolut", "Ticket Restaurant"]
+)]
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("καφές 3 alpha", "AlphaBank"),
+    ("άλφα visa 20", "AlphaBank Bonus Visa"),
+    ("μετρητά 5 περίπτερο", "Cash"),
+    ("τικετ 12 σουβλάκια", "Ticket Restaurant"),
+    ("ρεβολούτ 9", "Revolut"),
+    ("πειραιώς 40", "Piraeus"),
+    ("restaurant 30", None),
+    ("bonus 500", None),
+    ("καφές 3", None),
+])
+def test_account_detection_handles_greek_greeklish_and_generic_words(text, expected):
+    found, _ = tp.detect_account(text, ACCOUNTS)
+    assert (ACCOUNTS[found]["name"] if found is not None else None) == expected
+
+
+def _ctx(**kw):
+    defaults = dict(
+        expense_categories=["Delivery", "Entertainment", "Other", "Super Market", "Gym"],
+        income_categories=["Other", "Salary"],
+        accounts=ACCOUNTS,
+        history=tp.History(),
+        ai_settings={"ai_enabled": False},
+        today=date(2026, 11, 10),
+    )
+    defaults.update(kw)
+    return tp.Context(**defaults)
+
+
+def test_basic_parser_splits_several_transactions_and_finds_income():
+    txns = tp.basic_parse("χθες καφές 3,50 και σούπερ μάρκετ 20 revolut", _ctx())
+    assert [(t.amount, t.category, t.notes, t.date) for t in txns] == [
+        (3.5, "Entertainment", "καφές", "2026-11-09"),
+        (20.0, "Super Market", "σούπερ μάρκετ", "2026-11-09"),
+    ]
+    assert all(t.account_id == 4 and t.source == "basic" for t in txns)
+    salary = tp.basic_parse("μισθός 1500", _ctx())[0]
+    assert (salary.type, salary.category) == ("income", "Salary")
+
+
+def test_history_beats_the_ai_and_keywords():
+    hist = tp.History(lookup={("expense", tp.key("efood")): "Delivery", ("expense", tp.key("καφές")): "Gym"})
+    ctx = _ctx(history=hist)
+    assert tp.basic_parse("efood 18", ctx)[0].category == "Delivery"
+    assert tp.basic_parse("καφές 3", ctx)[0].category == "Gym"
+
+
+def _fake_ai(monkeypatch, replies):
+    """replies: list of dicts returned in order; records prompts."""
+    prompts = []
+
+    def chat(base, model, prompt, **kw):
+        prompts.append(prompt)
+        return json.dumps(replies.pop(0)) if replies else None
+
+    monkeypatch.setattr(integrations, "ollama_chat", chat)
+    return prompts
+
+
+AI_ON = {"ai_enabled": True, "ai_base_url": "http://ollama", "ai_model": "qwen3:8b", "ai_timeout": 30}
+
+
+def test_ai_transactions_are_capped_to_the_amounts_written(monkeypatch):
+    _fake_ai(monkeypatch, [{"transactions": [
+        {"type": "expense", "amount": 3, "category": "Entertainment", "notes": "καφές", "date": "2026-11-10"},
+        {"type": "expense", "amount": 99, "category": "Gym", "notes": "made up", "date": "2026-11-10"},
+    ]}])
+    txns = tp.parse_transactions("καφές 3", _ctx(ai_settings=AI_ON))
+    assert [(t.amount, t.category, t.source) for t in txns] == [(3.0, "Entertainment", "ai")]
+
+
+def test_unusable_ai_answer_falls_back_to_the_basic_parser(monkeypatch):
+    _fake_ai(monkeypatch, [{"nonsense": True}])
+    txns = tp.parse_transactions("γυμναστήριο 35", _ctx(ai_settings=AI_ON))
+    assert [(t.amount, t.category, t.source) for t in txns] == [(35.0, "Gym", "basic")]
+
+
+def test_receipt_total_and_date_come_from_the_text(monkeypatch):
+    _fake_ai(monkeypatch, [{"merchant": "Σκλαβενίτης", "total": 1.89, "date": None, "category": "Super Market"}])
+    ocr = "ΣΚΛΑBENITHΣ Α.E.\n09/11/2026 18:42\nΓΑΛΑ 1L 1.89\nΣΥNOΛO 19.01\nKAPTA 19.01\nΦΠA 13% 1.43"
+    txn = tp.parse_receipt(ocr, "", _ctx(ai_settings=AI_ON))
+    assert (txn.amount, txn.date, txn.category, txn.notes, txn.source) == (
+        19.01, "2026-11-09", "Super Market", "Σκλαβενίτης", "receipt"
+    )
+
+
+def test_questions_are_told_apart_from_entries():
+    assert tp.looks_like_question("πόσα ξόδεψα αυτόν τον μήνα;")
+    assert tp.looks_like_question("υπόλοιπο revolut")
+    assert tp.looks_like_question("τι χρωστάω")
+    assert not tp.looks_like_question("καφές 3")
+    assert not tp.looks_like_question("έχω 20 ευρώ βενζίνη")
+
+
+# --- the bot end to end -------------------------------------------------------------
+
+
+class FakeTelegram:
+    def __init__(self):
+        self.calls = []
+        self.next_id = 100
+
+    def __call__(self, method, payload, token):
+        if method == "sendChatAction":
+            return {"ok": True}, None
+        self.calls.append((method, payload))
+        self.next_id += 1
+        return {"ok": True, "result": {"message_id": self.next_id}}, None
+
+    def sent(self, method="sendMessage"):
+        return [p for m, p in self.calls if m == method]
+
+    def last_text(self):
+        return [p["text"] for m, p in self.calls if m in ("sendMessage", "editMessageText")][-1]
+
+    def last_keyboard(self):
+        for m, p in reversed(self.calls):
+            if "reply_markup" in p:
+                return p["reply_markup"]["inline_keyboard"]
+        return None
+
+
+@pytest.fixture
+def tg(monkeypatch):
+    fake = FakeTelegram()
+    monkeypatch.setattr(telegram_bot, "_telegram_api", fake)
+    return fake
+
+
+def _linked_user(client, username, chat=None, ai=None):
+    """A registered user linked to a fresh chat, which _send/_press then use."""
+    chat = chat or next(_chat_ids)
+    _current["chat"] = chat
+    register_and_login(client, username)
+    conn = vb_app.get_connection()
+    uid = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"]
+    conn.execute("INSERT INTO telegram_links (user_id, chat_id) VALUES (?, ?)", (uid, str(chat)))
+    for name in ("Revolut", "Cash"):
+        conn.execute("INSERT INTO accounts (user_id, name, opening_balance) VALUES (?, ?, 0)", (uid, name))
+    for name in ("Delivery", "Entertainment", "Super Market"):
+        conn.execute("INSERT OR IGNORE INTO categories (user_id, name) VALUES (?, ?)", (uid, name))
+    integrations.save_user_integrations(conn, uid, {
+        "ai_enabled": bool(ai), "ai_provider": "ollama", "ai_base_url": "http://ollama" if ai else "",
+        "ai_model": "qwen3:8b" if ai else "", "ai_timeout": 30, "ai_ocr_model": "glm-ocr" if ai else "",
+    })
+    conn.commit()
+    conn.close()
+    return uid
+
+
+def _send(text=None, chat=None, **message):
+    chat = chat or _current["chat"]
+    msg = {"chat": {"id": chat}, "from": {"username": "u"}, **message}
+    if text is not None:
+        msg["text"] = text
+    conn = vb_app.get_connection()
+    try:
+        telegram_bot.handle_update({"update_id": 1, "message": msg}, conn, vb_app.fetch_account_balances_through,
+                                   {"bot_token": "T"})
+    finally:
+        conn.close()
+
+
+def _press(data, message_id=101, chat=None):
+    chat = chat or _current["chat"]
+    conn = vb_app.get_connection()
+    try:
+        telegram_bot.handle_update(
+            {"update_id": 2, "callback_query": {"id": "cb", "data": data,
+                                                "message": {"message_id": message_id, "chat": {"id": chat}}}},
+            conn, vb_app.fetch_account_balances_through, {"bot_token": "T"},
+        )
+    finally:
+        conn.close()
+
+
+def _rows(sql, *params):
+    conn = vb_app.get_connection()
+    try:
+        return conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+
+
+def _button(keyboard, text):
+    for row in keyboard:
+        for b in row:
+            if b["text"] == text:
+                return b["callback_data"]
+    raise AssertionError(f"no button {text!r} in {keyboard}")
+
+
+def test_text_without_ai_records_with_the_named_account(client, tg):
+    uid = _linked_user(client, "tg_basic")
+    _send("χθες καφές 3,50 revolut")
+    row = _rows("""SELECT e.amount, e.notes, date(e.spent_at) d, a.name acc, c.name cat FROM expenses e
+                   JOIN accounts a ON a.id = e.account_id JOIN categories c ON c.id = e.category_id
+                   WHERE e.user_id = ?""", uid)[0]
+    assert (row["amount"], row["notes"], row["d"], row["acc"], row["cat"]) == (
+        -3.5, "καφές", (TODAY - timedelta(days=1)).isoformat(), "Revolut", "Entertainment"
+    )
+    assert "basic parser" in tg.last_text() and "3.50€" in tg.last_text()
+    assert _button(tg.last_keyboard(), "↩️ Undo").endswith(":u")
+
+
+def test_buttons_change_category_account_and_date_then_undo(client, tg):
+    uid = _linked_user(client, "tg_buttons")
+    _send("σούπερ μάρκετ 20")
+    first = tg.last_keyboard()
+    _press(_button(first, "🏷 Category"))
+    _press(_button(tg.last_keyboard(), "Delivery"))
+    _press(_button(first, "🏦 Account"))
+    _press(_button(tg.last_keyboard(), "Cash"))
+    _press(_button(first, "📅 Date"))
+    _press(_button(tg.last_keyboard(), "Yesterday"))
+    row = _rows("""SELECT c.name cat, a.name acc, date(e.spent_at) d FROM expenses e
+                   JOIN categories c ON c.id = e.category_id JOIN accounts a ON a.id = e.account_id
+                   WHERE e.user_id = ?""", uid)[0]
+    assert (row["cat"], row["acc"], row["d"]) == ("Delivery", "Cash", (TODAY - timedelta(days=1)).isoformat())
+    assert "Delivery" in tg.last_text() and "Cash" in tg.last_text()
+
+    _press(_button(first, "↩️ Undo"))
+    assert _rows("SELECT * FROM expenses WHERE user_id = ?", uid) == []
+    assert tg.last_text().startswith("↩️ Removed")
+
+
+def test_undo_never_touches_entries_made_on_the_web(client, tg):
+    uid = _linked_user(client, "tg_undo")
+    conn = vb_app.get_connection()
+    cat = conn.execute("SELECT id FROM categories WHERE user_id = ? LIMIT 1", (uid,)).fetchone()["id"]
+    acc = conn.execute("SELECT id FROM accounts WHERE user_id = ? LIMIT 1", (uid,)).fetchone()["id"]
+    conn.execute("INSERT INTO expenses (user_id, notes, amount, category_id, account_id, spent_at) VALUES (?, 'web', -9, ?, ?, ?)",
+                 (uid, cat, acc, TODAY.isoformat()))
+    conn.commit()
+    conn.close()
+    _send("/undo")
+    assert tg.last_text() == "Nothing to undo."
+    _send("καφές 3")
+    _send("/undo")
+    assert [r["notes"] for r in _rows("SELECT notes FROM expenses WHERE user_id = ?", uid)] == ["web"]
+
+
+def test_several_transactions_in_one_message_with_ai(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_multi", ai=True)
+    prompts = _fake_ai(monkeypatch, [{"transactions": [
+        {"type": "expense", "amount": 3, "category": "Entertainment", "notes": "καφές", "date": TODAY.isoformat()},
+        {"type": "expense", "amount": 12, "category": "Delivery", "notes": "σουβλάκια", "date": TODAY.isoformat()},
+    ]}])
+    _send("καφές 3, σουβλάκια 12")
+    rows = _rows("SELECT amount, notes FROM expenses WHERE user_id = ? ORDER BY id", uid)
+    assert [(r["amount"], r["notes"]) for r in rows] == [(-3.0, "καφές"), (-12.0, "σουβλάκια")]
+    assert len(tg.sent()) == 2 and "Delivery" in prompts[0]
+
+
+def test_past_choices_are_offered_to_the_ai_and_override_it(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_history", ai=True)
+    _send("efood 10")  # basic categories: Delivery via keyword
+    _press(_button(tg.last_keyboard(), "🏷 Category"))
+    _press(_button(tg.last_keyboard(), "Entertainment"))  # the user files efood under Entertainment
+    prompts = _fake_ai(monkeypatch, [{"transactions": [
+        {"type": "expense", "amount": 15, "category": "Delivery", "notes": "efood", "date": TODAY.isoformat()}]}])
+    _send("efood 15")
+    assert '"efood" → Entertainment' in prompts[0]
+    cats = _rows("SELECT c.name FROM expenses e JOIN categories c ON c.id = e.category_id WHERE e.user_id = ? ORDER BY e.id", uid)
+    assert [r["name"] for r in cats] == ["Entertainment", "Entertainment"]
+
+
+def test_shared_bill_from_telegram_splits_and_books_my_share(client, tg):
+    uid = _linked_user(client, "tg_shared")
+    client.post("/shared/groups/add", data={"name": "Σπίτι", "new_members": "Άννα, Νίκος",
+                                            "_csrf_token": csrf_token(client)})
+    _send("σούπερ μάρκετ 60 μοιρασμένο revolut")
+    bill = _rows("SELECT id, amount_cents, description FROM shared_expenses WHERE user_id = ?", uid)[0]
+    assert bill["amount_cents"] == 6000 and bill["description"] == "σούπερ μάρκετ"
+    mine = _rows("""SELECT e.amount, a.name acc FROM expenses e JOIN accounts a ON a.id = e.account_id
+                    WHERE e.user_id = ?""", uid)[0]
+    assert (mine["amount"], mine["acc"]) == (-20.0, "Revolut")
+    assert "split 3 ways" in tg.last_text() and "your share 20.00€" in tg.last_text()
+
+    _send("η Άννα πλήρωσε πίτσα 30 μισά")
+    pizza = _rows("SELECT id, paid_by FROM shared_expenses WHERE description = 'πίτσα'")[0]
+    anna = _rows("SELECT id FROM shared_people WHERE user_id = ? AND name = 'Άννα'", uid)[0]["id"]
+    assert pizza["paid_by"] == anna
+    splits = _rows("SELECT share_cents FROM shared_expense_splits WHERE expense_id = ? AND share_cents > 0", pizza["id"])
+    assert sorted(r["share_cents"] for r in splits) == [1500, 1500]
+
+    _send("/undo")
+    assert _rows("SELECT * FROM shared_expenses WHERE description = 'πίτσα'") == []
+
+
+def test_questions_are_answered_from_the_database(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_ask", ai=True)
+    _fake_ai(monkeypatch, [
+        {"transactions": [{"type": "expense", "amount": 18, "category": "Delivery", "notes": "efood", "date": TODAY.isoformat()}]},
+        {"transactions": [{"type": "expense", "amount": 4, "category": "Entertainment", "notes": "καφές", "date": TODAY.isoformat()}]},
+        {"metric": "spent", "category": "Delivery", "account": None, "search": None,
+         "from": TODAY.replace(day=1).isoformat(), "to": TODAY.isoformat()},
+    ])
+    _send("efood 18")
+    _send("καφές 4")
+    _send("πόσα έδωσα σε delivery αυτόν τον μήνα;")
+    assert tg.last_text().startswith("Spent on Delivery this month: 18.00€ (1 entries)")
+    _send("/month")
+    assert "22.00€" in tg.last_text() and "Delivery: 18.00€" in tg.last_text()
+    _send("υπόλοιπο")  # AI has no reply left → heuristic plan
+    assert tg.last_text().startswith("Balances:")
+
+
+def test_receipt_photo_is_read_and_recorded(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_receipt", ai=True)
+    monkeypatch.setattr(telegram_bot, "download_file", lambda file_id, token: b"jpeg-bytes")
+    monkeypatch.setattr(integrations, "ollama_ocr", lambda base, model, img, **kw: (
+        f"ΣΚΛΑΒΕΝΙΤΗΣ\n{TODAY.strftime('%d/%m/%Y')}\nΣΥΝΟΛΟ 19,01"))
+    _fake_ai(monkeypatch, [{"merchant": "Σκλαβενίτης", "total": 19.01, "category": "Super Market"}])
+    _send(photo=[{"file_id": "small", "width": 90, "height": 90}, {"file_id": "big", "width": 1280, "height": 960}],
+          caption="cash")
+    row = _rows("""SELECT e.amount, e.notes, a.name acc, c.name cat FROM expenses e
+                   JOIN accounts a ON a.id = e.account_id JOIN categories c ON c.id = e.category_id
+                   WHERE e.user_id = ?""", uid)[0]
+    assert (row["amount"], row["notes"], row["acc"], row["cat"]) == (-19.01, "Σκλαβενίτης", "Cash", "Super Market")
+    assert tg.sent()[0]["text"].startswith("🧾 Reading")
+    assert "from receipt" in tg.last_text()
+
+
+def test_receipts_need_an_ocr_model(client, tg):
+    _linked_user(client, "tg_no_ocr")
+    _send(photo=[{"file_id": "x", "width": 10, "height": 10}])
+    assert "Receipt photos are off" in tg.last_text()
+
+
+def test_default_account_command(client, tg):
+    uid = _linked_user(client, "tg_default")
+    _send("/account")
+    _press(_button(tg.last_keyboard(), "Cash"))
+    _send("καφές 2")
+    acc = _rows("SELECT a.name FROM expenses e JOIN accounts a ON a.id = e.account_id WHERE e.user_id = ?", uid)
+    assert acc[0]["name"] == "Cash"
+
+
+def test_other_chats_cannot_press_my_buttons(client, app, tg):
+    owner_chat, intruder_chat = next(_chat_ids), next(_chat_ids)
+    uid = _linked_user(client, "tg_owner", chat=owner_chat)
+    _linked_user(app.test_client(), "tg_intruder", chat=intruder_chat)
+    _send("καφές 3", chat=owner_chat)
+    undo = _button(tg.last_keyboard(), "↩️ Undo")
+    _press(undo, chat=intruder_chat)
+    assert len(_rows("SELECT * FROM expenses WHERE user_id = ?", uid)) == 1
+
+
+def test_edited_messages_are_ignored(client, tg):
+    uid = _linked_user(client, "tg_edit")
+    conn = vb_app.get_connection()
+    telegram_bot.handle_update({"update_id": 3, "edited_message": {"chat": {"id": _current["chat"]}, "text": "καφές 3"}},
+                               conn, vb_app.fetch_account_balances_through, {"bot_token": "T"})
+    conn.close()
+    assert _rows("SELECT * FROM expenses WHERE user_id = ?", uid) == []
+
+
+def test_ocr_model_is_saved_from_settings(client):
+    register_and_login(client, "tg_settings")
+    client.post("/settings/integrations/save", data={
+        "ai_enabled": "1", "ai_provider": "ollama", "ai_base_url": "http://ollama:11434",
+        "ai_model": "qwen3:8b", "ai_timeout": "60", "ai_ocr_model": "glm-ocr",
+        "_csrf_token": csrf_token(client),
+    })
+    conn = vb_app.get_connection()
+    uid = conn.execute("SELECT id FROM users WHERE username = 'tg_settings'").fetchone()["id"]
+    assert integrations.get_user_integrations(conn, uid)["ai_ocr_model"] == "glm-ocr"
+    conn.close()
+    assert 'name="ai_ocr_model"' in client.get("/?panel=settings&settings_section=integrations").get_data(as_text=True)

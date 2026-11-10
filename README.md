@@ -107,7 +107,9 @@ Run Ollama on your home server (default port **11434**). In Docker with `network
 http://127.0.0.1:11434
 ```
 
-Set Base URL and model in **Integrations → Local AI**, then **Test connection**.
+Set Base URL and model in **Integrations → Local AI**, then **Test connection**. A small instruct model such as
+`qwen3:8b` works well (thinking is switched off, replies take ~1s on CPU once loaded). For receipt photos also set
+**Receipt OCR model**, e.g. `glm-ocr`.
 
 ### Telegram bot (polling — Tailscale-only)
 
@@ -115,15 +117,23 @@ No public URL or Tailscale Funnel needed. The app **polls** Telegram outbound (`
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) → copy the token.
 2. **Settings → Integrations → Telegram bot** → paste token → **Test bot token** → **Save**.
-3. **Generate link code** → in Telegram: `/link YOURCODE` → send `supermarket 20`.
+3. **Generate link code** → in Telegram: `/link YOURCODE` → send `καφές 3.50`.
 
 The budget app stays on Tailscale only (`http://personal-disk-share:5000`). Telegram works via outbound HTTPS to `api.telegram.org`.
 
 ### Telegram usage
 
-| Message | Notes |
+| Message | What happens |
 |---------|--------|
-| `supermarket 20` | Regex — no AI needed |
-| `salary 1500` | Income |
-| `χθες καφές 3.50` | Needs **Enable AI** + working Ollama |
-| `/balance`, `/undo`, `/help` | Commands |
+| `χθες καφές 3.50`, `efood 18 ticket` | Expense; date words and account names (also Greeklish, e.g. `άλφα visa`, `μετρητά`) are picked up |
+| `καφές 3, σουβλάκια 12` | Several entries from one message |
+| `μισθός 1500` | Income |
+| `σούπερ μάρκετ 60 μοιρασμένο` | Shared bill split equally in your group (name the group if you have several) |
+| `η Άννα πλήρωσε πίτσα 30 μισά` | Shared bill someone else paid, split between you two |
+| photo of a receipt | Total, date and shop read via the OCR model; a caption can name the account or say it's shared |
+| `πόσα ξόδεψα σε delivery τον προηγούμενο μήνα;` | Answered from the database (the AI only plans the lookup) |
+| `/month` `/lastmonth` `/balance` `/owe` `/account` `/undo` `/help` | Commands |
+
+Every entry comes with buttons to change its category, account or date, or undo it. Categories follow your own past
+choices: re-file `efood` under another category once and the bot uses that from then on. Without AI (or if Ollama is
+unreachable) simple messages are still recorded by a basic parser.

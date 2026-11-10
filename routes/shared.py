@@ -395,17 +395,10 @@ def add_expense(group_id):
         except ValueError as exc:
             flash(str(exc), "error")
             return _back(group_id)
-        cur = conn.execute(
-            """
-            INSERT INTO shared_expenses (user_id, group_id, description, amount_cents, paid_by, split_method, spent_on)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (uid, group_id, data["description"], data["amount_cents"], data["paid_by"],
-             data["split_method"], data["spent_on"]),
+        shared.create_expense(
+            conn, uid, group_id, data["description"], data["amount_cents"], data["paid_by"],
+            data["split_method"], data["spent_on"], data["splits"], data["link"],
         )
-        expense_id = int(cur.lastrowid)
-        _save_splits(conn, expense_id, data["splits"])
-        _apply_links(conn, uid, expense_id, data["link"])
         conn.commit()
     finally:
         conn.close()

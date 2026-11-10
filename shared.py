@@ -712,6 +712,63 @@ def clear_expense_link(conn, user_id, expense_id):
         )
 
 
+def create_expense(conn, user_id, group_id, description, amount_cents, paid_by, split_method, spent_on, splits, link):
+    """Insert a bill with its splits; link is the creator's own (category_id,
+    account_id) recording choice or None. Returns the new bill id."""
+    cur = conn.execute(
+        """
+        INSERT INTO shared_expenses (user_id, group_id, description, amount_cents, paid_by, split_method, spent_on)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (int(user_id), int(group_id), description, int(amount_cents), int(paid_by), split_method, spent_on),
+    )
+    expense_id = int(cur.lastrowid)
+    conn.executemany(
+        "INSERT INTO shared_expense_splits (expense_id, person_id, share_cents, input_value) VALUES (?, ?, ?, ?)",
+        [(expense_id, pid, cents, value) for pid, cents, value in splits],
+    )
+    if link:
+        set_expense_link(conn, user_id, expense_id, *link)
+    relink_expense(conn, expense_id)
+    return expense_id
+
+
+def groups_for_bot(conn, user_id):
+    """The user's active groups with every member's possible names, for the
+    Telegram bot: [{id, name, me, members: [{id, names}]}]."""
+    uid = int(user_id)
+    out = []
+    for g in conn.execute(
+        """
+        SELECT g.id, g.name FROM shared_groups g
+        JOIN shared_group_members m ON m.group_id = g.id
+        JOIN shared_people p ON p.id = m.person_id
+        WHERE p.linked_user_id = ? AND m.status = 'active'
+        ORDER BY g.name
+        """,
+        (uid,),
+    ).fetchall():
+        names = _Names(conn, uid)
+        members = []
+        for row in _members(conn, g["id"]):
+            aliases = {row["name"], names.person(row)}
+            if row["linked_user_id"] is not None:
+                aliases.add(names.logins.get(int(row["linked_user_id"]), ""))
+            members.append({"id": int(row["id"]), "names": [a for a in aliases if a and a != SELF_NAME]})
+        out.append({
+            "id": int(g["id"]),
+            "name": g["name"],
+            "me": member_person(conn, g["id"], uid),
+            "members": members,
+        })
+    return out
+
+
+def person_display_name(conn, viewer_id, person_id):
+    row = conn.execute("SELECT name, linked_user_id FROM shared_people WHERE id = ?", (int(person_id),)).fetchone()
+    return _Names(conn, viewer_id).person(row) if row else "?"
+
+
 def delete_expense(conn, expense_id):
     for row in conn.execute(
         "SELECT user_id FROM shared_expense_links WHERE expense_id = ?", (int(expense_id),)

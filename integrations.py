@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import threading
+import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -13,6 +15,13 @@ DEFAULT_AI_PROVIDER = "ollama"
 DEFAULT_AI_TIMEOUT = 30
 MIN_AI_TIMEOUT = 5
 MAX_AI_TIMEOUT = 120
+OCR_TIMEOUT = 180
+# Keep models resident between Telegram messages: a cold load of an 8B model
+# costs ~10s on CPU, a warm reply ~1s.
+OLLAMA_KEEP_ALIVE = "60m"
+_MODEL_CACHE_TTL = 300
+_model_cache: dict[tuple[str, str], tuple[float, str]] = {}
+_model_cache_lock = threading.Lock()
 
 _BASE_URL_RE = re.compile(r"^https?://", re.I)
 
@@ -27,10 +36,14 @@ def migrate_user_integrations(conn: sqlite3.Connection) -> None:
             ai_base_url TEXT NOT NULL DEFAULT '',
             ai_model TEXT NOT NULL DEFAULT '',
             ai_timeout INTEGER NOT NULL DEFAULT 30 CHECK (ai_timeout BETWEEN 5 AND 120),
+            ai_ocr_model TEXT NOT NULL DEFAULT '',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(user_integrations)").fetchall()}
+    if "ai_ocr_model" not in cols:
+        conn.execute("ALTER TABLE user_integrations ADD COLUMN ai_ocr_model TEXT NOT NULL DEFAULT ''")
 
 
 def default_integration_settings() -> dict:
@@ -40,13 +53,14 @@ def default_integration_settings() -> dict:
         "ai_base_url": "",
         "ai_model": "",
         "ai_timeout": DEFAULT_AI_TIMEOUT,
+        "ai_ocr_model": "",
     }
 
 
 def get_user_integrations(conn: sqlite3.Connection, user_id: int) -> dict:
     row = conn.execute(
         """
-        SELECT ai_enabled, ai_provider, ai_base_url, ai_model, ai_timeout
+        SELECT ai_enabled, ai_provider, ai_base_url, ai_model, ai_timeout, ai_ocr_model
         FROM user_integrations
         WHERE user_id = ?
         """,
@@ -60,6 +74,7 @@ def get_user_integrations(conn: sqlite3.Connection, user_id: int) -> dict:
         "ai_base_url": row["ai_base_url"] or "",
         "ai_model": row["ai_model"] or "",
         "ai_timeout": int(row["ai_timeout"] or DEFAULT_AI_TIMEOUT),
+        "ai_ocr_model": row["ai_ocr_model"] or "",
     }
 
 
@@ -90,6 +105,7 @@ def parse_integration_form(form) -> dict:
     enabled = form.get("ai_enabled") == "1"
     base_url = _normalize_base_url(form.get("ai_base_url", ""))
     model = (form.get("ai_model") or "").strip()
+    ocr_model = (form.get("ai_ocr_model") or "").strip()
     timeout = _normalize_timeout(form.get("ai_timeout", DEFAULT_AI_TIMEOUT))
 
     if enabled:
@@ -104,6 +120,7 @@ def parse_integration_form(form) -> dict:
         "ai_base_url": base_url,
         "ai_model": model,
         "ai_timeout": timeout,
+        "ai_ocr_model": ocr_model,
     }
 
 
@@ -112,14 +129,15 @@ def save_user_integrations(conn: sqlite3.Connection, user_id: int, settings: dic
     conn.execute(
         """
         INSERT INTO user_integrations (
-            user_id, ai_enabled, ai_provider, ai_base_url, ai_model, ai_timeout, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            user_id, ai_enabled, ai_provider, ai_base_url, ai_model, ai_timeout, ai_ocr_model, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(user_id) DO UPDATE SET
             ai_enabled = excluded.ai_enabled,
             ai_provider = excluded.ai_provider,
             ai_base_url = excluded.ai_base_url,
             ai_model = excluded.ai_model,
             ai_timeout = excluded.ai_timeout,
+            ai_ocr_model = excluded.ai_ocr_model,
             updated_at = CURRENT_TIMESTAMP
         """,
         (
@@ -129,6 +147,7 @@ def save_user_integrations(conn: sqlite3.Connection, user_id: int, settings: dic
             settings["ai_base_url"],
             settings["ai_model"],
             settings["ai_timeout"],
+            settings.get("ai_ocr_model", ""),
         ),
     )
     conn.commit()
@@ -191,31 +210,86 @@ def _fetch_json(url: str, *, timeout: int, method: str = "GET", payload: dict | 
         return json.loads(resp.read().decode())
 
 
-def ollama_chat(base_url: str, model: str, prompt: str, *, timeout: int, json_mode: bool = False) -> str | None:
-    base = base_url.rstrip("/")
-    resolved = model.strip()
+def _resolve_model_cached(base: str, model: str, timeout: int) -> str:
+    """Map a short name like 'qwen3' to the installed tag, cached for a few
+    minutes so each Telegram message does not pay for an /api/tags round trip."""
+    key = (base, model)
+    now = time.monotonic()
+    with _model_cache_lock:
+        hit = _model_cache.get(key)
+        if hit and now - hit[0] < _MODEL_CACHE_TTL:
+            return hit[1]
+    resolved = model
     try:
-        models = fetch_ollama_models(base, timeout=min(timeout, 10))
-        picked = resolve_model_name(resolved, models)
+        picked = resolve_model_name(model, fetch_ollama_models(base, timeout=min(timeout, 10)))
         if picked:
             resolved = picked
     except (HTTPError, URLError, json.JSONDecodeError, OSError, TimeoutError):
-        pass
+        return model
+    with _model_cache_lock:
+        _model_cache[key] = (now, resolved)
+    return resolved
 
-    url = base + "/api/chat"
+
+def ollama_chat(
+    base_url: str,
+    model: str,
+    prompt: str,
+    *,
+    timeout: int,
+    json_mode: bool = False,
+    images: list[str] | None = None,
+    options: dict | None = None,
+) -> str | None:
+    """One non-streaming chat turn. images are base64 strings (vision/OCR models).
+    Thinking is switched off: for short extraction tasks it only adds latency
+    (qwen3:8b: ~6s thinking vs ~1s without)."""
+    base = base_url.rstrip("/")
+    resolved = _resolve_model_cached(base, model.strip(), timeout)
+    message: dict = {"role": "user", "content": prompt}
+    if images:
+        message["images"] = images
     payload: dict = {
         "model": resolved,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [message],
         "stream": False,
+        "think": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
     }
     if json_mode:
         payload["format"] = "json"
+    if options:
+        payload["options"] = options
+    url = base + "/api/chat"
     try:
         data = _fetch_json(url, timeout=timeout, method="POST", payload=payload)
-    except (HTTPError, URLError, json.JSONDecodeError, OSError, TimeoutError):
+    except HTTPError as exc:
+        if exc.code != 400:
+            return None
+        # Older Ollama builds reject the think flag; retry without it.
+        payload.pop("think", None)
+        try:
+            data = _fetch_json(url, timeout=timeout, method="POST", payload=payload)
+        except (HTTPError, URLError, json.JSONDecodeError, OSError, TimeoutError):
+            return None
+    except (URLError, json.JSONDecodeError, OSError, TimeoutError):
         return None
     content = data.get("message", {}).get("content")
     return str(content).strip() if content else None
+
+
+def ollama_ocr(base_url: str, model: str, image_b64: str, *, timeout: int = OCR_TIMEOUT) -> str | None:
+    """Plain text of an image via an OCR model such as glm-ocr. The output cap
+    and the code-fence stop guard against the model looping after the text."""
+    text = ollama_chat(
+        base_url,
+        model,
+        "Text Recognition:",
+        timeout=timeout,
+        images=[image_b64],
+        options={"num_predict": 1200, "stop": ["```"], "temperature": 0},
+    )
+    return text.strip() if text else None
 
 
 def test_ai_connection(settings: dict) -> tuple[bool, str]:
