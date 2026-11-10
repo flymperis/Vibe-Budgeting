@@ -108,7 +108,8 @@ http://127.0.0.1:11434
 ```
 
 Set Base URL and model in **Integrations → Local AI**, then **Test connection**. A small instruct model such as
-`qwen3:8b` works well (thinking is switched off, replies take ~1s on CPU once loaded). For receipt photos also set
+`qwen3:8b` works well (thinking is switched off, replies take ~1s once the model is loaded; how long it stays
+loaded is left to the Ollama server's `OLLAMA_KEEP_ALIVE`). For receipt photos also set
 **Receipt OCR model**, e.g. `glm-ocr`.
 
 ### Telegram bot (polling — Tailscale-only)

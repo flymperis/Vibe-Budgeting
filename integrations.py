@@ -16,9 +16,6 @@ DEFAULT_AI_TIMEOUT = 30
 MIN_AI_TIMEOUT = 5
 MAX_AI_TIMEOUT = 120
 OCR_TIMEOUT = 180
-# Keep models resident between Telegram messages: a cold load of an 8B model
-# costs ~10s on CPU, a warm reply ~1s.
-OLLAMA_KEEP_ALIVE = "60m"
 _MODEL_CACHE_TTL = 300
 _model_cache: dict[tuple[str, str], tuple[float, str]] = {}
 _model_cache_lock = threading.Lock()
@@ -243,7 +240,9 @@ def ollama_chat(
 ) -> str | None:
     """One non-streaming chat turn. images are base64 strings (vision/OCR models).
     Thinking is switched off: for short extraction tasks it only adds latency
-    (qwen3:8b: ~6s thinking vs ~1s without)."""
+    (qwen3:8b: ~6s thinking vs ~1s without). No keep_alive is sent, so the
+    Ollama server's own OLLAMA_KEEP_ALIVE decides how long a model stays in
+    memory; the server may be shared with other apps and games."""
     base = base_url.rstrip("/")
     resolved = _resolve_model_cached(base, model.strip(), timeout)
     message: dict = {"role": "user", "content": prompt}
@@ -254,7 +253,6 @@ def ollama_chat(
         "messages": [message],
         "stream": False,
         "think": False,
-        "keep_alive": OLLAMA_KEEP_ALIVE,
     }
     if json_mode:
         payload["format"] = "json"
