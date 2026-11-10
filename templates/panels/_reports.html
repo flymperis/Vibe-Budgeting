@@ -248,6 +248,96 @@
         </div>
 
         {# ---------------------------------------------------------------- #}
+        {# Tags                                                              #}
+        {# ---------------------------------------------------------------- #}
+        <div class="reports-section {% if reports_section == 'tags' %}active{% endif %}" id="reports-tags">
+            {% if reports_tag %}
+            <div class="reports-head">
+                <h2>#{{ reports_tag.tag }}</h2>
+                <a class="btn-secondary" href="{{ url_for('dashboard.index', panel='reports', reports_section='tags', month=month_filter) }}">All tags</a>
+            </div>
+            <div class="tag-totals">
+                <div class="tag-total"><span class="muted">Spent</span><strong>{{ reports_tag.spent|money }}</strong></div>
+                {% if reports_tag.income %}
+                <div class="tag-total"><span class="muted">Income</span><strong>{{ reports_tag.income|money }}</strong></div>
+                <div class="tag-total"><span class="muted">Net</span><strong class="{{ reports_tag.net|amount_class }}">{{ reports_tag.net|money }}</strong></div>
+                {% endif %}
+                <div class="tag-total"><span class="muted">Entries</span><strong>{{ reports_tag.count }}</strong></div>
+                <div class="tag-total"><span class="muted">Dates</span><strong>{{ reports_tag.first }}{% if reports_tag.last != reports_tag.first %} → {{ reports_tag.last }}{% endif %}</strong></div>
+            </div>
+            {% if reports_tag.categories %}
+            <h3>By category</h3>
+            <ol class="cat-rank">
+                {% for c in reports_tag.categories %}
+                <li class="cat-rank-row">
+                    <div class="cat-rank-head">
+                        <span class="cat-rank-name">{{ c.name }}</span>
+                        <span class="cat-rank-amount">{{ c.total|money }}</span>
+                    </div>
+                    <div class="cat-rank-bar-wrap">
+                        <div class="cat-rank-bar" style="width: {{ "%.1f"|format([c.share, 0]|max) }}%"></div>
+                    </div>
+                    <div class="cat-rank-meta"><span class="muted">{{ "%.0f"|format(c.share) }}% of the total</span></div>
+                </li>
+                {% endfor %}
+            </ol>
+            {% endif %}
+            <h3>Entries</h3>
+            <div class="entries-table-wrap">
+            <table class="entries-table">
+                <thead>
+                    <tr><th>Category</th><th>Account</th><th>Amount</th><th class="cell-notes-head">Notes</th><th class="cell-date-head">Date</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in reports_tag.rows %}
+                    <tr>
+                        <td data-label="Category">{{ r.category }}</td>
+                        <td data-label="Account">{{ r.account or '—' }}</td>
+                        <td class="cell-amount {{ r.amount|amount_class }}" data-label="Amount">{{ r.amount|money }}</td>
+                        <td class="cell-notes" data-label="Notes">{{ r.notes|tag_links }}</td>
+                        <td class="cell-date" data-label="Date">{{ r.day }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <div class="reports-head">
+                <h2>Tags</h2>
+            </div>
+            {% if selected_tag %}
+            <p class="muted">Nothing is tagged #{{ selected_tag }} yet.</p>
+            {% endif %}
+            <p class="muted small-hint">
+                Add <code>#tags</code> to the notes of any expense or income (or a Telegram message), e.g.
+                <code>#trip2026</code>, to see what a trip, a party or a project cost in total, whatever category each entry is in.
+            </p>
+            {% if reports_tags %}
+            <div class="entries-table-wrap">
+            <table class="entries-table tag-table">
+                <thead>
+                    <tr><th>Tag</th><th>Spent</th><th>Income</th><th>Entries</th><th class="cell-date-head">Dates</th></tr>
+                </thead>
+                <tbody>
+                    {% for t in reports_tags %}
+                    <tr>
+                        <td data-label="Tag"><a class="tag-chip" href="{{ url_for('dashboard.index', panel='reports', reports_section='tags', tag=t.key, month=month_filter) }}">#{{ t.tag }}</a></td>
+                        <td class="cell-amount" data-label="Spent">{{ t.spent|money }}</td>
+                        <td class="cell-amount" data-label="Income">{% if t.income %}{{ t.income|money }}{% else %}—{% endif %}</td>
+                        <td data-label="Entries">{{ t.count }}</td>
+                        <td class="cell-date" data-label="Dates">{{ t.first }}{% if t.last != t.first %} → {{ t.last }}{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <p class="muted">No tags yet.</p>
+            {% endif %}
+            {% endif %}
+        </div>
+
+        {# ---------------------------------------------------------------- #}
         {# Investments                                                       #}
         {# ---------------------------------------------------------------- #}
         <div class="reports-section {% if reports_section == 'investments' %}active{% endif %}" id="reports-investments">

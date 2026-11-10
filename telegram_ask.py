@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 import finance
 import shared
+import tags
 from telegram_parse import period_presets
 
 
@@ -228,3 +229,31 @@ def answer(conn, uid: int, plan: dict, balance_fn, today: date | None = None) ->
         top_text = ("\nTop: " + ", ".join(f"{name} {_eur(v)}" for name, v in top)) if top else ""
         return f"Spent {label}: {_eur(total)} ({n} entries).{top_text}"
     return format_breakdown(conn, uid, plan["from"], plan["to"], today, plan.get("account_id"))
+
+
+def format_tag(conn, uid: int, tag: str) -> str:
+    detail = tags.detail(conn, uid, tag)
+    if not detail:
+        return f"Nothing is tagged #{tags.clean_tag(tag) or tag} yet."
+    span = detail["first"] if detail["first"] == detail["last"] else f"{detail['first']} → {detail['last']}"
+    lines = [f"#{detail['tag']}: {_eur(detail['spent'])} spent · {detail['count']} entries · {span}"]
+    if detail["income"]:
+        lines.append(f"Income {_eur(detail['income'])} · net {_eur(detail['net'])}")
+    for c in detail["categories"][:8]:
+        lines.append(f"• {c['name']}: {_eur(c['total'])} ({c['share']:.0f}%)")
+    if len(detail["categories"]) > 8:
+        lines.append(f"• {len(detail['categories']) - 8} more categories")
+    return "\n".join(lines)
+
+
+def format_tags(conn, uid: int) -> str:
+    rows = tags.summary(conn, uid)
+    if not rows:
+        return "No tags yet. Add one to any entry, e.g. καφές 3 #trip2026, or /tag trip2026 to tag everything for a while."
+    lines = ["Tags (most recent first):"]
+    for t in rows[:15]:
+        lines.append(f"• #{t['tag']}: {_eur(t['spent'])} · {t['count']} entries")
+    if len(rows) > 15:
+        lines.append(f"…and {len(rows) - 15} more in the app under Reports → Tags.")
+    lines.append("/tags NAME for one tag by category.")
+    return "\n".join(lines)

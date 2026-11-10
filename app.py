@@ -7,6 +7,7 @@ import secrets
 import sys
 import threading
 
+import tags
 import telegram_bot
 
 # Windows' mimetypes registry doesn't know .webmanifest, so it would otherwise
@@ -124,6 +125,7 @@ def _require_login():
 
 
 app.jinja_env.globals.update(detect_bank=detect_bank, bank_badges_for=bank_badges_for)
+app.jinja_env.filters["tag_links"] = tags.linkify
 
 
 @app.template_filter("txn_day")

@@ -220,7 +220,7 @@
                         <div class="shared-activity-date">{{ a.date|txn_day }}</div>
                         <div class="shared-activity-body">
                             <div class="shared-activity-line">
-                                <span class="shared-activity-title">{{ a.description }}</span>
+                                <span class="shared-activity-title">{{ a.description|tag_links }}</span>
                                 <span class="shared-activity-amount">{{ a.amount|money }}</span>
                             </div>
                             <div class="shared-activity-line muted">

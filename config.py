@@ -60,7 +60,7 @@ SETTINGS_SECTIONS = {"general", "banks", "expenses", "income", "export", "migrat
 
 INVESTMENTS_SECTIONS = {"crypto", "stocks"}
 
-REPORTS_SECTIONS = {"overview", "spending", "investments"}
+REPORTS_SECTIONS = {"overview", "spending", "tags", "investments"}
 
 # Old section names, kept so existing links and bookmarks still land somewhere
 # sensible: the bank chart now lives on Overview, and the two portfolio charts

@@ -233,3 +233,14 @@
     {% endif %}
 </ul>
 {%- endmacro %}
+
+
+{% macro tag_suggestions(tags) -%}
+{%- if tags %}
+<div class="tag-suggest" aria-label="Recent tags">
+    {%- for t in tags %}
+    <button class="tag-chip tag-chip-add" data-add-tag="{{ t }}" type="button">#{{ t }}</button>
+    {%- endfor %}
+</div>
+{%- endif %}
+{%- endmacro %}

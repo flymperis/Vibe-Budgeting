@@ -25,6 +25,7 @@ from urllib.request import Request, urlopen
 
 import integrations
 import shared
+import tags
 import telegram_ask
 import telegram_notify
 import telegram_parse as tp
@@ -55,6 +56,8 @@ BOT_COMMANDS = [
     ("balance", "Account balances"),
     ("owe", "Who owes whom in shared groups"),
     ("account", "Default account for new entries"),
+    ("tag", "Tag every new entry, e.g. /tag trip2026 (/tag off to stop)"),
+    ("tags", "What each tag cost"),
     ("notifications", "Choose which reminders and summaries you get"),
     ("undo", "Remove the last entry made here"),
 ]
@@ -109,6 +112,10 @@ def migrate_telegram(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_telegram_entries_user ON telegram_entries(user_id, id)")
+    # A tag added to every new entry while set (/tag trip2026), e.g. for a trip.
+    link_cols = {r[1] for r in conn.execute("PRAGMA table_info(telegram_links)").fetchall()}
+    if "active_tag" not in link_cols:
+        conn.execute("ALTER TABLE telegram_links ADD COLUMN active_tag TEXT NOT NULL DEFAULT ''")
 
 
 # --- server config and linking ---------------------------------------------------
@@ -445,7 +452,9 @@ def save_shared(conn, user_id: int, txn: tp.Txn, plan: tp.SharedPlan, *, default
             return None, "No account found. Add an account in Settings → Banks first."
     link = (category_id, account_id) if (plan.payer_is_me or my_share > 0) else None
     expense_id = shared.create_expense(
-        conn, uid, plan.group_id, shared.clean_name(plan.description(txn.notes)) or "Expense", cents,
+        conn, uid, plan.group_id,
+        shared.clean_name(tags.add_tags(plan.description(tags.strip_tags(txn.notes)), tags.find_tags(txn.notes))) or "Expense",
+        cents,
         plan.paid_by, "equal", txn.date, splits, link,
     )
     entry_id = _log_entry(conn, uid, "shared", expense_id, txn.source)
@@ -962,19 +971,22 @@ HELP_TEXT = """Write what you spent or received, in Greek, Greeklish or English:
 • σούπερ μάρκετ 60 μοιρασμένο (shared, split with your group)
 • η Άννα πλήρωσε πίτσα 30 μισά (someone else paid)
 
+• καφές 3 #διακοπές2026 (tag it; /tag διακοπές2026 tags everything until /tag off)
+
 Send a photo of a receipt to record its total.
 
 Ask questions:
 • πόσα ξόδεψα αυτόν τον μήνα;
 • πόσα έδωσα σε delivery τον προηγούμενο μήνα;
 • υπόλοιπο revolut · τι χρωστάω;
+• πόσα κόστισαν οι #διακοπές2026; (or /tags)
 
 Each entry has buttons to change category, account or date, or undo it.
 
 The bot also writes on its own: budget alerts, card and bill reminders,
 a Sunday summary and a monthly one. /notifications turns each on or off.
 
-Commands: /month /lastmonth /balance /owe /account /notifications /undo /unlink"""
+Commands: /month /lastmonth /balance /owe /tag /tags /account /notifications /undo /unlink"""
 
 START_TEXT = """Vibe Budgeting bot
 
@@ -1065,11 +1077,41 @@ def _handle_command(text: str, conn, user_id: int, chat_id, balance_fn, bot_toke
             bot_token=bot_token,
             reply_markup={"inline_keyboard": _grid(buttons, 2)},
         )
+    elif command == "/tags":
+        arg = text.split(maxsplit=1)[1] if len(text.split(maxsplit=1)) > 1 else ""
+        reply = telegram_ask.format_tag(conn, user_id, arg) if tags.clean_tag(arg) else telegram_ask.format_tags(conn, user_id)
+        send_message(chat_id, reply, bot_token=bot_token)
+    elif command == "/tag":
+        arg = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
+        if arg.lower() in ("off", "stop", "none", "-", "τέλος", "τελος", "οφ"):
+            previous = _active_tag(conn, user_id)
+            _set_active_tag(conn, user_id, "")
+            reply = f"Stopped tagging #{previous}. " + telegram_ask.format_tag(conn, user_id, previous) if previous else "No tag was on."
+            send_message(chat_id, reply, bot_token=bot_token)
+        elif tags.clean_tag(arg):
+            _set_active_tag(conn, user_id, tags.clean_tag(arg))
+            send_message(chat_id, f"🏷 Every new entry gets #{tags.clean_tag(arg)} until /tag off.", bot_token=bot_token)
+        else:
+            send_message(chat_id, _tag_menu_text(conn, user_id), bot_token=bot_token,
+                         reply_markup=_tag_keyboard(conn, user_id))
     elif command in ("/notifications", "/notify"):
         send_message(chat_id, "Notifications — tap to turn on or off:", bot_token=bot_token,
                      reply_markup=_notify_keyboard(conn, user_id))
     else:
         send_message(chat_id, "Unknown command. /help lists what the bot understands.", bot_token=bot_token)
+
+
+def _tag_menu_text(conn, user_id: int) -> str:
+    active = _active_tag(conn, user_id)
+    head = f"Tagging every new entry with #{active}." if active else "No tag is on."
+    return head + "\nStart one with /tag NAME (e.g. /tag trip2026), or pick a recent one:"
+
+
+def _tag_keyboard(conn, user_id: int) -> dict:
+    rows = [[{"text": f"#{t}"[:40], "callback_data": f"tg:{i}"}] for i, t in enumerate(tags.recent(conn, user_id, 6))]
+    if _active_tag(conn, user_id):
+        rows.append([{"text": "Stop tagging", "callback_data": "tg:off"}])
+    return {"inline_keyboard": rows}
 
 
 def _notify_keyboard(conn, user_id: int) -> dict:
@@ -1099,7 +1141,20 @@ def _send_entry(conn, user_id: int, chat_id, entry_id: int, bot_token: str, mess
         send_message(chat_id, text, bot_token=bot_token, reply_markup=keyboard)
 
 
+def _active_tag(conn, user_id: int) -> str:
+    row = conn.execute("SELECT active_tag FROM telegram_links WHERE user_id = ?", (int(user_id),)).fetchone()
+    return (row["active_tag"] or "") if row else ""
+
+
+def _set_active_tag(conn, user_id: int, tag: str) -> None:
+    conn.execute("UPDATE telegram_links SET active_tag = ? WHERE user_id = ?", (tag, int(user_id)))
+    conn.commit()
+
+
 def _record(conn, user_id: int, chat_id, txn: tp.Txn, plan, default_account_id, bot_token: str, message_id: int | None = None) -> None:
+    active = _active_tag(conn, user_id)
+    if active:
+        txn.notes = tags.add_tags(txn.notes, [active])
     if plan is not None and txn.type == "expense":
         entry_id, err = save_shared(conn, user_id, txn, plan, default_account_id=default_account_id)
     else:
@@ -1117,6 +1172,10 @@ def _record(conn, user_id: int, chat_id, txn: tp.Txn, plan, default_account_id, 
 
 def _handle_text(text: str, conn, user_id: int, chat_id, balance_fn, bot_token: str) -> None:
     ctx, extra = _user_context(conn, user_id)
+    asked_tags = tags.find_tags(text)
+    if asked_tags and tp.looks_like_question(text):
+        send_message(chat_id, "\n\n".join(telegram_ask.format_tag(conn, user_id, t) for t in asked_tags), bot_token=bot_token)
+        return
     if tp.looks_like_question(text):
         groups = shared.groups_for_bot(conn, user_id)
         with typing(chat_id, bot_token):
@@ -1200,6 +1259,20 @@ def handle_callback(cb: dict, conn, config: dict) -> None:
         answer_callback(cb["id"], "Saved" if ok else "Unknown account", bot_token=bot_token)
         if ok:
             edit_message(chat_id, message_id, f"Default account for new entries: {name}", bot_token=bot_token)
+        return
+
+    if parts[0] == "tg" and len(parts) == 2:
+        recent = tags.recent(conn, uid, 6)
+        if parts[1] == "off":
+            _set_active_tag(conn, uid, "")
+            toast = "Tagging stopped"
+        elif parts[1].isdigit() and int(parts[1]) < len(recent):
+            _set_active_tag(conn, uid, recent[int(parts[1])])
+            toast = f"Tagging #{recent[int(parts[1])]}"
+        else:
+            toast = "That tag list is out of date, send /tag again"
+        edit_message(chat_id, message_id, _tag_menu_text(conn, uid), bot_token=bot_token, reply_markup=_tag_keyboard(conn, uid))
+        answer_callback(cb["id"], toast, bot_token=bot_token)
         return
 
     if parts[0] == "nt" and len(parts) == 2 and parts[1] in telegram_notify.KINDS:

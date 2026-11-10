@@ -1,4 +1,4 @@
-{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart, account_avatar %}
+{% from "_macros.html" import shell_month_year_row, list_filter_month_row, expense_list_url, income_list_url, reports_balance_chart, account_avatar, tag_suggestions %}
 <section class="panel {% if active_panel == 'income' %}active{% endif %}" id="panel-income">
     <h2>Add Income Entry</h2>
     <form action="/income/add" class="panel-add-form" method="post">
@@ -11,7 +11,10 @@
         {% if income_filter_category_id %}
             <input name="inc_category" type="hidden" value="{{ income_filter_category_id }}">
         {% endif %}
-        <textarea name="notes" placeholder="Notes" rows="2"></textarea>
+        <div class="notes-field">
+            <textarea name="notes" placeholder="Notes — add #tags to group, e.g. #trip2026" rows="2"></textarea>
+            {{ tag_suggestions(recent_tags) }}
+        </div>
         <input min="0" name="amount" placeholder="Amount" required step="0.01" type="number">
         <select name="category_id" required>
             {% for category in income_categories %}
@@ -69,7 +72,7 @@
                     <td data-label="Category">{{ entry.category_name }}</td>
                     <td data-label="Account">{{ account_avatar(entry.account_name, 'account-avatar-inline', false) }}{{ entry.account_name }}</td>
                     <td class="cell-amount {{ entry.amount|amount_class }}" data-label="Amount">{{ entry.amount|money }}</td>
-                    <td class="cell-notes" data-label="Notes">{{ entry.notes }}</td>
+                    <td class="cell-notes" data-label="Notes">{{ entry.notes|tag_links }}</td>
                     <td class="cell-date" data-label="Date">{{ entry.received_at|txn_day }}</td>
                     <td class="cell-actions">
                         <div class="action-stack">

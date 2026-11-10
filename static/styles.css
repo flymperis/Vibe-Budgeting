@@ -5683,3 +5683,90 @@ select:disabled {
     background: none;
     text-decoration: underline;
 }
+
+
+/* Tags: #hashtags in notes, shown as links to their report. */
+.tag-chip {
+    display: inline-block;
+    padding: 0 0.45em;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.tag-chip:hover {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* Recent-tag buttons under a notes field. The :is() carries the panel ids so
+   these win over the add forms' full-width mobile button rules. */
+.tag-suggest {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0.1rem 0 0.25rem;
+}
+
+.tag-suggest .tag-chip-add,
+:is(#panel-home, #panel-expenses, #panel-income, #panel-recurring, #panel-transfer) .tag-suggest .tag-chip-add {
+    width: auto;
+    min-height: 0;
+    padding: 0.1rem 0.55rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 500;
+    line-height: 1.6;
+}
+
+.tag-suggest .tag-chip-add:hover {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* Notes textarea plus its tag buttons, sized like the textarea used to be. */
+.notes-field {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 260px;
+    min-width: 220px;
+}
+
+.notes-field textarea,
+:is(#panel-expenses, #panel-income) .panel-add-form .notes-field textarea {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+/* The add forms stack into a column here, where a 260px basis would become height. */
+@media (max-width: 900px) {
+    .notes-field {
+        flex: 0 0 auto;
+        min-width: 0;
+    }
+}
+
+.tag-totals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.5rem;
+    margin: 0.5rem 0 1.25rem;
+}
+
+.tag-total {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.tag-total strong {
+    font-size: 1.15rem;
+}

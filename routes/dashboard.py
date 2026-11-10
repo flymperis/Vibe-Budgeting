@@ -5,6 +5,7 @@ import calendar
 import integrations
 import shared
 import telegram_bot
+import tags
 import telegram_notify
 import time
 
@@ -475,6 +476,10 @@ def index():
         stock_prices_age = ""
 
     reports_section = normalize_reports_section(request.args.get("reports_section"))
+    reports_tags = tags.summary(conn, uid)
+    selected_tag = (request.args.get("tag") or "").strip()
+    reports_tag = tags.detail(conn, uid, selected_tag) if selected_tag else None
+    recent_tags = [t["tag"] for t in reports_tags[:8]]
     report_account_id = normalize_report_account(request.args.get("report_account"), conn, uid)
     report_account_label = "All accounts"
     if report_account_id is not None:
@@ -668,6 +673,10 @@ def index():
         transfer_log_limit=TRANSFER_LOG_LIMIT,
         report_year=report_year,
         reports_section=reports_section,
+        reports_tags=reports_tags,
+        reports_tag=reports_tag,
+        selected_tag=selected_tag,
+        recent_tags=recent_tags,
         report_account_id=report_account_id,
         report_account_label=report_account_label,
         report_live_balance=report_live_balance,

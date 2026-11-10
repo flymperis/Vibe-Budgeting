@@ -7,6 +7,27 @@
     const menuButtons = document.querySelectorAll(".menu-item, .bottom-nav-item[data-target]");
     const panels = document.querySelectorAll(".panel");
 
+    // Recent-tag chips under notes fields: tapping one appends "#tag" to the
+    // notes (or a shared bill's description) of the same form. Registered up
+    // here because later sections of this file return early on some pages.
+    document.addEventListener("click", function (e) {
+        const chip = e.target.closest("[data-add-tag]");
+        if (!chip) {
+            return;
+        }
+        const form = chip.closest("form");
+        const field = form && form.querySelector("textarea[name=notes], input[name=notes], input[name=description]");
+        if (!field) {
+            return;
+        }
+        const tag = "#" + chip.dataset.addTag;
+        const words = field.value.toLowerCase().split(/\s+/);
+        if (!words.includes(tag.toLowerCase())) {
+            field.value = (field.value.trim() + " " + tag).trim();
+        }
+        field.focus();
+    });
+
     // Mirrors the active panel onto <body> for CSS that needs to key off it
     // but should not depend on :has() support: .is-home-panel shows the
     // mobile FAB, and .is-flat-panel makes the panel shell transparent on

@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 import integrations
+import tags
 
 FALLBACK_CATEGORY = "Other"
 SHARED_NOTE_PREFIX = "[Shared]"
@@ -89,7 +90,7 @@ def _similar(a: str, b: str) -> bool:
 _NUM = r"\d{1,7}(?:[.,]\d{1,2})?"
 _CUR = r"(?:€|euros?|eur|ευρώ|ευρω|ευρ|e)"
 _AMOUNT_RE = re.compile(
-    rf"(?<![\w.,/:])(?<!\d-)({_NUM})(?=\s*{_CUR}?(?![\w/:%]|[.,-]\d))",
+    rf"(?<![\w.,/:#])(?<!\d-)({_NUM})(?=\s*{_CUR}?(?![\w/:%]|[.,-]\d))",
     re.IGNORECASE,
 )
 _SLASH_DATE_RE = re.compile(r"(?<![\d.,])(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?(?![\d/-])")
@@ -580,8 +581,16 @@ def _choose_category(ctx: Context, kind: str, description: str, suggested: str |
     )
 
 
+def _with_tags(txns: list[Txn], found: list[str]) -> list[Txn]:
+    for t in txns:
+        t.notes = tags.add_tags(t.notes, found)
+    return txns
+
+
 def basic_parse(text: str, ctx: Context) -> list[Txn]:
     """Rule-based parse used when the AI is off, unreachable or unusable."""
+    found = tags.find_tags(text)
+    text = tags.strip_tags(text)
     amounts = find_amounts(text)
     if not amounts:
         return []
@@ -601,7 +610,7 @@ def basic_parse(text: str, ctx: Context) -> list[Txn]:
             account_id=account_id,
             source="basic",
         ))
-    return out
+    return _with_tags(out, found)
 
 
 def _ai_ready(ai: dict) -> bool:
@@ -689,6 +698,8 @@ def parse_transactions(text: str, ctx: Context) -> list[Txn]:
     """Transactions in a text message; [] when it holds no amount at all.
     The AI's answer is only kept if it is consistent with the message (no more
     transactions than amounts written); otherwise the basic parser is used."""
+    found = tags.find_tags(text)
+    text = tags.strip_tags(text)
     amounts = find_amounts(text)
     if not amounts:
         return []
@@ -713,9 +724,7 @@ def parse_transactions(text: str, ctx: Context) -> list[Txn]:
         lookup_text = describe(text, account_words) if len(amounts) == 1 else notes
         category = _choose_category(ctx, kind, lookup_text, str(item.get("category") or ""))
         out.append(Txn(kind, round(value, 2), category, notes, when.isoformat(), account_id, "ai"))
-    if out:
-        return out
-    return basic_parse(text, ctx)
+    return _with_tags(out or basic_parse(text, ctx), found)
 
 
 # --- shared bills ------------------------------------------------------------------
@@ -853,8 +862,10 @@ Return only JSON: {{"merchant": "shop name, cleaned up", "total": 0, "date": "YY
     if not merchant:
         first = next((ln.strip() for ln in ocr_text.splitlines() if re.search(r"[^\W\d_]{3}", ln)), "")
         merchant = first[:60]
-    caption_notes = describe(caption or "")
-    notes = merchant or caption_notes or "Receipt"
+    caption_tags = tags.find_tags(caption or "")
+    caption = tags.strip_tags(caption or "")
+    caption_notes = describe(caption)
+    notes = tags.add_tags(merchant or caption_notes or "Receipt", caption_tags)
     lookup = merchant + " " + caption_notes
     # The shop name on the receipt (e.g. a supermarket chain) is a stronger
     # signal than the AI's guess from the item list.

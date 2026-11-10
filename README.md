@@ -94,6 +94,15 @@ because daisyUI's unprefixed names collide with classes this app already
 uses — `.card`, `.stats` and `.btn-secondary` all mean something else in
 `styles.css`.
 
+## Tags
+
+Write `#tags` in the notes of any expense or income, e.g. `καφές #Λονδίνο2026` or `hotel #trip2026`, to see what a
+trip, a party or a project cost in total, whatever category each entry is in. **Reports → Tags** lists every tag with
+its spending, income and dates; open one for its breakdown by category and every entry. Tags in notes are clickable,
+and your recent tags appear under the notes field so one tap adds them. They are ordinary text in the notes, so they
+also work in recurring rules, shared bills (your share keeps the tag) and Excel export/import. Case and accents don't
+matter: `#Διακοπές2026` and `#διακοπες2026` are the same tag.
+
 ## Integrations (Ollama + Telegram)
 
 Per-user **Ollama** settings and **Telegram bot token** are in **Settings → Integrations** (saved in the database).
@@ -134,7 +143,10 @@ The budget app stays on Tailscale only (`http://personal-disk-share:5000`). Tele
 | `η Άννα πλήρωσε πίτσα 30 μισά` | Shared bill someone else paid, split between you two |
 | photo of a receipt | Total, date and shop read via the OCR model; a caption can name the account or say it's shared |
 | `πόσα ξόδεψα σε delivery τον προηγούμενο μήνα;` | Answered from the database (the AI only plans the lookup) |
-| `/month` `/lastmonth` `/balance` `/owe` `/account` `/undo` `/help` | Commands |
+| `καφές 3 #Λονδίνο2026` | Entry with a tag |
+| `/tag Λονδίνο2026` … `/tag off` | Tag every new entry while it's on (handy for a trip) |
+| `πόσα κόστισαν οι #Λονδίνο2026;` or `/tags` | What a tag (or each tag) cost, by category |
+| `/month` `/lastmonth` `/balance` `/owe` `/account` `/notifications` `/undo` `/help` | Commands |
 
 The bot also writes on its own (each can be switched off in **Settings → Integrations** or with `/notifications`):
 
