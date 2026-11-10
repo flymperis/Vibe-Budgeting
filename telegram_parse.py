@@ -20,7 +20,6 @@ from datetime import date, datetime, timedelta
 import integrations
 
 FALLBACK_CATEGORY = "Other"
-RESERVED_CATEGORIES = frozenset({"general", "other"})
 SHARED_NOTE_PREFIX = "[Shared]"
 MAX_AMOUNT = 1_000_000
 HISTORY_EXAMPLES = 40
@@ -206,67 +205,182 @@ def detect_account(text: str, accounts: list[dict]) -> tuple[int | None, set[str
 
 # --- categories -----------------------------------------------------------------
 
-# Folded word prefixes → category names to use if the user has one of them.
-# Used by the basic parser, as hints in the AI prompt, and as nothing more:
-# the user's own history always wins.
-KEYWORDS: list[tuple[tuple[str, ...], tuple[str, ...], str]] = [
-    (("kafe", "kofe", "koffee", "freddo", "frento", "espres", "kaputs", "kapuk", "kappuk"), ("Coffee", "Entertainment"), "expense"),
-    (("super", "sklaven", "sklaben", "masut", "masout", "vasilopul", "basilopul", "lidl", "kritiko", "galaxia", "mimarket", "mymarket", "kreopol", "manav", "furno", "artop"), ("Super Market", "Supermarket", "Groceries"), "expense"),
-    (("efood", "wolt", "delivery", "dilivery"), ("Delivery",), "expense"),
-    (("revma", "reima", "dei", "electric", "elektri", "ilektri"), ("Electricity",), "expense"),
-    (("nero", "eidap", "water"), ("Water",), "expense"),
-    (("enikio", "rent"), ("Rent",), "expense"),
-    (("internet",), ("Internet",), "expense"),
-    (("kinito", "mobile"), ("Mobile",), "expense"),
-    (("gim", "gimnast"), ("Gym",), "expense"),
-    (("farmak", "giatr", "iatr", "odontiatr", "pharmak", "doktor"), ("Health",), "expense"),
-    (("doro", "gift"), ("Gifts",), "expense"),
-    (("taxid", "trip", "hotel", "xenodox", "ksenodox", "airbnb", "ptisi"), ("Trip", "Travel"), "expense"),
-    (("ruxa", "paputs", "shopping", "zara"), ("Shopping",), "expense"),
-    (("misth", "salari", "payroll"), ("Salary",), "income"),
+# Catch-all category names, most preferred first. The user's own catch-all is
+# used; the bot creates "Other" only when they have none of these.
+FALLBACK_NAMES = (
+    "Other", "Others", "Misc", "Miscellaneous", "General", "Uncategorized", "Uncategorised",
+    "Άλλο", "Άλλα", "Λοιπά", "Διάφορα", "Γενικά",
+)
+
+
+def _flat(text: str) -> str:
+    return key(text).replace(" ", "")
+
+
+_FALLBACK_KEYS = tuple(_flat(n) for n in FALLBACK_NAMES)
+
+
+def is_fallback(name: str) -> bool:
+    return _flat(name) in _FALLBACK_KEYS
+
+
+def existing_fallback(options: list[str]) -> str | None:
+    by_key = {_flat(o): o for o in options}
+    for k in _FALLBACK_KEYS:
+        if k in by_key:
+            return by_key[k]
+    return None
+
+
+def find_fallback_category(options: list[str]) -> str:
+    return existing_fallback(options) or FALLBACK_CATEGORY
+
+
+@dataclass(frozen=True)
+class Concept:
+    """Something people spend on (or earn), recognised in a message by its
+    words and matched to whatever the user called that category, in any
+    language: groceries → "Super Market", "Groceries", "Σούπερ μάρκετ"…"""
+
+    kind: str
+    examples: tuple[str, ...]  # for the AI prompt
+    prefixes: tuple[str, ...]  # folded message-word prefixes
+    exact: tuple[str, ...]  # folded whole words (short ones like "ταξί" ≠ "ταξίδι")
+    categories: tuple[str, ...]  # folded category-name prefixes, most specific first
+
+
+def _concept(kind: str, words: tuple[str, ...], categories: tuple[str, ...]) -> Concept:
+    prefixes = tuple(_flat(w) for w in words if not w.startswith("="))
+    exact = tuple(_flat(w[1:]) for w in words if w.startswith("="))
+    return Concept(kind, tuple(w.lstrip("=") for w in words[:3]), prefixes, exact,
+                   tuple(c for c in (_flat(x) for x in categories) if len(c) >= 3))
+
+
+# Words are prefixes unless marked "=" (exact). Category names are matched by
+# prefix against each word of the user's category and against the whole name.
+CONCEPTS = [
+    _concept("expense",
+             ("καφέ", "coffee", "freddo", "φρέντο", "espresso", "cappuccino", "καπουτσίνο", "cafe"),
+             ("coffee", "cafe", "καφέ", "καφές", "entertainment", "διασκέδαση", "ψυχαγωγία", "fun", "leisure")),
+    _concept("expense",
+             ("σούπερ", "super", "σκλαβενίτ", "sklaben", "μασούτ", "βασιλόπουλ", "lidl", "κρητικ", "γαλαξία",
+              "mymarket", "κρεοπωλ", "μανάβ", "φούρν", "αρτοποι", "grocer", "μάρκετ"),
+             ("super market", "supermarket", "σούπερ", "groceries", "grocery", "τρόφιμα", "παντοπωλ", "market", "μάρκετ")),
+    _concept("expense",
+             ("efood", "wolt", "delivery", "ντελίβερι"),
+             ("delivery", "ντελίβερι", "παραγγελ", "takeaway", "take away")),
+    _concept("expense",
+             ("εστιατόρ", "restaurant", "ταβέρν", "σουβλ", "πίτσα", "pizza", "burger", "μπέργκερ", "=γύρος", "=γύρο"),
+             ("restaurant", "εστιατόρ", "φαγητό", "eating out", "dining", "food", "φαγητ")),
+    _concept("expense",
+             ("βενζίν", "benzin", "καύσιμ", "fuel", "petrol", "diesel"),
+             ("fuel", "καύσιμ", "βενζίν", "petrol", "car", "αυτοκίνητ", "vehicle", "όχημα", "transport", "μεταφορ", "μετακιν")),
+    _concept("expense",
+             ("=ταξί", "=taxi", "uber", "=beat", "μετρό", "metro", "λεωφορ", "=bus", "parking", "πάρκινγκ", "διόδι", "toll"),
+             ("transport", "μεταφορ", "μετακιν", "συγκοινων", "taxi", "ταξί", "car", "αυτοκίνητ", "vehicle", "όχημα")),
+    _concept("expense",
+             ("ρεύμα", "ρευμα", "=δεη", "electric", "ηλεκτρ"),
+             ("electric", "ρεύμα", "ηλεκτρ", "ενέργεια", "energy", "utilit", "bills", "λογαριασμοί", "κοινόχρηστ")),
+    _concept("expense",
+             ("νερό", "ευδαπ", "eydap", "water", "ύδρευσ"),
+             ("water", "νερό", "ύδρευσ", "utilit", "bills", "λογαριασμοί")),
+    _concept("expense",
+             ("ενοίκ", "νοίκι", "rent"),
+             ("rent", "ενοίκ", "νοίκι", "housing", "στέγαση", "house", "home", "σπίτι")),
+    _concept("expense",
+             ("internet", "ίντερνετ", "wifi"),
+             ("internet", "ίντερνετ", "telecom", "τηλεπικοιν", "bills", "λογαριασμοί")),
+    _concept("expense",
+             ("κινητ", "mobile", "καρτοκινητ"),
+             ("mobile", "κινητ", "phone", "τηλέφων", "telecom", "τηλεπικοιν")),
+    _concept("expense",
+             ("γυμναστήρ", "=gym", "fitness", "crossfit", "pilates", "yoga", "γιόγκα"),
+             ("gym", "γυμναστήρ", "fitness", "sport", "αθλητ", "άθλησ")),
+    _concept("expense",
+             ("φαρμακ", "pharmac", "γιατρ", "doctor", "ιατρ", "οδοντ", "dentist", "νοσοκομ", "hospital"),
+             ("health", "υγεία", "ιατρ", "medical", "pharmac", "φαρμακ")),
+    _concept("expense",
+             ("δώρ", "gift", "present"),
+             ("gift", "δώρ")),
+    _concept("expense",
+             ("ταξίδ", "trip", "travel", "hotel", "ξενοδοχ", "airbnb", "booking", "πτήσ", "flight", "διακοπ", "vacation"),
+             ("trip", "travel", "ταξίδ", "διακοπ", "holiday", "vacation")),
+    _concept("expense",
+             ("ρούχ", "clothes", "παπούτσ", "shoes", "shopping", "zara"),
+             ("clothes", "clothing", "ρούχ", "ένδυσ", "shopping", "ψώνια")),
+    _concept("expense",
+             ("σινεμά", "cinema", "movie", "ταινί", "θέατρ", "theat", "συναυλ", "concert", "μπύρ", "beer", "=bar", "club",
+              "=ποτό", "=ποτά"),
+             ("entertainment", "διασκέδαση", "ψυχαγωγία", "fun", "leisure", "going out")),
+    _concept("expense",
+             ("netflix", "spotify", "disney", "youtube", "icloud", "=hbo", "subscription", "συνδρομ"),
+             ("subscript", "συνδρομ", "streaming", "entertainment", "διασκέδαση")),
+    _concept("income",
+             ("μισθ", "salary", "payroll", "wage"),
+             ("salary", "μισθ", "payroll", "wage", "μισθοδοσ")),
 ]
 _INCOME_PREFIXES = ("misth", "salari", "payroll", "bonus", "pliromi apo", "eispra", "ispra")
 
 
-def _keyword_match(word: str, prefix: str) -> bool:
-    return word == prefix if len(prefix) <= 3 else word.startswith(prefix)
+def _message_words(text: str) -> list[str]:
+    words = [t for t in tokens(text) if not t.isdigit()]
+    return words + [a + b for a, b in zip(words, words[1:])]  # "my market" → "mimarket"
 
 
-def _pick_existing(candidates: tuple[str, ...], options: list[str]) -> str | None:
-    lowered = {o.lower(): o for o in options}
-    for name in candidates:
-        if name.lower() in lowered:
-            return lowered[name.lower()]
+def _triggered(concept: Concept, words: list[str]) -> bool:
+    return any(w in concept.exact or any(w.startswith(p) for p in concept.prefixes if len(p) >= 3) for w in words)
+
+
+def concept_category(concept: Concept, options: list[str]) -> str | None:
+    """The user's category for a concept, whatever language it is named in."""
+    named = [(o, _flat(o), key(o).split()) for o in options if not is_fallback(o)]
+    for pattern in concept.categories:
+        for original, flat, parts in named:
+            if len(pattern) <= 3:
+                hit = pattern in parts or flat == pattern  # "car" must not pick "Cards"
+            else:
+                hit = flat.startswith(pattern) or any(p.startswith(pattern) for p in parts)
+            if hit:
+                return original
     return None
 
 
 def keyword_category(text: str, options: list[str], kind: str) -> str | None:
-    words = [t for t in tokens(text) if not t.isdigit()]
-    for prefixes, candidates, kw_kind in KEYWORDS:
-        if kw_kind != kind:
-            continue
-        if any(_keyword_match(w, p) for w in words for p in prefixes):
-            picked = _pick_existing(candidates, options)
+    words = _message_words(text)
+    for concept in CONCEPTS:
+        if concept.kind == kind and _triggered(concept, words):
+            picked = concept_category(concept, options)
             if picked:
                 return picked
     return None
 
 
+def category_named_in(text: str, options: list[str]) -> str | None:
+    """One of the user's categories written in the message itself
+    ("βενζίνη 50" with a category "Βενζίνη"); the longest name wins."""
+    words = [w for w in _message_words(text) if len(w) >= 3]
+    best, best_len = None, 0
+    for option in options:
+        if is_fallback(option):
+            continue
+        parts = [p for p in key(option).split() if len(p) >= 3]
+        flat = "".join(parts)
+        if not parts:
+            continue
+        whole = any(w == flat or (len(flat) >= 4 and _similar(w, flat)) for w in words)
+        each = all(any(_similar(w, p) for w in words) for p in parts)
+        if (whole or each) and len(flat) > best_len:
+            best, best_len = option, len(flat)
+    return best
+
+
 def category_hints(expense_categories: list[str], income_categories: list[str]) -> list[str]:
     hints = []
-    for prefixes, candidates, kind in KEYWORDS:
-        opts = expense_categories if kind == "expense" else income_categories
-        picked = _pick_existing(candidates, opts)
+    for concept in CONCEPTS:
+        picked = concept_category(concept, income_categories if concept.kind == "income" else expense_categories)
         if picked:
-            hints.append(f'{"/".join(prefixes[:3])} → "{picked}"' + (" (income)" if kind == "income" else ""))
+            hints.append(f'{"/".join(concept.examples)} → "{picked}"' + (" (income)" if concept.kind == "income" else ""))
     return hints
-
-
-def find_fallback_category(options: list[str]) -> str:
-    for opt in options:
-        if opt.strip().lower() == FALLBACK_CATEGORY.lower():
-            return opt
-    return FALLBACK_CATEGORY
 
 
 def best_name_match(name: str, options: list[str]) -> str | None:
@@ -298,10 +412,10 @@ def resolve_category(name: str, options: list[str]) -> str:
     clean = (name or "").strip()
     if not options:
         return FALLBACK_CATEGORY
-    if clean.lower() in {"general", "unknown", "misc", "other", "άλλο", "αλλο"}:
+    if not clean or is_fallback(clean) or clean.lower() in {"unknown", "none", "null"}:
         return find_fallback_category(options)
     matched = best_name_match(clean, options)
-    if matched and matched.strip().lower() not in RESERVED_CATEGORIES:
+    if matched and not is_fallback(matched):
         return matched
     return find_fallback_category(options)
 
@@ -319,8 +433,8 @@ class History:
         if not k:
             return None
         found = self.lookup.get((kind, k))
-        if found and found.lower() not in RESERVED_CATEGORIES:
-            return _pick_existing((found,), options)
+        if found and not is_fallback(found):
+            return next((o for o in options if o.lower() == found.lower()), None)
         return None
 
 
@@ -449,15 +563,21 @@ def _segments(text: str, amounts: list[Amount]) -> list[tuple[str, Amount]]:
 
 
 def _choose_category(ctx: Context, kind: str, description: str, suggested: str | None) -> str:
+    """The user's past choice, then the AI's, then a category named in the
+    message, then a known kind of spending, then the user's catch-all."""
     options = ctx.categories(kind)
     from_history = ctx.history.category_for(kind, description, options)
     if from_history:
         return from_history
     if suggested:
         resolved = resolve_category(suggested, options)
-        if resolved.lower() not in RESERVED_CATEGORIES:
+        if not is_fallback(resolved):
             return resolved
-    return keyword_category(description, options, kind) or resolve_category(suggested or "", options)
+    return (
+        category_named_in(description, options)
+        or keyword_category(description, options, kind)
+        or find_fallback_category(options)
+    )
 
 
 def basic_parse(text: str, ctx: Context) -> list[Txn]:
@@ -519,8 +639,8 @@ def _dates_block(today: date) -> str:
 
 
 def _record_prompt(text: str, ctx: Context) -> str:
-    expense = [c for c in ctx.expense_categories if c.lower() not in RESERVED_CATEGORIES]
-    income = [c for c in ctx.income_categories if c.lower() not in RESERVED_CATEGORIES]
+    expense = [c for c in ctx.expense_categories if not is_fallback(c)]
+    income = [c for c in ctx.income_categories if not is_fallback(c)]
     hints = category_hints(ctx.expense_categories, ctx.income_categories)
     hint_line = ("Typical words: " + "; ".join(hints) + ".\n") if hints else ""
     return f"""You turn short personal-finance messages (Greek, Greeklish or English) into JSON.
@@ -704,7 +824,7 @@ def parse_receipt(ocr_text: str, caption: str, ctx: Context) -> Txn | None:
     text directly when possible; the AI names the shop and picks a category."""
     total = receipt_total(ocr_text)
     when = receipt_date(ocr_text, ctx.today)
-    expense = [c for c in ctx.expense_categories if c.lower() not in RESERVED_CATEGORIES]
+    expense = [c for c in ctx.expense_categories if not is_fallback(c)]
     prompt = f"""This is the OCR text of a shop receipt (often Greek; letters may be garbled).
 {_dates_block(ctx.today)}
 Expense categories: {json.dumps(expense, ensure_ascii=False)}
@@ -742,7 +862,7 @@ Return only JSON: {{"merchant": "shop name, cleaned up", "total": 0, "date": "YY
     shop_category = keyword_category(f"{merchant} {head} {caption_notes}", ctx.expense_categories, "expense")
     category = ctx.history.category_for("expense", merchant, ctx.expense_categories) or shop_category
     category = category or _choose_category(ctx, "expense", lookup, str(parsed.get("category") or ""))
-    if category.lower() in RESERVED_CATEGORIES and caption_notes:
+    if is_fallback(category) and caption_notes:
         category = _choose_category(ctx, "expense", caption_notes, None)
     account_id, _ = detect_account(caption or "", ctx.accounts)
     return Txn("expense", round(total, 2), category, notes, (when or ctx.today).isoformat(), account_id, "receipt")
@@ -883,7 +1003,6 @@ def _heuristic_plan(text: str, ctx: Context) -> dict:
 # they compare equal to folded user text.
 _ACCOUNT_STOPWORDS = frozenset(_fw(*_ACCOUNT_STOPWORDS, "κάρτα", "card", "credit", "account", "λογαριασμός", "τράπεζα", "balances"))
 _CASH_WORDS = frozenset(_fw(*_CASH_WORDS, "μετρητά", "cash", "χαρτονόμισμα"))
-KEYWORDS = [(_fw(*prefixes), candidates, kind) for prefixes, candidates, kind in KEYWORDS]
 _INCOME_PREFIXES = _fw(*_INCOME_PREFIXES, "μισθ", "salary", "είσπραξ")
 _FILLER = frozenset(_fw(*_FILLER, "η", "ο", "οι", "του", "της", "των", "και", "ευρώ", "σήμερα", "χθες", "προχθές", "πλήρωσα", "έδωσα", "πληρωμή", "λεφτά"))
 _SHARED_PREFIXES = _fw(*_SHARED_PREFIXES, "μοιρασ", "μισά", "κοινό", "μαζί")

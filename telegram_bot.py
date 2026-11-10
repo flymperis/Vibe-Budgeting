@@ -303,26 +303,17 @@ def _link_account(conn: sqlite3.Connection, code: str, chat_id: str, username: s
 
 
 def _ensure_fallback_category(conn: sqlite3.Connection, user_id: int, *, expense: bool) -> str:
+    """The user's catch-all category (Other, General, Λοιπά, …); "Other" is
+    created only when they have none."""
     table = "categories" if expense else "income_categories"
     uid = int(user_id)
-    conn.execute(
-        f"INSERT OR IGNORE INTO {table} (user_id, name) VALUES (?, ?)",
-        (uid, FALLBACK_CATEGORY_NAME),
-    )
+    names = [r["name"] for r in conn.execute(f"SELECT name FROM {table} WHERE user_id = ?", (uid,))]
+    existing = tp.existing_fallback(names)
+    if existing:
+        return existing
+    conn.execute(f"INSERT OR IGNORE INTO {table} (user_id, name) VALUES (?, ?)", (uid, FALLBACK_CATEGORY_NAME))
     conn.commit()
-    row = conn.execute(
-        f"SELECT name FROM {table} WHERE user_id = ? AND lower(name) = lower(?)",
-        (uid, FALLBACK_CATEGORY_NAME),
-    ).fetchone()
-    return row["name"] if row else FALLBACK_CATEGORY_NAME
-
-
-def _ensure_salary_category(conn: sqlite3.Connection, user_id: int) -> None:
-    conn.execute(
-        "INSERT OR IGNORE INTO income_categories (user_id, name) VALUES (?, ?)",
-        (int(user_id), "Salary"),
-    )
-    conn.commit()
+    return FALLBACK_CATEGORY_NAME
 
 
 def _lookup_category_id(conn: sqlite3.Connection, user_id: int, name: str, *, expense: bool) -> int:
@@ -368,7 +359,6 @@ def _user_context(conn: sqlite3.Connection, user_id: int) -> tuple[tp.Context, d
     uid = int(user_id)
     _ensure_fallback_category(conn, uid, expense=True)
     _ensure_fallback_category(conn, uid, expense=False)
-    _ensure_salary_category(conn, uid)
     expense_categories = [
         r["name"] for r in conn.execute("SELECT name FROM categories WHERE user_id = ? ORDER BY name", (uid,))
     ]

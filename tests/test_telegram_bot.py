@@ -417,3 +417,65 @@ def test_ocr_model_is_saved_from_settings(client):
     assert integrations.get_user_integrations(conn, uid)["ai_ocr_model"] == "glm-ocr"
     conn.close()
     assert 'name="ai_ocr_model"' in client.get("/?panel=settings&settings_section=integrations").get_data(as_text=True)
+
+
+# --- any user's own categories, in any language ---------------------------------------
+
+
+def _ctx_for(expense, income):
+    return tp.Context(expense, income, [], tp.History(), {"ai_enabled": False}, date(2026, 11, 10))
+
+
+@pytest.mark.parametrize("message,greek,english", [
+    ("σούπερ μάρκετ 42", "Σούπερ μάρκετ", "Groceries"),
+    ("καφές 3", "Καφέδες", "Coffee"),
+    ("βενζίνη 50", "Βενζίνη", "Car"),
+    ("ρεύμα 85", "Λογαριασμοί", "Bills"),
+    ("σουβλάκια 12", "Φαγητό έξω", "Eating out"),
+    ("μισθός 1500", "Μισθός", "Wages"),
+    ("κάτι άσχετο 7", "Λοιπά", "Misc"),
+])
+def test_categories_match_whatever_the_user_named_them(message, greek, english):
+    greek_ctx = _ctx_for(["Σούπερ μάρκετ", "Καφέδες", "Βενζίνη", "Λογαριασμοί", "Φαγητό έξω", "Λοιπά"], ["Μισθός", "Λοιπά"])
+    english_ctx = _ctx_for(["Groceries", "Coffee", "Car", "Cards", "Bills", "Eating out", "Misc"], ["Wages", "Misc"])
+    assert tp.basic_parse(message, greek_ctx)[0].category == greek
+    assert tp.basic_parse(message, english_ctx)[0].category == english
+
+
+def test_a_category_written_in_the_message_is_used():
+    ctx = _ctx_for(["Βενζίνη", "Κήπος", "Other"], ["Other"])
+    assert tp.basic_parse("κήπος λιπάσματα 18", ctx)[0].category == "Κήπος"
+    assert tp.basic_parse("βενζίνης 40", ctx)[0].category == "Βενζίνη"
+
+
+def test_catch_all_is_the_users_own():
+    assert tp.find_fallback_category(["Food", "Λοιπά"]) == "Λοιπά"
+    assert tp.find_fallback_category(["Food", "General", "Other"]) == "Other"
+    assert tp.find_fallback_category(["Food"]) == "Other"
+    assert tp.resolve_category("Other", ["Food", "General"]) == "General"
+
+
+def test_bot_uses_renamed_categories_and_creates_none(client, tg):
+    """A user who replaced the seeded English "Other"/"Salary" with Greek ones."""
+    uid = _linked_user(client, "tg_greek_user")
+    conn = vb_app.get_connection()
+    conn.execute("DELETE FROM categories WHERE user_id = ? AND name IN ('Other', 'General')", (uid,))
+    conn.execute("DELETE FROM income_categories WHERE user_id = ? AND name IN ('Other', 'General', 'Salary')", (uid,))
+    conn.executemany("INSERT INTO categories (user_id, name) VALUES (?, ?)", [(uid, "Λοιπά"), (uid, "Βενζίνη")])
+    conn.executemany("INSERT INTO income_categories (user_id, name) VALUES (?, ?)", [(uid, "Λοιπά"), (uid, "Μισθός")])
+    conn.commit()
+    conn.close()
+    before = {r["name"] for r in _rows("SELECT name FROM categories WHERE user_id = ?", uid)}
+    before_income = {r["name"] for r in _rows("SELECT name FROM income_categories WHERE user_id = ?", uid)}
+
+    _send("κάτι άσχετο 7")
+    _send("βενζίνη 50")
+    _send("μισθός 1500")
+
+    assert {r["name"] for r in _rows("SELECT name FROM categories WHERE user_id = ?", uid)} == before
+    assert {r["name"] for r in _rows("SELECT name FROM income_categories WHERE user_id = ?", uid)} == before_income
+    cats = _rows("SELECT c.name FROM expenses e JOIN categories c ON c.id = e.category_id WHERE e.user_id = ? ORDER BY e.id", uid)
+    assert [r["name"] for r in cats] == ["Λοιπά", "Βενζίνη"]
+    income = _rows("""SELECT c.name FROM income_entries i JOIN income_categories c ON c.id = i.category_id
+                      WHERE i.user_id = ?""", uid)
+    assert [r["name"] for r in income] == ["Μισθός"]

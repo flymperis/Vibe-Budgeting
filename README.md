@@ -146,6 +146,8 @@ The bot also writes on its own (each can be switched off in **Settings → Integ
 | Weekly summary | Sunday 20:00: the week vs your 8-week average, top categories, budget so far, what's coming up |
 | Monthly summary | 1st of the month 09:00 (or the 2nd/3rd if the server was down): last month by category, vs the month before, budget result |
 
-Every entry comes with buttons to change its category, account or date, or undo it. Categories follow your own past
+Every entry comes with buttons to change its category, account or date, or undo it. The bot works with whatever categories you create, in Greek or English
+("Σούπερ μάρκετ", "Groceries", "Super Market" all catch `σούπερ μάρκετ 20`), and files unmatched items under your own
+catch-all (Other, General, Λοιπά, …). Categories follow your own past
 choices: re-file `efood` under another category once and the bot uses that from then on. Without AI (or if Ollama is
 unreachable) simple messages are still recorded by a basic parser.

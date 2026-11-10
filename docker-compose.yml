@@ -6,6 +6,10 @@ services:
       - "5000:5000"
     environment:
       - DATABASE_PATH=/app/data/database.db
+      # Change to your own time zone (e.g. Europe/London, America/New_York): it
+      # decides what "today" is for new entries and when the Telegram reminders
+      # and summaries go out. Without it the container runs on UTC.
+      - TZ=Europe/Athens
       # FINNHUB_API_KEY=your_key_here
     volumes:
       - ./budget-data:/app/data
