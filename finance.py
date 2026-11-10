@@ -75,6 +75,11 @@ def last_posted_recurring_date(conn, recurring_id, day_of_month):
     dates = [d for d in dates if d is not None]
     return max(dates) if dates else None
 
+def recurring_note(notes):
+    """Notes on the expense/income rows a recurring rule posts."""
+    text = (notes or "").strip()
+    return f"[Recurring] {text}" if text else "[Recurring]"
+
 def apply_recurring_entries(conn, user_id):
     """Insert expense/income rows for due recurring rules (catch-up through today)."""
     uid = int(user_id)
@@ -99,9 +104,7 @@ def apply_recurring_entries(conn, user_id):
             start_d = created_d.replace(day=1)
             not_before = not_before or created_d
         unit = rule["interval_unit"] if rule["interval_unit"] in RECURRING_UNITS else "month"
-        note_text = (rule["notes"] or "").strip()
-        prefix = "[Recurring] "
-        full_notes = f"{prefix}{note_text}" if note_text else prefix.strip()
+        full_notes = recurring_note(rule["notes"])
         times = normalize_optional_positive_int(rule["months_to_run"])
 
         for due, key in recurring_occurrences(

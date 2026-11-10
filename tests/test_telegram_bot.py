@@ -479,3 +479,148 @@ def test_bot_uses_renamed_categories_and_creates_none(client, tg):
     income = _rows("""SELECT c.name FROM income_entries i JOIN income_categories c ON c.id = i.category_id
                       WHERE i.user_id = ?""", uid)
     assert [r["name"] for r in income] == ["Μισθός"]
+
+
+# --- recurring entries ---------------------------------------------------------------
+
+
+def test_counts_of_months_or_times_are_not_amounts():
+    assert [a.value for a in tp.find_amounts("recurring 21.66 for 3 months")] == [21.66]
+    assert [a.value for a in tp.find_amounts("γυμναστήριο 30 για 6 μήνες")] == [30.0]
+    assert [a.value for a in tp.find_amounts("netflix 12,99 κάθε 2 εβδομάδες 10 φορές")] == [12.99]
+    assert [a.value for a in tp.find_amounts("νοίκι 500 μηνιαία")] == [500.0]
+    assert [a.value for a in tp.find_amounts("rent 500 monthly")] == [500.0]
+
+
+def test_the_ais_repeat_is_kept_only_when_it_makes_sense(monkeypatch):
+    item = {"type": "expense", "amount": 21.66, "category": "Entertainment", "notes": "spotify", "date": "2026-11-10"}
+    cases = [
+        ({"every": 1, "unit": "month", "times": 3}, tp.Repeat("month", 1, 3)),
+        ({"every": "2", "unit": "weeks", "times": None}, tp.Repeat("week", 2, None)),
+        ({"unit": "yearly"}, tp.Repeat("year", 1, None)),
+        ({"every": 1, "unit": "day", "times": 5}, None),  # no daily rules
+        ({"every": 1, "unit": "month", "times": 1}, None),  # once is not a repeat
+        ({"every": -1, "unit": "month"}, None),
+        (None, None),
+    ]
+    for raw, expected in cases:
+        _fake_ai(monkeypatch, [{"transactions": [{**item, "repeat": raw}]}])
+        txns = tp.parse_transactions("spotify 21.66", _ctx(ai_settings=AI_ON))
+        assert txns[0].repeat == expected, raw
+
+
+def test_a_repeating_entry_may_start_later_but_a_one_off_may_not(monkeypatch):
+    ctx = _ctx(ai_settings=AI_ON)
+    later = "2026-12-01"
+    item = {"type": "expense", "amount": 500, "category": "Other", "notes": "νοίκι", "date": later}
+    _fake_ai(monkeypatch, [{"transactions": [{**item, "repeat": {"every": 1, "unit": "month", "times": None}}]}])
+    assert tp.parse_transactions("νοίκι 500 κάθε 1η του μήνα", ctx)[0].date == later
+    _fake_ai(monkeypatch, [{"transactions": [item]}])
+    assert tp.parse_transactions("νοίκι 500", ctx)[0].date == "2026-11-10"
+
+
+def _rule(uid):
+    return _rows("SELECT * FROM recurring_entries WHERE user_id = ?", uid)
+
+
+def test_recurring_message_creates_a_rule_and_its_first_entry(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_recurring", ai=True)
+    prompts = _fake_ai(monkeypatch, [{"transactions": [{
+        "type": "expense", "amount": 21.66, "category": "Entertainment", "notes": "spotify",
+        "date": TODAY.isoformat(), "repeat": {"every": 1, "unit": "month", "times": 3},
+    }]}])
+    _send("spotify recurring 21.66 for 3 months revolut")
+    assert '"repeat"' in prompts[0]
+
+    rules = _rule(uid)
+    assert len(rules) == 1
+    r = rules[0]
+    assert (r["entry_type"], r["amount"], r["interval_unit"], r["interval_count"], r["months_to_run"],
+            r["start_date"], r["day_of_month"], r["notes"]) == (
+        "expense", 21.66, "month", 1, 3, TODAY.isoformat(), TODAY.day, "spotify")
+    posted = _rows("""SELECT e.amount, e.notes, date(e.spent_at) d, a.name acc FROM expenses e
+                      JOIN accounts a ON a.id = e.account_id WHERE e.user_id = ?""", uid)
+    assert [(p["amount"], p["notes"], p["d"], p["acc"]) for p in posted] == [
+        (-21.66, "[Recurring] spotify", TODAY.isoformat(), "Revolut")]
+
+    text = tg.last_text()
+    assert text.startswith("✅ Recurring expense 21.66€ · Entertainment")
+    assert "every month, 3 times" in text and "1 of 3 recorded" in text
+    keyboard = tg.last_keyboard()
+    assert "📅 Date" not in [b["text"] for row in keyboard for b in row]
+
+    # Category and account buttons change the rule and what it already posted.
+    _press(_button(keyboard, "🏷 Category"))
+    _press(_button(tg.last_keyboard(), "Delivery"))
+    _press(_button(keyboard, "🏦 Account"))
+    _press(_button(tg.last_keyboard(), "Cash"))
+    row = _rows("""SELECT c.name cat, a.name acc FROM recurring_entries r JOIN categories c ON c.id = r.category_id
+                   JOIN accounts a ON a.id = r.account_id WHERE r.user_id = ?""", uid)[0]
+    assert (row["cat"], row["acc"]) == ("Delivery", "Cash")
+    row = _rows("""SELECT c.name cat, a.name acc FROM expenses e JOIN categories c ON c.id = e.category_id
+                   JOIN accounts a ON a.id = e.account_id WHERE e.user_id = ?""", uid)[0]
+    assert (row["cat"], row["acc"]) == ("Delivery", "Cash")
+
+    _send("/undo")
+    assert _rule(uid) == []
+    assert _rows("SELECT * FROM expenses WHERE user_id = ?", uid) == []
+    assert tg.last_text().startswith("↩️ Removed: Recurring expense 21.66€") and "1 recorded entry" in tg.last_text()
+
+
+def test_recurring_income_without_end_starting_next_month(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_recurring_income", ai=True)
+    first = (TODAY.replace(day=1) + timedelta(days=32)).replace(day=1)
+    _fake_ai(monkeypatch, [{"transactions": [{
+        "type": "income", "amount": 1500, "category": "Salary", "notes": "μισθός",
+        "date": first.isoformat(), "repeat": {"every": 1, "unit": "month", "times": None},
+    }]}])
+    _send("μισθός 1500 κάθε 1η του μήνα")
+    r = _rule(uid)[0]
+    assert (r["entry_type"], r["months_to_run"], r["start_date"], r["day_of_month"]) == ("income", None, first.isoformat(), 1)
+    assert _rows("SELECT * FROM income_entries WHERE user_id = ?", uid) == []
+    assert "no end date" in tg.last_text() and "0 recorded so far" in tg.last_text()
+    _press(_button(tg.last_keyboard(), "🏷 Category"))
+    assert "Salary" in [b["text"] for row in tg.last_keyboard() for b in row]
+
+
+def test_shared_bills_cannot_repeat(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_recurring_shared", ai=True)
+    client.post("/shared/groups/add", data={"name": "Σπίτι", "new_members": "Νίκος",
+                                            "_csrf_token": csrf_token(client)})
+    _fake_ai(monkeypatch, [{"transactions": [{
+        "type": "expense", "amount": 40, "category": "Other", "notes": "internet",
+        "date": TODAY.isoformat(), "repeat": {"every": 1, "unit": "month", "times": None},
+    }]}])
+    _send("internet 40 μοιρασμένο κάθε μήνα")
+    assert "can't repeat" in tg.last_text()
+    assert _rule(uid) == [] and _rows("SELECT * FROM shared_expenses WHERE user_id = ?", uid) == []
+
+
+def test_old_telegram_entries_table_gains_the_recurring_kind():
+    import sqlite3
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+    conn.execute("CREATE TABLE accounts (id INTEGER PRIMARY KEY)")
+    conn.execute("""CREATE TABLE telegram_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('expense', 'income', 'shared')),
+        row_id INTEGER NOT NULL, source TEXT NOT NULL DEFAULT 'ai',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+    conn.execute("INSERT INTO users (id) VALUES (1)")
+    conn.execute("INSERT INTO telegram_entries (id, user_id, kind, row_id) VALUES (7, 1, 'expense', 42)")
+    telegram_bot.migrate_telegram(conn)
+    telegram_bot.migrate_telegram(conn)  # idempotent
+    conn.execute("INSERT INTO telegram_entries (user_id, kind, row_id) VALUES (1, 'recurring', 3)")
+    rows = conn.execute("SELECT id, kind, row_id FROM telegram_entries ORDER BY id").fetchall()
+    assert [tuple(r) for r in rows] == [(7, "expense", 42), (8, "recurring", 3)]
+
+
+def test_the_amount_written_beats_the_ais_reading_of_it(monkeypatch):
+    item = {"type": "expense", "category": "Entertainment", "notes": "netflix", "date": "2026-11-10"}
+    _fake_ai(monkeypatch, [{"transactions": [{**item, "amount": 1299}]}])
+    assert [t.amount for t in tp.parse_transactions("netflix 12,99", _ctx(ai_settings=AI_ON))] == [12.99]
+    _fake_ai(monkeypatch, [{"transactions": [{**item, "amount": 3}, {**item, "amount": 77}]}])
+    txns = tp.parse_transactions("καφές 3, σουβλάκια 12", _ctx(ai_settings=AI_ON))
+    assert [(t.amount, t.source) for t in txns] == [(3.0, "ai")]

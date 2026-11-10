@@ -23,6 +23,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+import finance
 import integrations
 import shared
 import tags
@@ -63,6 +64,18 @@ BOT_COMMANDS = [
 ]
 
 
+TELEGRAM_ENTRIES_SQL = """
+    CREATE TABLE IF NOT EXISTS telegram_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('expense', 'income', 'shared', 'recurring')),
+        row_id INTEGER NOT NULL,
+        source TEXT NOT NULL DEFAULT 'ai',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+"""
+
+
 def migrate_telegram(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -98,19 +111,19 @@ def migrate_telegram(conn: sqlite3.Connection) -> None:
     )
     conn.execute("INSERT OR IGNORE INTO telegram_server_config (id) VALUES (1)")
     # Every row the bot writes, so its buttons and /undo act on exactly that
-    # row (and never on something entered on the web).
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS telegram_entries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            kind TEXT NOT NULL CHECK (kind IN ('expense', 'income', 'shared')),
-            row_id INTEGER NOT NULL,
-            source TEXT NOT NULL DEFAULT 'ai',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    # row (and never on something entered on the web). For 'recurring',
+    # row_id is the recurring_entries rule.
+    old = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'telegram_entries'").fetchone()
+    if old and "'recurring'" not in old[0]:
+        conn.execute("ALTER TABLE telegram_entries RENAME TO telegram_entries_old")
+        conn.execute("DROP INDEX IF EXISTS idx_telegram_entries_user")
+    conn.execute(TELEGRAM_ENTRIES_SQL)
+    if old and "'recurring'" not in old[0]:
+        conn.execute(
+            "INSERT INTO telegram_entries (id, user_id, kind, row_id, source, created_at) "
+            "SELECT id, user_id, kind, row_id, source, created_at FROM telegram_entries_old"
         )
-        """
-    )
+        conn.execute("DROP TABLE telegram_entries_old")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_telegram_entries_user ON telegram_entries(user_id, id)")
     # A tag added to every new entry while set (/tag trip2026), e.g. for a trip.
     link_cols = {r[1] for r in conn.execute("PRAGMA table_info(telegram_links)").fetchall()}
@@ -429,6 +442,38 @@ def save_transaction(conn, user_id: int, txn: tp.Txn, *, default_account_id: int
     return entry_id, ""
 
 
+def save_recurring(conn, user_id: int, txn: tp.Txn, *, default_account_id: int | None = None) -> tuple[int | None, str]:
+    """(telegram entry id, error message). Creates a recurring rule like the
+    web form does, starting on txn.date, and posts whatever is already due."""
+    uid = int(user_id)
+    repeat = txn.repeat
+    account_id = _resolve_account_id(conn, uid, txn.account_id, default_account_id)
+    if account_id is None:
+        return None, "No account found. Add an account in Settings → Banks first."
+    try:
+        category_id = _lookup_category_id(conn, uid, txn.category, expense=txn.type != "income")
+    except ValueError as exc:
+        return None, str(exc)
+    start = datetime.strptime(txn.date, "%Y-%m-%d").date()
+    cur = conn.execute(
+        """
+        INSERT INTO recurring_entries (
+            user_id, entry_type, amount, category_id, account_id, day_of_month, months_to_run,
+            interval_unit, interval_count, start_date, not_before, notes, enabled
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 1)
+        """,
+        (
+            uid, "income" if txn.type == "income" else "expense", abs(txn.amount), category_id, account_id,
+            start.day, repeat.times, repeat.unit, repeat.every, start.isoformat(), txn.notes,
+        ),
+    )
+    entry_id = _log_entry(conn, uid, "recurring", int(cur.lastrowid), txn.source)
+    finance.apply_recurring_entries(conn, uid)
+    conn.commit()
+    return entry_id, ""
+
+
 def save_shared(conn, user_id: int, txn: tp.Txn, plan: tp.SharedPlan, *, default_account_id: int | None = None) -> tuple[int | None, str]:
     """A shared bill split equally between the plan's participants, recorded
     in the user's own books like the web form does."""
@@ -547,10 +592,72 @@ _SOURCE_NOTES = {
 }
 
 
+def _recurring_rule(conn, uid: int, entry) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT r.*, COALESCE(ce.name, ci.name) AS category, a.name AS account,
+               (SELECT COUNT(*) FROM recurring_applied ra WHERE ra.recurring_id = r.id) AS posted
+        FROM recurring_entries r
+        LEFT JOIN categories ce ON r.entry_type = 'expense' AND ce.id = r.category_id
+        LEFT JOIN income_categories ci ON r.entry_type = 'income' AND ci.id = r.category_id
+        LEFT JOIN accounts a ON a.id = r.account_id
+        WHERE r.id = ? AND r.user_id = ?
+        """,
+        (entry["row_id"], uid),
+    ).fetchone()
+
+
+def _recurring_posted_rows(conn, uid: int, rule) -> tuple[str, list[int]]:
+    """(table, row ids) of the entries a rule has posted, matched the way
+    finance.apply_recurring_entries writes them."""
+    table, day_col = ("income_entries", "received_at") if rule["entry_type"] == "income" else ("expenses", "spent_at")
+    days = {
+        finance.recurring_key_date(r["ym"], rule["day_of_month"])
+        for r in conn.execute("SELECT ym FROM recurring_applied WHERE recurring_id = ?", (rule["id"],))
+    }
+    days = sorted(d.isoformat() for d in days if d)
+    if not days:
+        return table, []
+    rows = conn.execute(
+        f"""
+        SELECT id FROM {table}
+        WHERE user_id = ? AND notes = ? AND category_id = ? AND account_id = ? AND abs(amount) = ?
+          AND date({day_col}) IN ({",".join("?" * len(days))})
+        """,
+        (uid, finance.recurring_note(rule["notes"]), rule["category_id"], rule["account_id"],
+         abs(float(rule["amount"])), *days),
+    ).fetchall()
+    return table, [int(r["id"]) for r in rows]
+
+
+def _fmt_repeat(unit: str, every: int, times: int | None) -> str:
+    unit = unit if unit in tp.REPEAT_UNITS else "month"
+    head = f"every {unit}" if every == 1 else f"every {every} {unit}s"
+    return head + (f", {times} times" if times else ", no end date")
+
+
+def _render_recurring(conn, uid: int, entry, note: str) -> tuple[str, dict | None]:
+    rule = _recurring_rule(conn, uid, entry)
+    if not rule:
+        return "This recurring rule was removed.", None
+    label = "Recurring income" if rule["entry_type"] == "income" else "Recurring expense"
+    lines = [f"✅ {label} {float(rule['amount']):.2f}€ · {rule['category'] or '—'}"]
+    if rule["notes"]:
+        lines.append(f"📝 {rule['notes']}")
+    lines.append(f"🔁 {_fmt_repeat(rule['interval_unit'], int(rule['interval_count']), rule['months_to_run'])}"
+                 f" · from {_fmt_day(rule['start_date'] or '')}")
+    done = f"{rule['posted']} of {rule['months_to_run']}" if rule["months_to_run"] else str(rule["posted"])
+    status = f"{done} recorded so far" + ("" if rule["enabled"] else " · paused")
+    lines.append(f"🏦 {rule['account'] or '—'} · {status}")
+    return "\n".join(lines) + note, _main_keyboard(entry["id"], date=False)
+
+
 def render_entry(conn, user_id: int, entry) -> tuple[str, dict | None]:
     """Message text and buttons for one bot entry, read fresh from the DB."""
     uid = int(user_id)
     note = _SOURCE_NOTES.get(entry["source"], "")
+    if entry["kind"] == "recurring":
+        return _render_recurring(conn, uid, entry, note)
     if entry["kind"] in ("expense", "income"):
         row = _expense_row(conn, uid, entry)
         if not row:
@@ -576,16 +683,14 @@ def render_entry(conn, user_id: int, entry) -> tuple[str, dict | None]:
     return "\n".join(lines) + note, _main_keyboard(entry["id"], account=state["i_paid"], category=state["my_share"] > 0)
 
 
-def _main_keyboard(entry_id: int, *, account: bool = True, category: bool = True) -> dict:
+def _main_keyboard(entry_id: int, *, account: bool = True, category: bool = True, date: bool = True) -> dict:
     row1 = []
     if category:
         row1.append({"text": "🏷 Category", "callback_data": f"e:{entry_id}:c"})
     if account:
         row1.append({"text": "🏦 Account", "callback_data": f"e:{entry_id}:a"})
-    row2 = [
-        {"text": "📅 Date", "callback_data": f"e:{entry_id}:d"},
-        {"text": "↩️ Undo", "callback_data": f"e:{entry_id}:u"},
-    ]
+    row2 = [{"text": "📅 Date", "callback_data": f"e:{entry_id}:d"}] if date else []
+    row2.append({"text": "↩️ Undo", "callback_data": f"e:{entry_id}:u"})
     return {"inline_keyboard": [r for r in (row1, row2) if r]}
 
 
@@ -597,8 +702,15 @@ def _back(entry_id: int) -> list[dict]:
     return [{"text": "« Back", "callback_data": f"e:{entry_id}:b"}]
 
 
+def _is_income(conn, uid: int, entry) -> bool:
+    if entry["kind"] == "recurring":
+        rule = _recurring_rule(conn, uid, entry)
+        return bool(rule) and rule["entry_type"] == "income"
+    return entry["kind"] == "income"
+
+
 def _category_keyboard(conn, uid: int, entry) -> dict:
-    table = "income_categories" if entry["kind"] == "income" else "categories"
+    table = "income_categories" if _is_income(conn, uid, entry) else "categories"
     rows = conn.execute(f"SELECT id, name FROM {table} WHERE user_id = ? ORDER BY name", (uid,)).fetchall()
     buttons = [{"text": r["name"][:30], "callback_data": f"e:{entry['id']}:C:{r['id']}"} for r in rows]
     return {"inline_keyboard": _grid(buttons, 3) + [_back(entry["id"])]}
@@ -626,8 +738,26 @@ def _owns(conn, table: str, row_id: int, uid: int) -> bool:
     return bool(conn.execute(f"SELECT 1 FROM {table} WHERE id = ? AND user_id = ?", (int(row_id), uid)).fetchone())
 
 
+def _change_recurring(conn, uid: int, entry, column: str, value: int) -> bool:
+    """Set category_id or account_id on a bot-made rule and the entries it posted."""
+    rule = _recurring_rule(conn, uid, entry)
+    if not rule:
+        return False
+    table, ids = _recurring_posted_rows(conn, uid, rule)
+    conn.execute(f"UPDATE recurring_entries SET {column} = ? WHERE id = ? AND user_id = ?", (value, rule["id"], uid))
+    for row_id in ids:
+        conn.execute(f"UPDATE {table} SET {column} = ? WHERE id = ? AND user_id = ?", (value, row_id, uid))
+    return True
+
+
 def _set_category(conn, uid: int, entry, category_id: int) -> str:
-    if entry["kind"] == "shared":
+    if entry["kind"] == "recurring":
+        cat_table = "income_categories" if _is_income(conn, uid, entry) else "categories"
+        if not _owns(conn, cat_table, category_id, uid):
+            return "Unknown category."
+        if not _change_recurring(conn, uid, entry, "category_id", category_id):
+            return "Rule not found."
+    elif entry["kind"] == "shared":
         if not _owns(conn, "categories", category_id, uid):
             return "Unknown category."
         state = _shared_state(conn, uid, entry)
@@ -647,7 +777,10 @@ def _set_category(conn, uid: int, entry, category_id: int) -> str:
 def _set_account(conn, uid: int, entry, account_id: int) -> str:
     if account_id not in {a["id"] for a in _user_accounts(conn, uid)}:
         return "Unknown account."
-    if entry["kind"] == "shared":
+    if entry["kind"] == "recurring":
+        if not _change_recurring(conn, uid, entry, "account_id", account_id):
+            return "Rule not found."
+    elif entry["kind"] == "shared":
         state = _shared_state(conn, uid, entry)
         if not state or not state["i_paid"]:
             return "Only the payer's account can change."
@@ -661,6 +794,8 @@ def _set_account(conn, uid: int, entry, account_id: int) -> str:
 
 
 def _set_date(conn, uid: int, entry, days_ago: int) -> str:
+    if entry["kind"] == "recurring":
+        return "Change a recurring rule's dates in the app."
     day = (datetime.now().date() - timedelta(days=max(0, min(days_ago, 31)))).isoformat()
     if entry["kind"] == "shared":
         conn.execute("UPDATE shared_expenses SET spent_on = ? WHERE id = ?", (day, entry["row_id"]))
@@ -678,7 +813,17 @@ def undo_entry(conn, user_id: int, entry) -> str:
     uid = int(user_id)
     text, _ = render_entry(conn, uid, entry)
     summary = text.splitlines()[0].replace("✅ ", "")
-    if entry["kind"] == "shared":
+    if entry["kind"] == "recurring":
+        rule = _recurring_rule(conn, uid, entry)
+        if rule:
+            table, ids = _recurring_posted_rows(conn, uid, rule)
+            for row_id in ids:
+                conn.execute(f"DELETE FROM {table} WHERE id = ? AND user_id = ?", (row_id, uid))
+            conn.execute("DELETE FROM recurring_applied WHERE recurring_id = ?", (rule["id"],))
+            conn.execute("DELETE FROM recurring_entries WHERE id = ? AND user_id = ?", (rule["id"], uid))
+            if ids:
+                summary += f" (and {len(ids)} recorded " + ("entry)" if len(ids) == 1 else "entries)")
+    elif entry["kind"] == "shared":
         row = conn.execute("SELECT user_id FROM shared_expenses WHERE id = ?", (entry["row_id"],)).fetchone()
         if row and int(row["user_id"]) == uid:
             shared.delete_expense(conn, entry["row_id"])
@@ -970,6 +1115,7 @@ HELP_TEXT = """Write what you spent or received, in Greek, Greeklish or English:
 • μισθός 1500 (income)
 • σούπερ μάρκετ 60 μοιρασμένο (shared, split with your group)
 • η Άννα πλήρωσε πίτσα 30 μισά (someone else paid)
+• netflix 12.99 κάθε μήνα · γυμναστήριο 30 για 6 μήνες (recurring, needs the AI)
 
 • καφές 3 #διακοπές2026 (tag it; /tag διακοπές2026 tags everything until /tag off)
 
@@ -1155,7 +1301,11 @@ def _record(conn, user_id: int, chat_id, txn: tp.Txn, plan, default_account_id, 
     active = _active_tag(conn, user_id)
     if active:
         txn.notes = tags.add_tags(txn.notes, [active])
-    if plan is not None and txn.type == "expense":
+    if txn.repeat is not None and plan is not None:
+        entry_id, err = None, "Shared bills can't repeat yet. Send it without the repeat, or add the recurring rule in the app."
+    elif txn.repeat is not None:
+        entry_id, err = save_recurring(conn, user_id, txn, default_account_id=default_account_id)
+    elif plan is not None and txn.type == "expense":
         entry_id, err = save_shared(conn, user_id, txn, plan, default_account_id=default_account_id)
     else:
         entry_id, err = save_transaction(conn, user_id, txn, default_account_id=default_account_id)

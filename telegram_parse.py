@@ -105,9 +105,27 @@ class Amount:
     end: int
 
 
+# "for 3 months", "κάθε 2 εβδομάδες", "12 δόσεις": a count, not money. Whole
+# nouns only, so "500 μηνιαία" / "500 monthly" still read as an amount.
+_COUNT_WORDS = frozenset({
+    "mina", "mines", "minon", "mhna", "mhnes", "month", "months",
+    "evdomada", "evdomades", "evdomadon", "ebdomada", "ebdomades", "week", "weeks",
+    "xrono", "xronia", "xronon", "iear", "iears",
+    "fora", "fores", "times", "dosi", "dosis", "doson", "installment", "installments",
+})
+_NEXT_WORD_RE = re.compile(r"\s*([^\W\d_]+)")
+
+
+def _counts_something(text: str, end: int) -> bool:
+    m = _NEXT_WORD_RE.match(text, end)
+    return bool(m) and fold(m.group(1)) in _COUNT_WORDS
+
+
 def find_amounts(text: str) -> list[Amount]:
     found = []
     for m in _AMOUNT_RE.finditer(text or ""):
+        if _counts_something(text, m.end()):
+            continue
         try:
             value = float(m.group(1).replace(",", "."))
         except ValueError:
@@ -521,9 +539,55 @@ class Txn:
     amount: float
     category: str
     notes: str
-    date: str  # YYYY-MM-DD
+    date: str  # YYYY-MM-DD; for a repeating one, the first entry
     account_id: int | None = None
     source: str = "ai"  # "ai" | "basic" | "receipt"
+    repeat: Repeat | None = None  # set when the message says it repeats
+
+
+REPEAT_UNITS = ("week", "month", "year")
+MAX_REPEAT_EVERY = 99
+MAX_REPEAT_TIMES = 1000
+_UNIT_ALIASES = {"weekly": "week", "monthly": "month", "yearly": "year", "annual": "year", "annually": "year"}
+
+
+@dataclass
+class Repeat:
+    """Every `every` weeks/months/years, `times` entries in all (None: no end)."""
+
+    unit: str
+    every: int = 1
+    times: int | None = None
+
+
+def _positive_int(raw) -> int | None:
+    try:
+        value = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return int(value) if value == int(value) and value >= 1 else None
+
+
+def coerce_repeat(raw) -> Repeat | None:
+    """The AI's repeat object, or None when it is missing, malformed or means
+    a single entry anyway."""
+    if not isinstance(raw, dict):
+        return None
+    unit = str(raw.get("unit") or "").strip().lower()
+    unit = _UNIT_ALIASES.get(unit, unit.rstrip("s"))
+    if unit not in REPEAT_UNITS:
+        return None
+    every = _positive_int(raw.get("every") if raw.get("every") not in (None, "") else 1)
+    if every is None or every > MAX_REPEAT_EVERY:
+        return None
+    times = None
+    if raw.get("times") not in (None, "", 0, "0"):
+        times = _positive_int(raw.get("times"))
+        if times is None or times > MAX_REPEAT_TIMES:
+            return None
+        if times == 1:
+            return None
+    return Repeat(unit, every, times)
 
 
 @dataclass
@@ -664,12 +728,13 @@ Rules:
 - type: "income" only for money received (salary/μισθός/misthos, bonus, money someone paid you); otherwise "expense".
 - amount: the positive number written for that transaction, no currency.
 - category: copy one name exactly from the list for its type; if nothing fits use "Other".
-- notes: a short description in the user's own words (e.g. "καφές"), without amount, date or account.
-- date: YYYY-MM-DD; today unless the message says otherwise.
+- notes: a short description in the user's own words (e.g. "καφές"), without amount, date, account or how often it repeats.
+- date: YYYY-MM-DD; today unless the message says otherwise. For a repeating transaction, the date of its first entry (today unless the message names a day, e.g. "every 1st" means the next 1st).
+- repeat: null for a one-off transaction. Only when the message says the transaction repeats or is recurring (in any wording or language), give {{"every": N, "unit": "week" | "month" | "year", "times": T}}: every N weeks/months/years, T entries in all. T is null unless the message itself gives a duration or a count; "every month" alone is {{"every": 1, "unit": "month", "times": null}}, never a guessed 12. A duration becomes a count of entries: "for 3 months" monthly is times 3, "for a year" monthly is times 12, "for 6 weeks" weekly is times 6. Numbers counting months, weeks, years or times are never transaction amounts.
 
 Message: {json.dumps(text, ensure_ascii=False)}
 
-Return only JSON: {{"transactions": [{{"type": "expense", "amount": 0, "category": "", "notes": "", "date": "YYYY-MM-DD"}}]}}"""
+Return only JSON: {{"transactions": [{{"type": "expense", "amount": 0, "category": "", "notes": "", "date": "YYYY-MM-DD", "repeat": null}}]}}"""
 
 
 def _ai_items(parsed: dict | None) -> list[dict]:
@@ -683,13 +748,13 @@ def _ai_items(parsed: dict | None) -> list[dict]:
     return []
 
 
-def _coerce_date(raw, default: date, today: date, max_age_days: int = 366) -> date:
+def _coerce_date(raw, default: date, today: date, max_age_days: int = 366, max_ahead_days: int = 1) -> date:
     text = str(raw or "").strip()[:10]
     try:
         found = datetime.strptime(text, "%Y-%m-%d").date()
     except ValueError:
         return default
-    if found > today + timedelta(days=1) or found < today - timedelta(days=max_age_days):
+    if found > today + timedelta(days=max_ahead_days) or found < today - timedelta(days=max_age_days):
         return default
     return found
 
@@ -697,12 +762,14 @@ def _coerce_date(raw, default: date, today: date, max_age_days: int = 366) -> da
 def parse_transactions(text: str, ctx: Context) -> list[Txn]:
     """Transactions in a text message; [] when it holds no amount at all.
     The AI's answer is only kept if it is consistent with the message (no more
-    transactions than amounts written); otherwise the basic parser is used."""
+    transactions than amounts written, each one an amount written); otherwise
+    the basic parser is used."""
     found = tags.find_tags(text)
     text = tags.strip_tags(text)
     amounts = find_amounts(text)
     if not amounts:
         return []
+    written = {round(a.value, 2) for a in amounts}
     account_id, account_words = detect_account(text, ctx.accounts)
     explicit_date = detect_date(text, ctx.today)
     items = _ai_items(_ai_call(ctx, _record_prompt(text, ctx)))
@@ -711,19 +778,29 @@ def parse_transactions(text: str, ctx: Context) -> list[Txn]:
         kind = str(item.get("type", "")).strip().lower()
         if kind not in ("expense", "income"):
             kind = "income" if _is_income(text) else "expense"
-        try:
-            value = abs(float(str(item.get("amount")).replace(",", ".")))
-        except (TypeError, ValueError):
-            continue
-        if not 0 < value < MAX_AMOUNT:
-            continue
+        if len(amounts) == 1:
+            # The number written beats the AI's reading of it ("12,99" → 1299).
+            value = amounts[0].value
+        else:
+            try:
+                value = round(abs(float(str(item.get("amount")).replace(",", "."))), 2)
+            except (TypeError, ValueError):
+                continue
+            if value not in written:
+                continue
         notes = describe(str(item.get("notes") or ""), account_words)
         if not notes and len(amounts) == 1:
             notes = describe(text, account_words)
-        when = explicit_date if (explicit_date and len(amounts) == 1) else _coerce_date(item.get("date"), explicit_date or ctx.today, ctx.today)
+        repeat = coerce_repeat(item.get("repeat"))
+        # A repeating entry may start later, e.g. "rent on the 1st of every month".
+        ahead = 366 if repeat else 1
+        if explicit_date and len(amounts) == 1:
+            when = explicit_date
+        else:
+            when = _coerce_date(item.get("date"), explicit_date or ctx.today, ctx.today, max_ahead_days=ahead)
         lookup_text = describe(text, account_words) if len(amounts) == 1 else notes
         category = _choose_category(ctx, kind, lookup_text, str(item.get("category") or ""))
-        out.append(Txn(kind, round(value, 2), category, notes, when.isoformat(), account_id, "ai"))
+        out.append(Txn(kind, round(value, 2), category, notes, when.isoformat(), account_id, "ai", repeat))
     return _with_tags(out or basic_parse(text, ctx), found)
 
 
