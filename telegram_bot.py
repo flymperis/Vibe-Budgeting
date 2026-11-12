@@ -1413,11 +1413,11 @@ def _handle_receipt(file_id: str, caption: str, conn, user_id: int, chat_id, bot
 
 
 def _handle_voice(file_id: str, filename: str, conn, user_id: int, chat_id, balance_fn, bot_token: str) -> None:
-    whisper = integrations.whisper_settings()
+    whisper = integrations.whisper_for_user(conn, user_id)
     if not whisper["url"]:
         send_message(
             chat_id,
-            "Voice messages are off. Set VB_WHISPER_URL to a Whisper server (see README → Voice messages).",
+            "Voice messages are off. Turn on Whisper in Settings → Integrations (Vibe Budgeting X).",
             bot_token=bot_token,
         )
         return

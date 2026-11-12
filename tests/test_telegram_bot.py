@@ -679,6 +679,49 @@ def test_voice_messages_need_a_whisper_server(client, tg, monkeypatch):
     assert "Voice messages are off" in tg.last_text()
 
 
+def test_voice_uses_the_users_own_whisper_settings(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_voice_db")
+    seen = _fake_whisper(monkeypatch, "καφές 2")  # env says http://whisper:8000
+    conn = vb_app.get_connection()
+    try:
+        integrations.save_whisper_user_settings(conn, uid, integrations.parse_whisper_form(
+            {"whisper_enabled": "1", "whisper_url": "http://mine:9000/", "whisper_model": "", "whisper_language": ""}))
+    finally:
+        conn.close()
+    _send(voice={"file_id": "v5", "duration": 1})
+    assert seen["settings"] == {"url": "http://mine:9000", "model": integrations.DEFAULT_WHISPER_MODEL, "language": ""}
+
+    conn = vb_app.get_connection()
+    try:  # switched off by the user: the environment no longer applies
+        integrations.save_whisper_user_settings(conn, uid, integrations.parse_whisper_form(
+            {"whisper_url": "http://mine:9000", "whisper_language": "el"}))
+        # saving the Ollama settings leaves Whisper's alone
+        integrations.save_user_integrations(conn, uid, integrations.default_integration_settings())
+        assert integrations.get_whisper_user_settings(conn, uid)["whisper_url"] == "http://mine:9000"
+    finally:
+        conn.close()
+    _send(voice={"file_id": "v6", "duration": 1})
+    assert "Voice messages are off" in tg.last_text()
+
+
+def test_whisper_form_validation():
+    with pytest.raises(ValueError):
+        integrations.parse_whisper_form({"whisper_enabled": "1", "whisper_url": ""})
+    with pytest.raises(ValueError):
+        integrations.parse_whisper_form({"whisper_url": "whisper:8000"})
+    with pytest.raises(ValueError):
+        integrations.parse_whisper_form({"whisper_language": "Greek"})
+    assert integrations.parse_whisper_form({"whisper_language": " EL "})["whisper_language"] == "el"
+
+
+def test_whisper_connection_test(monkeypatch):
+    monkeypatch.setattr(integrations, "_fetch_json", lambda url, timeout: {"data": [{"id": "m1"}]})
+    assert integrations.test_whisper_connection({"url": "http://w", "model": "m1"})[0] is True
+    ok, msg = integrations.test_whisper_connection({"url": "http://w", "model": "m2"})
+    assert not ok and "curl -X POST http://w/v1/models/m2" in msg
+    assert integrations.test_whisper_connection({"url": "", "model": "m1"})[0] is False
+
+
 def test_transcribe_audio_posts_an_openai_style_request(monkeypatch):
     captured = {}
 

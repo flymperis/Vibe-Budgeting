@@ -164,7 +164,9 @@ podman run -d --name whisper -p 8000:8000 \
   ghcr.io/speaches-ai/speaches:latest-cpu      # or :latest-cuda with an NVIDIA GPU
 ```
 
-and give the app these environment variables:
+Each user turns it on in **Vibe Budgeting X → Settings → Integrations → Voice messages** (URL, model, language,
+**Test**); both apps share the same database, so the bot here uses those settings. For users who never set it,
+these environment variables are the fallback:
 
 | Variable | Default | |
 |---|---|---|
