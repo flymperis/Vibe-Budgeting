@@ -1120,6 +1120,7 @@ HELP_TEXT = """Write what you spent or received, in Greek, Greeklish or English:
 • καφές 3 #διακοπές2026 (tag it; /tag διακοπές2026 tags everything until /tag off)
 
 Send a photo of a receipt to record its total.
+Send a voice message and say it the way you'd write it (questions too).
 
 Ask questions:
 • πόσα ξόδεψα αυτόν τον μήνα;
@@ -1190,6 +1191,10 @@ def handle_update(update: dict, conn: sqlite3.Connection, balance_fn, config: di
     image_id = _image_file_id(message)
     if image_id:
         _handle_receipt(image_id, str(message.get("caption") or ""), conn, user_id, chat_id, bot_token)
+        return
+    voice = _voice_file(message)
+    if voice:
+        _handle_voice(voice[0], voice[1], conn, user_id, chat_id, balance_fn, bot_token)
         return
     if not text:
         return
@@ -1276,6 +1281,23 @@ def _image_file_id(message: dict) -> str | None:
     if str(doc.get("mime_type") or "").startswith("image/"):
         return doc.get("file_id")
     return None
+
+
+def _voice_file(message: dict) -> tuple[str, str] | None:
+    """(file_id, filename) of a voice note or an audio file."""
+    voice = message.get("voice") or {}
+    if voice.get("file_id"):
+        return voice["file_id"], "voice.ogg"
+    audio = message.get("audio") or {}
+    if audio.get("file_id"):
+        return audio["file_id"], str(audio.get("file_name") or "audio.mp3")
+    return None
+
+
+def _whisper_prompt(ctx: tp.Context) -> str:
+    """Names Whisper should spell the way the app does, e.g. Revolut, Super Market."""
+    names = list(dict.fromkeys(ctx.expense_categories + ctx.income_categories + [a["name"] for a in ctx.accounts]))
+    return ", ".join(names)[:400]
 
 
 def _send_entry(conn, user_id: int, chat_id, entry_id: int, bot_token: str, message_id: int | None = None) -> None:
@@ -1388,6 +1410,37 @@ def _handle_receipt(file_id: str, caption: str, conn, user_id: int, chat_id, bot
         finish(plan)
         return
     _record(conn, user_id, chat_id, txn, plan, extra["default_account_id"], bot_token, message_id=status_id)
+
+
+def _handle_voice(file_id: str, filename: str, conn, user_id: int, chat_id, balance_fn, bot_token: str) -> None:
+    whisper = integrations.whisper_for_user(conn, user_id)
+    if not whisper["url"]:
+        send_message(
+            chat_id,
+            "Voice messages are off. Turn on Whisper in Settings → Integrations (Vibe Budgeting X).",
+            bot_token=bot_token,
+        )
+        return
+    status_id = send_message(chat_id, "🎙 Listening…", bot_token=bot_token)
+
+    def finish(text: str) -> None:
+        if status_id:
+            edit_message(chat_id, status_id, text, bot_token=bot_token)
+        else:
+            send_message(chat_id, text, bot_token=bot_token)
+
+    with typing(chat_id, bot_token):
+        audio = download_file(file_id, bot_token)
+        if not audio or len(audio) > MAX_PHOTO_BYTES:
+            finish("Couldn't download that voice message (max 10 MB).")
+            return
+        ctx, _extra = _user_context(conn, user_id)
+        heard = integrations.transcribe_audio(audio, filename, prompt=_whisper_prompt(ctx), settings=whisper)
+    if not heard:
+        finish("Couldn't make out that voice message. Try again, or type it.")
+        return
+    finish(f"🎙 Heard: «{heard}»")
+    _handle_text(heard, conn, user_id, chat_id, balance_fn, bot_token)
 
 
 def handle_callback(cb: dict, conn, config: dict) -> None:

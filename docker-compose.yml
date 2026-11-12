@@ -13,6 +13,8 @@ services:
       # FINNHUB_API_KEY=your_key_here
       # Nightly backups go to ./budget-data/backups; see README → Backups to change that.
       # VB_BACKUP_DIR=/backups-on-another-disk
+      # Telegram voice messages: a local Whisper server, see README → Voice messages.
+      # - VB_WHISPER_URL=http://whisper:8000
     volumes:
       - ./budget-data:/app/data
     restart: unless-stopped

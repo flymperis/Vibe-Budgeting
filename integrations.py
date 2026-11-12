@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -16,6 +18,8 @@ DEFAULT_AI_TIMEOUT = 30
 MIN_AI_TIMEOUT = 5
 MAX_AI_TIMEOUT = 120
 OCR_TIMEOUT = 180
+TRANSCRIBE_TIMEOUT = 120
+DEFAULT_WHISPER_MODEL = "deepdml/faster-whisper-large-v3-turbo-ct2"
 _MODEL_CACHE_TTL = 300
 _model_cache: dict[tuple[str, str], tuple[float, str]] = {}
 _model_cache_lock = threading.Lock()
@@ -41,6 +45,7 @@ def migrate_user_integrations(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(user_integrations)").fetchall()}
     if "ai_ocr_model" not in cols:
         conn.execute("ALTER TABLE user_integrations ADD COLUMN ai_ocr_model TEXT NOT NULL DEFAULT ''")
+    migrate_whisper_columns(conn)
 
 
 def default_integration_settings() -> dict:
@@ -333,3 +338,181 @@ def test_ai_connection(settings: dict) -> tuple[bool, str]:
     preview = ", ".join(models[:5])
     extra = f" (+{len(models) - 5} more)" if len(models) > 5 else ""
     return True, f"Connected. Models available: {preview}{extra}"
+
+
+# --- speech to text ---------------------------------------------------------------
+# Voice messages go to a Whisper server with an OpenAI-compatible API, such as
+# speaches (faster-whisper) running next to Ollama. Each user sets it in
+# Settings -> Integrations (user_integrations.whisper_*); the VB_WHISPER_*
+# environment variables are the fallback for users who never set it.
+
+WHISPER_COLUMNS = {
+    "whisper_enabled": "INTEGER NOT NULL DEFAULT 0 CHECK (whisper_enabled IN (0, 1))",
+    "whisper_url": "TEXT NOT NULL DEFAULT ''",
+    "whisper_model": "TEXT NOT NULL DEFAULT ''",
+    "whisper_language": "TEXT NOT NULL DEFAULT 'el'",
+}
+_LANGUAGE_RE = re.compile(r"^[a-z]{2,3}$")
+
+
+def migrate_whisper_columns(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(user_integrations)").fetchall()}
+    for name, spec in WHISPER_COLUMNS.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE user_integrations ADD COLUMN {name} {spec}")
+
+
+def whisper_settings() -> dict:
+    """The server-wide fallback from the environment."""
+    return {
+        "url": os.environ.get("VB_WHISPER_URL", "").strip().rstrip("/"),
+        "model": os.environ.get("VB_WHISPER_MODEL", "").strip() or DEFAULT_WHISPER_MODEL,
+        # Greek by default: on short clips Whisper's own language guess is unreliable.
+        "language": os.environ.get("VB_WHISPER_LANGUAGE", "el").strip(),
+    }
+
+
+def default_whisper_user_settings() -> dict:
+    return {"whisper_enabled": False, "whisper_url": "", "whisper_model": "", "whisper_language": "el"}
+
+
+def get_whisper_user_settings(conn: sqlite3.Connection, user_id: int) -> dict:
+    row = conn.execute(
+        "SELECT whisper_enabled, whisper_url, whisper_model, whisper_language FROM user_integrations WHERE user_id = ?",
+        (int(user_id),),
+    ).fetchone()
+    if not row:
+        return default_whisper_user_settings()
+    return {
+        "whisper_enabled": bool(row["whisper_enabled"]),
+        "whisper_url": row["whisper_url"] or "",
+        "whisper_model": row["whisper_model"] or "",
+        "whisper_language": row["whisper_language"] or "",
+    }
+
+
+def parse_whisper_form(form) -> dict:
+    enabled = form.get("whisper_enabled") == "1"
+    try:
+        url = _normalize_base_url(form.get("whisper_url", ""))
+    except ValueError:
+        raise ValueError("Whisper URL must start with http:// or https://") from None
+    model = (form.get("whisper_model") or "").strip()
+    language = (form.get("whisper_language") or "").strip().lower()
+    if language and not _LANGUAGE_RE.match(language):
+        raise ValueError("Language must be a code like el or en, or blank to let Whisper guess")
+    if enabled and not url:
+        raise ValueError("Whisper URL is required when voice messages are on")
+    return {"whisper_enabled": enabled, "whisper_url": url, "whisper_model": model, "whisper_language": language}
+
+
+def save_whisper_user_settings(conn: sqlite3.Connection, user_id: int, settings: dict) -> None:
+    conn.execute(
+        """
+        INSERT INTO user_integrations (user_id, whisper_enabled, whisper_url, whisper_model, whisper_language, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+            whisper_enabled = excluded.whisper_enabled,
+            whisper_url = excluded.whisper_url,
+            whisper_model = excluded.whisper_model,
+            whisper_language = excluded.whisper_language,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (
+            int(user_id),
+            1 if settings["whisper_enabled"] else 0,
+            settings["whisper_url"],
+            settings["whisper_model"],
+            settings["whisper_language"],
+        ),
+    )
+    conn.commit()
+
+
+def whisper_config(user_settings: dict) -> dict:
+    """{url, model, language} to call Whisper with; url is blank when voice is off."""
+    return {
+        "url": user_settings["whisper_url"].rstrip("/") if user_settings["whisper_enabled"] else "",
+        "model": user_settings["whisper_model"] or DEFAULT_WHISPER_MODEL,
+        "language": user_settings["whisper_language"],
+    }
+
+
+def whisper_for_user(conn: sqlite3.Connection, user_id: int) -> dict:
+    """The user's own Whisper settings; the environment only for a user who never set any."""
+    mine = get_whisper_user_settings(conn, user_id)
+    if mine["whisper_enabled"] or mine["whisper_url"]:
+        return whisper_config(mine)
+    return whisper_settings()
+
+
+def _multipart(fields: dict[str, str], file_field: str, filename: str, data: bytes) -> tuple[bytes, str]:
+    boundary = "vb" + secrets.token_hex(12)
+    parts = []
+    for name, value in fields.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
+    parts.append(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n".encode()
+        + data
+        + b"\r\n"
+    )
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def transcribe_audio(
+    audio: bytes,
+    filename: str,
+    *,
+    prompt: str = "",
+    settings: dict | None = None,
+    timeout: int = TRANSCRIBE_TIMEOUT,
+) -> str | None:
+    """Text of a voice message, or None when the server is unset, down or heard nothing.
+    prompt carries words Whisper should spell right (categories, account names)."""
+    cfg = settings or whisper_settings()
+    if not cfg.get("url"):
+        return None
+    fields = {"model": cfg["model"], "response_format": "json", "temperature": "0"}
+    if cfg.get("language"):
+        fields["language"] = cfg["language"]
+    if prompt:
+        fields["prompt"] = prompt
+    body, content_type = _multipart(fields, "file", filename, audio)
+    req = Request(
+        cfg["url"] + "/v1/audio/transcriptions",
+        data=body,
+        headers={"Content-Type": content_type, "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+    except (HTTPError, URLError, json.JSONDecodeError, OSError, TimeoutError, UnicodeDecodeError):
+        return None
+    text = str(data.get("text") or "").strip() if isinstance(data, dict) else ""
+    return text or None
+
+
+def test_whisper_connection(cfg: dict, *, timeout: int = 10) -> tuple[bool, str]:
+    """Is the server up and is the model downloaded? cfg is whisper_config()'s shape."""
+    url = (cfg.get("url") or "").rstrip("/")
+    model = cfg.get("model") or DEFAULT_WHISPER_MODEL
+    if not url:
+        return False, "Set the Whisper URL first."
+    try:
+        data = _fetch_json(f"{url}/v1/models", timeout=timeout)
+    except HTTPError as exc:
+        return False, f"Whisper responded with HTTP {exc.code}."
+    except URLError as exc:
+        return False, f"Could not reach Whisper: {exc.reason}"
+    except (json.JSONDecodeError, OSError, TimeoutError) as exc:
+        return False, f"Connection failed: {exc}"
+    ids = [str(m.get("id")) for m in (data.get("data") or []) if isinstance(m, dict) and m.get("id")]
+    if model in ids:
+        return True, f"Connected. Model '{model}' is ready."
+    return False, (
+        f"Connected, but model '{model}' is not downloaded. "
+        f"Download it once with: curl -X POST {url}/v1/models/{model}"
+    )

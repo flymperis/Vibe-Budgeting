@@ -624,3 +624,131 @@ def test_the_amount_written_beats_the_ais_reading_of_it(monkeypatch):
     _fake_ai(monkeypatch, [{"transactions": [{**item, "amount": 3}, {**item, "amount": 77}]}])
     txns = tp.parse_transactions("καφές 3, σουβλάκια 12", _ctx(ai_settings=AI_ON))
     assert [(t.amount, t.source) for t in txns] == [(3.0, "ai")]
+
+
+# --- voice messages ---------------------------------------------------------------
+
+
+def _fake_whisper(monkeypatch, heard):
+    seen = {}
+
+    def transcribe(audio, filename, **kw):
+        seen.update(audio=audio, filename=filename, **kw)
+        return heard
+
+    monkeypatch.setenv("VB_WHISPER_URL", "http://whisper:8000/")
+    monkeypatch.setattr(telegram_bot, "download_file", lambda file_id, token: b"ogg-bytes")
+    monkeypatch.setattr(integrations, "transcribe_audio", transcribe)
+    return seen
+
+
+def test_voice_message_is_transcribed_and_recorded(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_voice")
+    seen = _fake_whisper(monkeypatch, "καφές 3,50 μετρητά")
+    _send(voice={"file_id": "v1", "duration": 3, "mime_type": "audio/ogg"})
+    row = _rows("""SELECT e.amount, a.name acc FROM expenses e JOIN accounts a ON a.id = e.account_id
+                   WHERE e.user_id = ?""", uid)[0]
+    assert (row["amount"], row["acc"]) == (-3.5, "Cash")
+    assert seen["audio"] == b"ogg-bytes" and seen["filename"] == "voice.ogg"
+    assert "Cash" in seen["prompt"]  # account and category names help Whisper spell them
+    assert seen["settings"]["url"] == "http://whisper:8000"
+    texts = [p["text"] for m, p in tg.calls if m in ("sendMessage", "editMessageText")]
+    assert texts[0] == "🎙 Listening…"
+    assert "🎙 Heard: «καφές 3,50 μετρητά»" in texts
+
+
+def test_voice_questions_are_answered(client, tg, monkeypatch):
+    _linked_user(client, "tg_voice_ask")
+    _fake_whisper(monkeypatch, "υπόλοιπο")
+    _send(voice={"file_id": "v2", "duration": 1})
+    assert tg.last_text().startswith("Balances:")
+
+
+def test_voice_message_that_is_not_understood(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_voice_none")
+    _fake_whisper(monkeypatch, None)
+    _send(voice={"file_id": "v3", "duration": 1})
+    assert "Couldn't make out" in tg.last_text()
+    assert _rows("SELECT id FROM expenses WHERE user_id = ?", uid) == []
+
+
+def test_voice_messages_need_a_whisper_server(client, tg, monkeypatch):
+    _linked_user(client, "tg_voice_off")
+    monkeypatch.delenv("VB_WHISPER_URL", raising=False)
+    _send(voice={"file_id": "v4", "duration": 1})
+    assert "Voice messages are off" in tg.last_text()
+
+
+def test_voice_uses_the_users_own_whisper_settings(client, tg, monkeypatch):
+    uid = _linked_user(client, "tg_voice_db")
+    seen = _fake_whisper(monkeypatch, "καφές 2")  # env says http://whisper:8000
+    conn = vb_app.get_connection()
+    try:
+        integrations.save_whisper_user_settings(conn, uid, integrations.parse_whisper_form(
+            {"whisper_enabled": "1", "whisper_url": "http://mine:9000/", "whisper_model": "", "whisper_language": ""}))
+    finally:
+        conn.close()
+    _send(voice={"file_id": "v5", "duration": 1})
+    assert seen["settings"] == {"url": "http://mine:9000", "model": integrations.DEFAULT_WHISPER_MODEL, "language": ""}
+
+    conn = vb_app.get_connection()
+    try:  # switched off by the user: the environment no longer applies
+        integrations.save_whisper_user_settings(conn, uid, integrations.parse_whisper_form(
+            {"whisper_url": "http://mine:9000", "whisper_language": "el"}))
+        # saving the Ollama settings leaves Whisper's alone
+        integrations.save_user_integrations(conn, uid, integrations.default_integration_settings())
+        assert integrations.get_whisper_user_settings(conn, uid)["whisper_url"] == "http://mine:9000"
+    finally:
+        conn.close()
+    _send(voice={"file_id": "v6", "duration": 1})
+    assert "Voice messages are off" in tg.last_text()
+
+
+def test_whisper_form_validation():
+    with pytest.raises(ValueError):
+        integrations.parse_whisper_form({"whisper_enabled": "1", "whisper_url": ""})
+    with pytest.raises(ValueError):
+        integrations.parse_whisper_form({"whisper_url": "whisper:8000"})
+    with pytest.raises(ValueError):
+        integrations.parse_whisper_form({"whisper_language": "Greek"})
+    assert integrations.parse_whisper_form({"whisper_language": " EL "})["whisper_language"] == "el"
+
+
+def test_whisper_connection_test(monkeypatch):
+    monkeypatch.setattr(integrations, "_fetch_json", lambda url, timeout: {"data": [{"id": "m1"}]})
+    assert integrations.test_whisper_connection({"url": "http://w", "model": "m1"})[0] is True
+    ok, msg = integrations.test_whisper_connection({"url": "http://w", "model": "m2"})
+    assert not ok and "curl -X POST http://w/v1/models/m2" in msg
+    assert integrations.test_whisper_connection({"url": "", "model": "m1"})[0] is False
+
+
+def test_transcribe_audio_posts_an_openai_style_request(monkeypatch):
+    captured = {}
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return json.dumps({"text": " βενζίνη 50 \n"}).encode()
+
+    def fake_urlopen(req, timeout):
+        captured.update(url=req.full_url, body=req.data, ctype=req.headers["Content-type"])
+        return Resp()
+
+    monkeypatch.setattr(integrations, "urlopen", fake_urlopen)
+    text = integrations.transcribe_audio(
+        b"OGG", "voice.ogg", prompt="Revolut",
+        settings={"url": "http://w:8000", "model": "m", "language": "el"},
+    )
+    assert text == "βενζίνη 50"
+    assert captured["url"] == "http://w:8000/v1/audio/transcriptions"
+    assert captured["ctype"].startswith("multipart/form-data; boundary=")
+    body = captured["body"]
+    for part in (b'name="model"\r\n\r\nm\r\n', b'name="language"\r\n\r\nel\r\n',
+                 b'name="prompt"\r\n\r\nRevolut\r\n', b'filename="voice.ogg"', b"\r\n\r\nOGG\r\n"):
+        assert part in body
+    assert integrations.transcribe_audio(b"x", "a.ogg", settings={"url": "", "model": "m", "language": ""}) is None
