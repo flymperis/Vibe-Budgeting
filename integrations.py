@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -16,6 +18,8 @@ DEFAULT_AI_TIMEOUT = 30
 MIN_AI_TIMEOUT = 5
 MAX_AI_TIMEOUT = 120
 OCR_TIMEOUT = 180
+TRANSCRIBE_TIMEOUT = 120
+DEFAULT_WHISPER_MODEL = "deepdml/faster-whisper-large-v3-turbo-ct2"
 _MODEL_CACHE_TTL = 300
 _model_cache: dict[tuple[str, str], tuple[float, str]] = {}
 _model_cache_lock = threading.Lock()
@@ -333,3 +337,70 @@ def test_ai_connection(settings: dict) -> tuple[bool, str]:
     preview = ", ".join(models[:5])
     extra = f" (+{len(models) - 5} more)" if len(models) > 5 else ""
     return True, f"Connected. Models available: {preview}{extra}"
+
+
+# --- speech to text ---------------------------------------------------------------
+# Voice messages go to a Whisper server with an OpenAI-compatible API, such as
+# speaches (faster-whisper) running next to Ollama. It is one server for the
+# whole app, so it is set with environment variables, not per user.
+
+
+def whisper_settings() -> dict:
+    return {
+        "url": os.environ.get("VB_WHISPER_URL", "").strip().rstrip("/"),
+        "model": os.environ.get("VB_WHISPER_MODEL", "").strip() or DEFAULT_WHISPER_MODEL,
+        # Greek by default: on short clips Whisper's own language guess is unreliable.
+        # Set VB_WHISPER_LANGUAGE= (empty) to let it guess.
+        "language": os.environ.get("VB_WHISPER_LANGUAGE", "el").strip(),
+    }
+
+
+def _multipart(fields: dict[str, str], file_field: str, filename: str, data: bytes) -> tuple[bytes, str]:
+    boundary = "vb" + secrets.token_hex(12)
+    parts = []
+    for name, value in fields.items():
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+        )
+    parts.append(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n".encode()
+        + data
+        + b"\r\n"
+    )
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def transcribe_audio(
+    audio: bytes,
+    filename: str,
+    *,
+    prompt: str = "",
+    settings: dict | None = None,
+    timeout: int = TRANSCRIBE_TIMEOUT,
+) -> str | None:
+    """Text of a voice message, or None when the server is unset, down or heard nothing.
+    prompt carries words Whisper should spell right (categories, account names)."""
+    cfg = settings or whisper_settings()
+    if not cfg.get("url"):
+        return None
+    fields = {"model": cfg["model"], "response_format": "json", "temperature": "0"}
+    if cfg.get("language"):
+        fields["language"] = cfg["language"]
+    if prompt:
+        fields["prompt"] = prompt
+    body, content_type = _multipart(fields, "file", filename, audio)
+    req = Request(
+        cfg["url"] + "/v1/audio/transcriptions",
+        data=body,
+        headers={"Content-Type": content_type, "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+    except (HTTPError, URLError, json.JSONDecodeError, OSError, TimeoutError, UnicodeDecodeError):
+        return None
+    text = str((data or {}).get("text") or "").strip() if isinstance(data, dict) else ""
+    return text or None

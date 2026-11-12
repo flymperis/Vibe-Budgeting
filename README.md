@@ -152,6 +152,29 @@ Set Base URL and model in **Integrations → Local AI**, then **Test connection*
 loaded is left to the Ollama server's `OLLAMA_KEEP_ALIVE`). For receipt photos also set
 **Receipt OCR model**, e.g. `glm-ocr`.
 
+### Voice messages (Whisper)
+
+Voice messages to the bot are turned into text by a local Whisper server with an OpenAI-compatible API, e.g.
+[speaches](https://github.com/speaches-ai/speaches) (faster-whisper), then handled exactly like a typed message.
+Nothing leaves your network. Run it next to Ollama:
+
+```
+podman run -d --name whisper -p 8000:8000 \
+  -v whisper-models:/home/ubuntu/.cache/huggingface/hub \
+  ghcr.io/speaches-ai/speaches:latest-cpu      # or :latest-cuda with an NVIDIA GPU
+```
+
+and give the app these environment variables:
+
+| Variable | Default | |
+|---|---|---|
+| `VB_WHISPER_URL` | (empty = voice off) | e.g. `http://127.0.0.1:8000` |
+| `VB_WHISPER_MODEL` | `deepdml/faster-whisper-large-v3-turbo-ct2` | smaller and faster on CPU: `Systran/faster-whisper-small` (weaker Greek) |
+| `VB_WHISPER_LANGUAGE` | `el` | empty lets Whisper guess the language |
+
+Download the model once: `curl -X POST http://127.0.0.1:8000/v1/models/deepdml/faster-whisper-large-v3-turbo-ct2`. Your category and account names are sent to
+Whisper as hints, so `Revolut` or `Ticket Restaurant` come out spelled the way the app knows them.
+
 ### Telegram bot (polling — Tailscale-only)
 
 No public URL or Tailscale Funnel needed. The app **polls** Telegram outbound (`getUpdates`) — nothing is exposed to the internet.
@@ -171,6 +194,7 @@ The budget app stays on Tailscale only (`http://personal-disk-share:5000`). Tele
 | `μισθός 1500` | Income |
 | `σούπερ μάρκετ 60 μοιρασμένο` | Shared bill split equally in your group (name the group if you have several) |
 | `η Άννα πλήρωσε πίτσα 30 μισά` | Shared bill someone else paid, split between you two |
+| voice message | Transcribed by Whisper, shown as «Heard: …», then handled like the same text (entries or questions) |
 | photo of a receipt | Total, date and shop read via the OCR model; a caption can name the account or say it's shared |
 | `πόσα ξόδεψα σε delivery τον προηγούμενο μήνα;` | Answered from the database (the AI only plans the lookup) |
 | `καφές 3 #Λονδίνο2026` | Entry with a tag |
